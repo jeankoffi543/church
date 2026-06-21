@@ -25,6 +25,11 @@ class HomeGroup extends Model
         'name',
         'leader',
         'address',
+        'latitude',
+        'longitude',
+        'zone_name',
+        'meeting_day',
+        'meeting_time',
         'schedule',
         'coordinates',
         'sort_order',
@@ -38,6 +43,8 @@ class HomeGroup extends Model
     {
         return [
             'coordinates' => 'array',
+            'latitude' => 'float',
+            'longitude' => 'float',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];

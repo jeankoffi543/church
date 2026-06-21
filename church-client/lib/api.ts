@@ -83,10 +83,16 @@ type ApiEvent = {
 };
 
 type ApiHomeGroup = {
+  id: number;
   name: string;
   leader: string;
   address: string;
   schedule: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
+  meeting_day: string | null;
+  meeting_time: string | null;
   coordinates: { top?: string; left?: string } | null;
 };
 
@@ -126,12 +132,18 @@ const mapEvent = (e: ApiEvent): ChurchEvent => ({
 });
 
 const mapHomeGroup = (g: ApiHomeGroup): HomeGroup => ({
+  id: g.id,
   name: g.name,
   leader: g.leader,
   area: g.address,
   when: g.schedule ?? "",
   top: g.coordinates?.top ?? "50%",
   left: g.coordinates?.left ?? "50%",
+  lat: g.latitude,
+  lng: g.longitude,
+  zone: g.zone_name,
+  day: g.meeting_day,
+  time: g.meeting_time,
 });
 
 /* ── Resource fetchers ────────────────────────────────────────────── */

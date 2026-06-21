@@ -88,12 +88,19 @@ export const MINISTRIES: Ministry[] = [
 ];
 
 export type HomeGroup = {
+  id?: number;
   name: string;
   area: string;
   when: string;
   leader: string;
   top: string;
   left: string;
+  /** Real geo coordinates + sector/schedule for the interactive map. */
+  lat?: number | null;
+  lng?: number | null;
+  zone?: string | null;
+  day?: string | null;
+  time?: string | null;
 };
 
 export const HOME_GROUPS: HomeGroup[] = [
@@ -104,6 +111,11 @@ export const HOME_GROUPS: HomeGroup[] = [
     leader: "Fr. Jean Koffi",
     top: "46%",
     left: "28%",
+    lat: 5.3358,
+    lng: -4.0846,
+    zone: "Yopougon",
+    day: "Mardi",
+    time: "19h00",
   },
   {
     name: "Cellule Sion",
@@ -112,6 +124,11 @@ export const HOME_GROUPS: HomeGroup[] = [
     leader: "Sr. Marie Aka",
     top: "30%",
     left: "64%",
+    lat: 5.3955,
+    lng: -3.987,
+    zone: "Cocody",
+    day: "Mercredi",
+    time: "18h30",
   },
   {
     name: "Cellule Emmanuel",
@@ -120,6 +137,11 @@ export const HOME_GROUPS: HomeGroup[] = [
     leader: "Fr. Paul Diby",
     top: "20%",
     left: "42%",
+    lat: 5.4291,
+    lng: -4.0159,
+    zone: "Abobo",
+    day: "Jeudi",
+    time: "19h00",
   },
   {
     name: "Cellule Shalom",
@@ -128,6 +150,11 @@ export const HOME_GROUPS: HomeGroup[] = [
     leader: "Sr. Grâce Obi",
     top: "68%",
     left: "58%",
+    lat: 5.2972,
+    lng: -3.9876,
+    zone: "Marcory",
+    day: "Vendredi",
+    time: "19h00",
   },
 ];
 

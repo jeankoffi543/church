@@ -136,3 +136,18 @@
     font-family: var(--font-serif);
   }
 }
+
+/* ── Mapbox: borderless, elegant popups for the home-groups map ──────── */
+.mfm-popup .mapboxgl-popup-content {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 16px;
+}
+.mfm-popup .mapboxgl-popup-tip {
+  border-top-color: #160f33;
+  border-bottom-color: #160f33;
+}
+.mfm-popup .mapboxgl-popup-close-button {
+  display: none;
+}
