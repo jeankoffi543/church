@@ -193,11 +193,13 @@ export type HeroContent = {
   title: string;
   description: string;
   serviceTimes: ServiceTime[];
+  isLive: boolean;
 };
 
 export async function getHeroContent(): Promise<HeroContent> {
   const general = await getSettingsGroup("general");
   const schedule = await getSettingsGroup("schedule");
+  const live = await getSettingsGroup("live");
   const weekly = (schedule?.weekly_schedule as ServiceTime[] | undefined) ?? SERVICE_TIMES;
 
   return {
@@ -207,6 +209,7 @@ export async function getHeroContent(): Promise<HeroContent> {
       (general?.hero_description as string) ??
       "Un lieu de grâce, de feu et de miracles. Peu importe ton histoire, il y a une place pour toi à cette table.",
     serviceTimes: Array.isArray(weekly) && weekly.length ? weekly : SERVICE_TIMES,
+    isLive: Boolean(live?.live_status),
   };
 }
 
@@ -269,11 +272,22 @@ export async function getOfferingConfig(): Promise<OfferingConfig> {
   };
 }
 
+export type SermonPoint = {
+  id: string;
+  text: string;
+  verse: string;
+};
+
 export type LiveConfig = {
   isLive: boolean;
   streamUrl: string;
   chatEnabled: boolean;
   title: string;
+  fallbackImage: string | null;
+  description: string;
+  sermonTitle: string;
+  sermonReference: string;
+  sermonPoints: SermonPoint[];
 };
 
 export async function getLiveConfig(): Promise<LiveConfig> {
@@ -284,6 +298,17 @@ export async function getLiveConfig(): Promise<LiveConfig> {
     streamUrl: (live?.live_embed_url as string) ?? "",
     chatEnabled: live?.live_chat_enabled !== false,
     title: (live?.live_title as string) ?? "Culte du dimanche",
+    fallbackImage: (live?.live_fallback_image as string) ?? null,
+    description: (live?.live_description as string) ?? "Diffusion en direct depuis le temple principal MFM Ficgayo",
+    sermonTitle: (live?.live_sermon_title as string) ?? "La grâce qui transforme",
+    sermonReference: (live?.live_sermon_reference as string) ?? "Romains 5.1-11",
+    sermonPoints: (live?.live_sermon_points as SermonPoint[]) ?? [
+      { id: "01", text: "Justifiés par la foi, nous avons la paix avec Dieu", verse: "Romains 5.1" },
+      { id: "02", text: "Par lui nous avons accès à cette grâce", verse: "Romains 5.2" },
+      { id: "03", text: "Nous nous glorifions même dans la tribulation", verse: "Romains 5.3-4" },
+      { id: "04", text: "L’amour de Dieu répandu dans nos cœurs", verse: "Romains 5.5" },
+      { id: "05", text: "Christ est mort pour nous, pécheurs", verse: "Romains 5.8" }
+    ],
   };
 }
 

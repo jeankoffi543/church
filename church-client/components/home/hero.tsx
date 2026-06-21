@@ -46,7 +46,7 @@ export function Hero({ content }: { content: HeroContent }) {
   );
 }
 
-function HeroCtas({ tone = "light" }: { tone?: "light" | "dark" }) {
+function HeroCtas({ isLive, tone = "light" }: { isLive: boolean; tone?: "light" | "dark" }) {
   return (
     <div className="flex flex-wrap gap-3.5">
       <BrandButton asChild variant="gold">
@@ -54,8 +54,17 @@ function HeroCtas({ tone = "light" }: { tone?: "light" | "dark" }) {
       </BrandButton>
       <BrandButton asChild variant={tone === "light" ? "ghostLight" : "outline"}>
         <Link href="/live">
-          <LiveDot className="size-2 text-live" />
-          Culte en direct
+          {isLive ? (
+            <>
+              <LiveDot className="size-2 text-live" />
+              Culte en direct
+            </>
+          ) : (
+            <>
+              <span className="inline-block size-2 rounded-full bg-white/40 mr-1.5" />
+              Prochain Culte
+            </>
+          )}
         </Link>
       </BrandButton>
     </div>
@@ -82,7 +91,7 @@ function HeroImmersif({ content }: { content: HeroContent }) {
           {content.description}
         </p>
         <div className="flex flex-wrap justify-center gap-3.5">
-          <HeroCtas />
+          <HeroCtas isLive={content.isLive} />
         </div>
 
         {/* Service times */}
@@ -124,7 +133,7 @@ function HeroSplit({ content }: { content: HeroContent }) {
             {content.description}
           </p>
           <div className="mb-[34px]">
-            <HeroCtas />
+            <HeroCtas isLive={content.isLive} />
           </div>
           <div className="flex flex-wrap gap-[26px] border-t border-white/15 pt-6">
             {content.serviceTimes.map((s) => (
@@ -177,12 +186,21 @@ function HeroEditorial({ content }: { content: HeroContent }) {
               <BrandButton asChild variant="dark">
                 <Link href="/eglise">Nous rejoindre</Link>
               </BrandButton>
-              <BrandButton asChild variant="outline">
-                <Link href="/live">
-                  <LiveDot className="size-2 text-live" />
-                  Culte en direct
-                </Link>
-              </BrandButton>
+              {content.isLive ? (
+                <BrandButton asChild variant="outline">
+                  <Link href="/live">
+                    <LiveDot className="size-2 text-live" />
+                    Culte en direct
+                  </Link>
+                </BrandButton>
+              ) : (
+                <BrandButton asChild variant="outline" className="opacity-60">
+                  <Link href="/live">
+                    <span className="inline-block size-2 rounded-full bg-indigo/35 mr-1.5" />
+                    Prochain Culte
+                  </Link>
+                </BrandButton>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-x-7 gap-y-2 text-sm text-body-soft">

@@ -86,8 +86,61 @@ export function SettingsForm({
     initialSettings.live?.live_chat_enabled !== false
   );
   const [liveTitle, setLiveTitle] = useState((initialSettings.live?.live_title as string) ?? "");
+  const [liveDescription, setLiveDescription] = useState((initialSettings.live?.live_description as string) ?? "");
+  const [liveFallbackImage, setLiveFallbackImage] = useState((initialSettings.live?.live_fallback_image as string) ?? "");
+  const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
+
+  const [sermonTitle, setSermonTitle] = useState((initialSettings.live?.live_sermon_title as string) ?? "");
+  const [sermonReference, setSermonReference] = useState((initialSettings.live?.live_sermon_reference as string) ?? "");
+  const [sermonPoints, setSermonPoints] = useState<Array<{ id: string; text: string; verse: string }>>(
+    (initialSettings.live?.live_sermon_points as Array<{ id: string; text: string; verse: string }>) ?? []
+  );
+
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL.replace("/api/v1", "")
+    : "http://127.0.0.1:8000";
+
+  const getPreviewUrl = (urlOrBlob: string) => {
+    if (!urlOrBlob) return "";
+    if (urlOrBlob.startsWith("blob:") || urlOrBlob.startsWith("data:")) {
+      return urlOrBlob;
+    }
+    return urlOrBlob.startsWith("/") ? `${backendUrl}${urlOrBlob}` : urlOrBlob;
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (liveFallbackImage.startsWith("blob:")) {
+      URL.revokeObjectURL(liveFallbackImage);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setLiveFallbackImage(previewUrl);
+    setPendingLiveFallbackFile(file);
+  };
 
   // Dynamic list modifiers
+  const addSermonPoint = () => {
+    const nextNum = String(sermonPoints.length + 1).padStart(2, "0");
+    setSermonPoints([...sermonPoints, { id: nextNum, text: "", verse: "" }]);
+  };
+
+  const removeSermonPoint = (index: number) => {
+    const updated = sermonPoints.filter((_, i) => i !== index).map((p, idx) => ({
+      ...p,
+      id: String(idx + 1).padStart(2, "0"),
+    }));
+    setSermonPoints(updated);
+  };
+
+  const updateSermonPointField = (index: number, field: "text" | "verse" | "id", value: string) => {
+    setSermonPoints(
+      sermonPoints.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+  };
+
   const addSchedule = () => {
     setWeeklySchedule([...weeklySchedule, { day: "DIMANCHE", time: "09:00", label: "Nouveau Culte" }]);
   };
@@ -199,9 +252,32 @@ export function SettingsForm({
           { key: "live_status", value: liveStatus, group: "live" },
           { key: "live_chat_enabled", value: liveChatEnabled, group: "live" },
           { key: "live_title", value: liveTitle, group: "live" },
+          { key: "live_description", value: liveDescription, group: "live" },
+          { 
+            key: "live_fallback_image", 
+            value: liveFallbackImage.startsWith("blob:") ? "" : liveFallbackImage, 
+            group: "live" 
+          },
+          { key: "live_sermon_title", value: sermonTitle, group: "live" },
+          { key: "live_sermon_reference", value: sermonReference, group: "live" },
+          { key: "live_sermon_points", value: sermonPoints, group: "live" },
         ];
 
-        await updateAdminSettings(payload);
+        const files: Record<string, File | null> = {};
+        if (pendingLiveFallbackFile) {
+          files["live_fallback_image"] = pendingLiveFallbackFile;
+        }
+
+        const res = (await updateAdminSettings(payload, files)) as {
+          data: Record<string, Record<string, unknown>>;
+        };
+
+        if (res?.data?.live) {
+          const newFallbackImage = (res.data.live.live_fallback_image as string) ?? "";
+          setLiveFallbackImage(newFallbackImage);
+          setPendingLiveFallbackFile(null);
+        }
+
         setStatus({ type: "success", message: "Paramètres mis à jour avec succès !" });
       } catch (err) {
         const error = err as Error;
@@ -731,6 +807,17 @@ export function SettingsForm({
             </label>
 
             <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Description de la diffusion</span>
+              <textarea
+                value={liveDescription}
+                onChange={(e) => setLiveDescription(e.target.value)}
+                rows={3}
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold resize-none"
+                placeholder="ex: Suivez notre culte de ce matin avec notre pasteur principal..."
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
               <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">URL du flux vidéo (YouTube / Vimeo embed)</span>
               <input
                 value={liveEmbedUrl}
@@ -739,6 +826,174 @@ export function SettingsForm({
                 placeholder="ex: https://www.youtube.com/embed/live_stream?channel=YOUR_CHANNEL_ID"
               />
             </label>
+
+            {/* Sermon Notes Section */}
+            <div className="border-t border-[rgba(40,25,80,0.06)] pt-6 flex flex-col gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-indigo">Notes du Sermon Actuel</h3>
+                <p className="text-xs text-body">Gérez le titre du sermon, la référence et la liste des points clés diffusés sur la page du live.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Titre du sermon</span>
+                  <input
+                    value={sermonTitle}
+                    onChange={(e) => setSermonTitle(e.target.value)}
+                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold"
+                    placeholder="ex: La grâce qui transforme"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Référence biblique principale</span>
+                  <input
+                    value={sermonReference}
+                    onChange={(e) => setSermonReference(e.target.value)}
+                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold"
+                    placeholder="ex: Romains 5.1-11"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Points clés du sermon</span>
+                
+                <div className="flex flex-col gap-3">
+                  {sermonPoints.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-3 bg-cream/30 p-3 rounded-xl border border-[rgba(40,25,80,0.04)] animate-fade-up">
+                      <div className="flex flex-col gap-1.5 w-12">
+                        <span className="text-[10px] font-bold text-body-strong uppercase text-center">N°</span>
+                        <input
+                          type="text"
+                          value={item.id}
+                          onChange={(e) => updateSermonPointField(idx, "id", e.target.value)}
+                          className="w-full text-center rounded-lg border border-[rgba(40,25,80,0.1)] bg-white px-1.5 py-1.5 text-xs text-indigo font-bold outline-none"
+                          placeholder="01"
+                        />
+                      </div>
+                      
+                      <div className="flex-1 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-body-strong uppercase">Texte du point</span>
+                        <input
+                          type="text"
+                          value={item.text}
+                          onChange={(e) => updateSermonPointField(idx, "text", e.target.value)}
+                          className="w-full rounded-lg border border-[rgba(40,25,80,0.1)] bg-white px-2 py-1.5 text-xs text-indigo outline-none focus:border-gold"
+                          placeholder="Contenu du point clé"
+                        />
+                      </div>
+
+                      <div className="w-[140px] flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-body-strong uppercase">Verset / Référence</span>
+                        <input
+                          type="text"
+                          value={item.verse}
+                          onChange={(e) => updateSermonPointField(idx, "verse", e.target.value)}
+                          className="w-full rounded-lg border border-[rgba(40,25,80,0.1)] bg-white px-2 py-1.5 text-xs text-indigo outline-none focus:border-gold"
+                          placeholder="ex: Romains 5.1"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeSermonPoint(idx)}
+                        className="self-end mb-1 text-live hover:bg-live/10 p-2 rounded transition-colors cursor-pointer"
+                        title="Supprimer ce point"
+                      >
+                        <Trash className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addSermonPoint}
+                  className="flex items-center gap-1.5 self-start rounded-xl border border-dashed border-gold bg-gold/5 px-4 py-2.5 text-xs font-bold text-gold hover:bg-gold/10 transition cursor-pointer"
+                >
+                  <Plus className="size-3.5" /> Ajouter un point
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Image de couverture / Poster (Hors Direct)</span>
+              
+              <div 
+                className="group relative flex aspect-video w-full max-w-[580px] flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-[#e2b85f]/30 bg-[#160f33] text-center transition-all duration-300 hover:border-[#e2b85f] shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]"
+              >
+                {liveFallbackImage ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img 
+                      src={getPreviewUrl(liveFallbackImage)} 
+                      alt="Aperçu couverture" 
+                      className="absolute inset-0 size-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    />
+                    
+                    {/* Overlay */}
+                    <div className="absolute inset-0 bg-[#160f33]/60 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-4">
+                      <label className="cursor-pointer rounded-xl bg-[#e2b85f] hover:bg-[#e2b85f]/90 text-indigo px-5 py-2.5 text-xs font-bold tracking-wide transition shadow-lg flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="size-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
+                        Remplacer l’image
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageSelect}
+                          className="hidden"
+                        />
+                      </label>
+                      
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setLiveFallbackImage("");
+                          setPendingLiveFallbackFile(null);
+                        }}
+                        className="flex items-center gap-1 text-xs font-bold text-red-400 hover:text-red-300 transition"
+                      >
+                        <Trash className="size-3.5" /> Supprimer la couverture
+                      </button>
+                    </div>
+
+                    {/* Bottom Indicator */}
+                    <div className="absolute bottom-3 left-3 rounded-md bg-ink/75 px-2.5 py-1 text-[10px] font-bold text-[#e2b85f] tracking-wide backdrop-blur-sm border border-white/5 opacity-100 group-hover:opacity-0 transition-opacity duration-300">
+                      Image Active
+                    </div>
+                  </>
+                ) : (
+                  <label className="flex size-full cursor-pointer flex-col items-center justify-center p-6">
+                    <div className="mb-3 flex size-[56px] items-center justify-center rounded-full bg-[#e2b85f]/10 text-[#e2b85f] transition-transform duration-300 group-hover:scale-110 group-hover:bg-[#e2b85f]/20">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="size-6">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                      </svg>
+                    </div>
+                    <span className="block text-sm font-bold text-[#faf8f4] tracking-wide">
+                      Glisser-déposer ou cliquer pour charger
+                    </span>
+                    <span className="mt-1 block text-xs text-white/50">
+                      Format PNG, JPG ou WEBP. Max 2 Mo.
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {!liveFallbackImage && (
+                <div className="rounded-lg border border-[#e2b85f]/20 bg-[#e2b85f]/5 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-[#e2b85f] font-medium max-w-[580px]">
+                  ⚠️ <strong>Avertissement :</strong> En l’absence d’image personnalisée, le site utilisera l’image de couverture texturée par défaut pour la salle d’attente.
+                </div>
+              )}
+            </div>
           </div>
         )}
 

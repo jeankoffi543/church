@@ -6,11 +6,11 @@ import { ShieldCheck, Send, Check, Download, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   INITIAL_CHAT,
-  SERMON_NOTES,
   type ChatMessage,
 } from "@/lib/data";
+import type { SermonPoint } from "@/lib/api";
 
-export type LiveTab = "chat" | "priere" | "notes";
+export type LiveTab = "chat" | "priere" | "notes" | "description";
 
 const TABS: { id: LiveTab; label: string }[] = [
   { id: "chat", label: "Tchat" },
@@ -22,13 +22,27 @@ export function LivePanel({
   tab,
   onTabChange,
   chatEnabled = true,
+  isLive = false,
+  description = "",
+  sermonTitle = "La grâce qui transforme",
+  sermonReference = "Romains 5.1-11",
+  sermonPoints = [],
 }: {
   tab: LiveTab;
   onTabChange: (t: LiveTab) => void;
   chatEnabled?: boolean;
+  isLive?: boolean;
+  description?: string;
+  sermonTitle?: string;
+  sermonReference?: string;
+  sermonPoints?: SermonPoint[];
 }) {
-  // Hide the chat tab when the module is disabled in the backoffice.
-  const tabs = chatEnabled ? TABS : TABS.filter((t) => t.id !== "chat");
+  // If isLive is true, add Description tab after Notes
+  const baseTabs = [...TABS];
+  if (isLive) {
+    baseTabs.push({ id: "description", label: "Description" });
+  }
+  const tabs = chatEnabled ? baseTabs : baseTabs.filter((t) => t.id !== "chat");
 
   return (
     <div className="flex max-h-[660px] min-h-[540px] flex-[1_1_340px] flex-col overflow-hidden rounded-[18px] border border-white/10 bg-white/[0.04]">
@@ -50,7 +64,14 @@ export function LivePanel({
 
       {tab === "chat" && chatEnabled && <ChatTab />}
       {tab === "priere" && <PrayerTab />}
-      {tab === "notes" && <NotesTab />}
+      {tab === "notes" && (
+        <NotesTab
+          sermonTitle={sermonTitle}
+          sermonReference={sermonReference}
+          sermonPoints={sermonPoints}
+        />
+      )}
+      {tab === "description" && isLive && <DescriptionTab description={description} />}
     </div>
   );
 }
@@ -181,34 +202,86 @@ function PrayerTab() {
 }
 
 /* ── Notes ────────────────────────────────────────────────── */
-function NotesTab() {
+function NotesTab({
+  sermonTitle,
+  sermonReference,
+  sermonPoints,
+}: {
+  sermonTitle: string;
+  sermonReference: string;
+  sermonPoints: SermonPoint[];
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const textToCopy = `${sermonTitle}\n${sermonReference}\n\n` + 
+      sermonPoints.map(p => `${p.id}. ${p.text} (${p.verse})`).join("\n");
+    
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto p-5">
+    <div className="flex-1 overflow-y-auto p-5 animate-fade-up">
       <span className="text-[11px] font-bold tracking-[0.12em] text-gold uppercase">
         Notes du sermon
       </span>
-      <h3 className="mt-1.5 mb-1 font-display text-2xl text-white italic">
-        La grâce qui transforme
+      <h3 className="mt-1.5 mb-1 font-serif text-2xl text-[#e2b85f] italic">
+        {sermonTitle}
       </h3>
-      <div className="mb-5 text-[13px] text-white/55">Romains 5.1-11</div>
+      <div className="mb-5 text-[13.5px] font-serif text-[#e2b85f]/80 italic">
+        {sermonReference}
+      </div>
       <div className="flex flex-col gap-3.5">
-        {SERMON_NOTES.map((p) => (
-          <div key={p.n} className="flex items-start gap-3">
-            <span className="w-6 shrink-0 font-display text-lg font-bold text-gold-dark italic">
-              {p.n}
+        {sermonPoints.map((p) => (
+          <div key={p.id} className="flex items-start gap-4">
+            <span className="w-6 shrink-0 font-display text-lg font-bold text-[#e2b85f]/60 italic">
+              {p.id}
             </span>
             <div>
-              <div className="text-[14.5px] font-semibold leading-tight text-white">
-                {p.title}
+              <div className="text-[14.5px] font-semibold leading-tight text-[#faf8f4]">
+                {p.text}
               </div>
-              <div className="mt-0.5 text-[12.5px] text-white/50">{p.verse}</div>
+              <div className="mt-0.5 text-[12.5px] text-[#9a8fb5]">{p.verse}</div>
             </div>
           </div>
         ))}
       </div>
-      <button className="mt-[22px] flex w-full items-center justify-center gap-1.5 rounded-[11px] border border-white/15 bg-white/10 py-3 text-[13px] font-semibold text-white transition hover:bg-white/15">
-        <Download className="size-4" /> Télécharger les notes (PDF)
+      <button 
+        onClick={handleCopy}
+        className="mt-[22px] flex w-full items-center justify-center gap-1.5 rounded-[11px] border border-white/15 bg-white/10 py-3 text-[13px] font-semibold text-white transition hover:bg-white/15 cursor-pointer"
+      >
+        {copied ? (
+          <>
+            <Check className="size-4 text-gold animate-scale-up" /> Notes copiées !
+          </>
+        ) : (
+          <>
+            <Download className="size-4" /> Copier les notes
+          </>
+        )}
       </button>
+    </div>
+  );
+}
+
+/* ── Description ──────────────────────────────────────────── */
+function DescriptionTab({ description }: { description: string }) {
+  return (
+    <div className="flex-1 overflow-y-auto p-5 animate-fade-up">
+      <span className="text-[11px] font-bold tracking-[0.12em] text-gold uppercase">
+        À propos de la diffusion
+      </span>
+      <h3 className="mt-1.5 mb-3 font-display text-2xl text-white italic">
+        Description du Direct
+      </h3>
+      <p className="text-sm leading-relaxed text-white/70 whitespace-pre-wrap">
+        {description || "Aucune description fournie pour ce direct."}
+      </p>
     </div>
   );
 }

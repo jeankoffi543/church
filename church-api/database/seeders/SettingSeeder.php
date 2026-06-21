@@ -54,6 +54,16 @@ class SettingSeeder extends Seeder
             ['key' => 'live_status', 'group' => 'live', 'value' => false],
             ['key' => 'live_chat_enabled', 'group' => 'live', 'value' => true],
             ['key' => 'live_title', 'group' => 'live', 'value' => 'Culte du dimanche'],
+            ['key' => 'live_description', 'group' => 'live', 'value' => 'Diffusion en direct depuis le temple principal MFM Ficgayo'],
+            ['key' => 'live_sermon_title', 'group' => 'live', 'value' => 'La grâce qui transforme'],
+            ['key' => 'live_sermon_reference', 'group' => 'live', 'value' => 'Romains 5.1-11'],
+            ['key' => 'live_sermon_points', 'group' => 'live', 'value' => [
+                ['id' => '01', 'text' => 'Justifiés par la foi, nous avons la paix avec Dieu', 'verse' => 'Romains 5.1'],
+                ['id' => '02', 'text' => 'Par lui nous avons accès à cette grâce', 'verse' => 'Romains 5.2'],
+                ['id' => '03', 'text' => 'Nous nous glorifions même dans la tribulation', 'verse' => 'Romains 5.3-4'],
+                ['id' => '04', 'text' => 'L\'amour de Dieu répandu dans nos cœurs', 'verse' => 'Romains 5.5'],
+                ['id' => '05', 'text' => 'Christ est mort pour nous, pécheurs', 'verse' => 'Romains 5.8'],
+            ]],
         ];
 
         foreach ($settings as $setting) {
