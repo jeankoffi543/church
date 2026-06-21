@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\User;
+
 /**
  * Single source of truth for the access-control model of the backoffice.
  *
@@ -17,6 +19,22 @@ final class AccessControl
      * `Gate::before` hook — its permissions are never read from the database.
      */
     public const string SUPER_ADMIN = 'Super Admin';
+
+    /** Pastoral oversight — validates recruitment for every ministry. */
+    public const string PASTEUR = 'Pasteur';
+
+    /** Ministry leader — validates recruitment only for the ministry they lead. */
+    public const string MINISTRY_CHIEF = 'Chef de Ministère';
+
+    /**
+     * Whether the user may validate recruitment for *any* ministry. Super
+     * Admins and Pasteurs are global validators; everyone else (e.g. a ministry
+     * chief) is restricted to the ministry they personally lead.
+     */
+    public static function validatesMinistriesGlobally(User $user): bool
+    {
+        return $user->hasRole(self::SUPER_ADMIN) || $user->hasRole(self::PASTEUR);
+    }
 
     /**
      * The full permission catalogue, grouped by functional category. The keys
@@ -49,6 +67,9 @@ final class AccessControl
             'Cellules' => [
                 ['name' => 'view_cells', 'label' => 'Consulter les groupes de maison / cellules'],
                 ['name' => 'process_cells', 'label' => 'Traiter et gérer les groupes de maison / cellules'],
+            ],
+            'Recrutement' => [
+                ['name' => 'validate_ministry_applications', 'label' => 'Voir et valider/rejeter les candidatures aux ministères'],
             ],
             'Finances' => [
                 ['name' => 'view_offerings', 'label' => 'Consulter les dons et offrandes'],
@@ -93,7 +114,7 @@ final class AccessControl
     public static function defaultRoles(): array
     {
         return [
-            'Pasteurs' => [
+            self::PASTEUR => [
                 'manage_settings', 'manage_sermons', 'manage_events',
                 'view_prayers', 'process_prayers', 'manage_prayer_settings',
                 'view_cells', 'process_cells', 'manage_live',
@@ -101,17 +122,24 @@ final class AccessControl
                 'view_offerings', 'manage_offerings',
                 'send_notifications', 'manage_announcements',
                 'moderate_comments', 'manage_testimonies',
+                'validate_ministry_applications',
             ],
-            'Intercesseurs' => [
+            // Ministry leader: may validate recruitment, but only for the
+            // ministry they actually lead (enforced contextually in the
+            // controller, since a single permission cannot scope to a row).
+            self::MINISTRY_CHIEF => [
+                'view_dashboard', 'validate_ministry_applications',
+            ],
+            'Intercesseur' => [
                 'view_prayers', 'process_prayers', 'view_dashboard', 'manage_testimonies',
             ],
             'Média/Régie' => [
                 'manage_live', 'manage_sermons', 'moderate_comments', 'send_notifications', 'view_dashboard',
             ],
-            'Huissiers' => [
+            'Huissier' => [
                 'view_cells', 'view_dashboard',
             ],
-            'Responsables de cellule' => [
+            'Responsable de cellule' => [
                 'view_cells', 'process_cells', 'view_dashboard',
             ],
         ];

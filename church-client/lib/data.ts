@@ -46,10 +46,12 @@ export const SERVICE_TIMES: ServiceTime[] = [
 ];
 
 export type Ministry = {
+  id?: number;
   name: string;
   initial: string;
   desc: string;
   schedule: string;
+  image?: string | null;
 };
 
 export const MINISTRIES: Ministry[] = [

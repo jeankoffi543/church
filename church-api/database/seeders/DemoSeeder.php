@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Ministry;
+use App\Models\MinistryApplication;
 use App\Models\User;
 use App\Support\AccessControl;
 use Illuminate\Database\Seeder;
@@ -41,6 +43,43 @@ class DemoSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $this->seedUsers();
+        $this->seedRecruitment();
+    }
+
+    /**
+     * Designate ministry chiefs and seed sample applications so the recruitment
+     * screens are populated for testing.
+     */
+    private function seedRecruitment(): void
+    {
+        $ministries = Ministry::query()->get();
+
+        if ($ministries->isEmpty()) {
+            return;
+        }
+
+        $chiefPool = User::query()
+            ->where('email', 'like', '%@'.self::DEMO_DOMAIN)
+            ->where('is_active', true)
+            ->limit($ministries->count())
+            ->get();
+
+        foreach ($ministries as $index => $ministry) {
+            $chief = $chiefPool[$index] ?? null;
+
+            if ($chief !== null) {
+                $chief->assignRole(AccessControl::MINISTRY_CHIEF);
+                $ministry->update(['chef_id' => $chief->id]);
+            }
+
+            // A few pending applications per ministry, plus the occasional
+            // already-processed one for visual variety.
+            MinistryApplication::factory()->count(3)->create(['ministry_id' => $ministry->id]);
+
+            if ($index % 3 === 0) {
+                MinistryApplication::factory()->approved()->create(['ministry_id' => $ministry->id]);
+            }
+        }
     }
 
     /**

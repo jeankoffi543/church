@@ -3,7 +3,9 @@
 use App\Models\Ministry;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 it('blocks admin routes without a token', function () {
     $this->getJson('/api/v1/admin/ministries')->assertUnauthorized();
@@ -52,6 +54,38 @@ it('creates a ministry when authenticated', function () {
         ->assertJsonPath('data.initial', 'I');
 
     expect(Ministry::where('name', 'Intercession')->exists())->toBeTrue();
+});
+
+it('uploads a cover image when creating a ministry', function () {
+    Storage::fake('public');
+    actingAsSuperAdmin();
+
+    $response = $this->post('/api/v1/admin/ministries', [
+        'name' => 'Louange',
+        'image' => UploadedFile::fake()->image('cover.jpg'),
+    ])->assertCreated();
+
+    $image = $response->json('data.image');
+    expect($image)->toStartWith('/storage/ministries/');
+    Storage::disk('public')
+        ->assertExists(str_replace('/storage/', '', $image));
+});
+
+it('replaces and clears a ministry cover image on update', function () {
+    Storage::fake('public');
+    actingAsSuperAdmin();
+
+    $created = $this->post('/api/v1/admin/ministries', [
+        'name' => 'Médias',
+        'image' => UploadedFile::fake()->image('a.jpg'),
+    ])->assertCreated();
+    $id = $created->json('data.id');
+
+    // Remove the image via the flag.
+    $this->post("/api/v1/admin/ministries/{$id}", [
+        '_method' => 'PUT',
+        'remove_image' => '1',
+    ])->assertOk()->assertJsonPath('data.image', null);
 });
 
 it('validates ministry creation', function () {

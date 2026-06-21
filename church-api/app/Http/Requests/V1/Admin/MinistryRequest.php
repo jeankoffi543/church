@@ -4,6 +4,7 @@ namespace App\Http\Requests\V1\Admin;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class MinistryRequest extends FormRequest
 {
@@ -13,6 +14,21 @@ class MinistryRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    /**
+     * Normalise multipart string flags ("1"/"true") into real booleans so the
+     * validator and Eloquent receive proper types.
+     */
+    protected function prepareForValidation(): void
+    {
+        foreach (['is_active', 'remove_image'] as $flag) {
+            if ($this->has($flag)) {
+                $this->merge([
+                    $flag => filter_var($this->input($flag), FILTER_VALIDATE_BOOLEAN),
+                ]);
+            }
+        }
     }
 
     /**
@@ -30,6 +46,11 @@ class MinistryRequest extends FormRequest
             'schedule' => ['nullable', 'string', 'max:255'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['boolean'],
+            // Designated leader; `null` clears the assignment.
+            'chef_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
+            // Cover image upload + an explicit "remove existing image" flag.
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'remove_image' => ['boolean'],
         ];
     }
 }

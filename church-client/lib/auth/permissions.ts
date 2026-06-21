@@ -16,6 +16,7 @@ export const PERMISSIONS = {
   manageSermons: "manage_sermons",
   manageEvents: "manage_events",
   manageAccess: "manage_access",
+  validateMinistryApplications: "validate_ministry_applications",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
