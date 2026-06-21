@@ -98,21 +98,21 @@ it('flags a super admin and lists every permission in me', function () {
 
 it('creates a servant with assigned groups', function () {
     actingAsSuperAdmin();
-    Role::findOrCreate('Intercesseurs', 'web');
+    Role::findOrCreate('Intercesseur', 'web');
 
     $this->postJson('/api/v1/admin/admin-users', [
         'name' => 'Jean Koffi',
         'email' => 'jean@mfm-ficgayo.ci',
         'password' => 'secret-password',
         'is_active' => true,
-        'roles' => ['Intercesseurs'],
+        'roles' => ['Intercesseur'],
     ])
         ->assertCreated()
         ->assertJsonPath('data.name', 'Jean Koffi')
-        ->assertJsonPath('data.roles', ['Intercesseurs']);
+        ->assertJsonPath('data.roles', ['Intercesseur']);
 
     $user = User::where('email', 'jean@mfm-ficgayo.ci')->first();
-    expect($user->hasRole('Intercesseurs'))->toBeTrue()
+    expect($user->hasRole('Intercesseur'))->toBeTrue()
         ->and(Hash::check('secret-password', $user->password))->toBeTrue();
 });
 

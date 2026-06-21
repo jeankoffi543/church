@@ -6,32 +6,36 @@ import {
   Search, 
   Edit, 
   Trash2, 
-  Loader2, 
-  X, 
-  Eye, 
-  EyeOff, 
-  CheckCircle, 
-  AlertCircle 
+  Loader2,
+  X,
+  Eye,
+  EyeOff,
+  CheckCircle,
+  AlertCircle,
+  ImagePlus,
 } from "lucide-react";
 import { createMinistry, updateMinistry, deleteMinistry } from "@/lib/admin-api";
+import type { AdminMinistry, AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import { assetUrl } from "@/lib/asset-url";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import Link from "next/link";
+import { SearchableSelect } from "../_components/searchable-select";
+import { Pagination } from "../_components/pagination";
 
-type Ministry = {
-  id: number;
-  name: string;
-  description: string | null;
-  schedule: string | null;
-  sort_order: number;
-  is_active: boolean;
-};
+type Ministry = AdminMinistry;
 
 export function MinistriesManager({
   initialMinistries,
+  staff,
 }: {
   initialMinistries: Ministry[];
+  staff: AdminUser[];
 }) {
   const [ministries, setMinistries] = useState<Ministry[]>(initialMinistries);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -45,6 +49,41 @@ export function MinistriesManager({
   const [schedule, setSchedule] = useState("");
   const [sortOrder, setSortOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
+  const [chefId, setChefId] = useState<number | null>(null);
+  // Cover image: a freshly picked file, and/or removal of the existing one.
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+
+  const staffOptions = staff.map((u) => ({
+    value: u.id,
+    label: u.name,
+    sublabel: u.email,
+  }));
+
+  const resetImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(false);
+  };
+
+  const handlePickImage = (file: File | null) => {
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  };
+
+  const handleClearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(true);
+  };
+
+  // Resolve what to show in the upload box: a new pick, or the existing image.
+  const currentImageSrc =
+    imagePreview ??
+    (!removeImage && editingMinistry?.image ? assetUrl(editingMinistry.image) : null);
 
   const openCreateModal = () => {
     setEditingMinistry(null);
@@ -53,6 +92,8 @@ export function MinistriesManager({
     setSchedule("");
     setSortOrder(0);
     setIsActive(true);
+    setChefId(null);
+    resetImage();
     setIsModalOpen(true);
   };
 
@@ -63,6 +104,8 @@ export function MinistriesManager({
     setSchedule(ministry.schedule ?? "");
     setSortOrder(ministry.sort_order);
     setIsActive(ministry.is_active);
+    setChefId(ministry.chef_id);
+    resetImage();
     setIsModalOpen(true);
   };
 
@@ -100,15 +143,16 @@ export function MinistriesManager({
           schedule: schedule || null,
           sort_order: Number(sortOrder),
           is_active: isActive,
+          chef_id: chefId,
         };
 
         if (editingMinistry) {
-          const res = await updateMinistry(editingMinistry.id, payload);
+          const res = await updateMinistry(editingMinistry.id, payload, imageFile, removeImage);
           const updated = res.data as Ministry;
           setMinistries(ministries.map((m) => (m.id === updated.id ? updated : m)));
           setStatus({ type: "success", message: `Le ministère "${name}" a été mis à jour.` });
         } else {
-          const res = await createMinistry(payload);
+          const res = await createMinistry({ ...payload, name }, imageFile);
           const created = res.data as Ministry;
           setMinistries([...ministries, created]);
           setStatus({ type: "success", message: `Le ministère "${name}" a été créé.` });
@@ -126,6 +170,11 @@ export function MinistriesManager({
     (m.description && m.description.toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Client-side pagination (same component as the applications screen).
+  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -141,12 +190,20 @@ export function MinistriesManager({
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-        >
-          <Plus className="size-4" /> Nouveau Ministère
-        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/admins/ministries/applications"
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo/20 bg-white px-5 py-3 text-sm font-bold text-indigo transition hover:bg-cream"
+          >
+            Voir les Candidatures
+          </Link>
+          <button
+            onClick={openCreateModal}
+            className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+          >
+            <Plus className="size-4" /> Nouveau Ministère
+          </button>
+        </div>
       </header>
 
       {status && (
@@ -188,13 +245,14 @@ export function MinistriesManager({
               <tr>
                 <th className="px-6 py-4">Ordre</th>
                 <th className="px-6 py-4">Nom</th>
+                <th className="px-6 py-4">Chef</th>
                 <th className="px-6 py-4">Programme / Horaires</th>
                 <th className="px-6 py-4">Statut</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {filtered.map((ministry) => (
+              {paged.map((ministry) => (
                 <tr key={ministry.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs font-semibold text-faint">{ministry.sort_order}</td>
                   <td className="px-6 py-4">
@@ -204,6 +262,18 @@ export function MinistriesManager({
                         <p className="mt-0.5 text-xs text-body line-clamp-1">{ministry.description}</p>
                       )}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    {ministry.chef ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-[10px] font-bold text-indigo">
+                          {ministry.chef.name.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-xs font-semibold text-indigo">{ministry.chef.name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs italic text-faint">Non assigné</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-xs font-medium text-body-soft">
                     {ministry.schedule ?? "—"}
@@ -242,7 +312,7 @@ export function MinistriesManager({
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-xs text-body">
+                  <td colSpan={6} className="px-6 py-10 text-center text-xs text-body">
                     Aucun ministère trouvé.
                   </td>
                 </tr>
@@ -250,24 +320,35 @@ export function MinistriesManager({
             </tbody>
           </table>
         </div>
+        {filtered.length > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={filtered.length}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="ministères"
+          />
+        )}
       </div>
 
       {/* Modal Dialog */}
-      {isModalOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-xs" onClick={closeModal} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[500px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
-            <div className="contents">
-              <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-display text-xl font-bold text-indigo italic">
-                {editingMinistry ? "Modifier le ministère" : "Créer un ministère"}
-              </h3>
-              <button onClick={closeModal} className="text-faint hover:text-indigo">
-                <X className="size-5" />
-              </button>
-            </div>
+      <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) closeModal(); }}>
+        <DialogContent
+          showCloseButton
+          className="w-[95vw] md:max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border-0 bg-white p-6 gap-0 outline-none"
+        >
+          <div className="mb-5 flex items-center justify-between">
+            <h3 className="font-display text-xl font-bold text-indigo italic">
+              {editingMinistry ? "Modifier le ministère" : "Créer un ministère"}
+            </h3>
+          </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Nom du ministère *</span>
                 <input
@@ -290,6 +371,58 @@ export function MinistriesManager({
                   className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
                 />
               </label>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Chef du ministère</span>
+                <SearchableSelect
+                  options={staffOptions}
+                  value={chefId}
+                  onChange={setChefId}
+                  placeholder="Assigner un responsable…"
+                  clearLabel="— Aucun chef —"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Image du ministère</span>
+                {currentImageSrc ? (
+                  <div className="relative overflow-hidden rounded-xl border border-[rgba(40,25,80,0.12)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={currentImageSrc} alt="Aperçu du ministère" className="h-40 w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={handleClearImage}
+                      className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white backdrop-blur-sm transition hover:bg-live"
+                      title="Retirer l'image"
+                    >
+                      <X className="size-4" />
+                    </button>
+                    <label className="absolute bottom-2 right-2 cursor-pointer rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-indigo shadow-sm backdrop-blur-sm transition hover:bg-white">
+                      Changer
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
+                    <span className="flex size-11 items-center justify-center rounded-full bg-indigo/5 text-indigo">
+                      <ImagePlus className="size-5" />
+                    </span>
+                    <span className="text-[13px] font-bold text-indigo">Importer une image</span>
+                    <span className="text-[11px] text-faint">JPG, PNG ou WEBP · max 4 Mo</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1.5">
@@ -345,11 +478,9 @@ export function MinistriesManager({
                   Enregistrer
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      </>
-      )}
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

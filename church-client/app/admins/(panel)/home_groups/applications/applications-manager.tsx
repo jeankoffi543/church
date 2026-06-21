@@ -3,19 +3,19 @@
 import { useState, useTransition } from "react";
 import {
   Search,
-  CheckCircle2,
+  CheckCircle,
+  AlertCircle,
   XCircle,
   Clock,
-  Loader2,
-  X,
-  Phone,
-  User,
+  Inbox,
   Mail,
+  Phone,
+  MessageCircle,
+  ShieldCheck,
+  Loader2,
   Home,
-  Calendar,
-  AlertTriangle,
+  User,
   ArrowLeft,
-  Check,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -26,8 +26,19 @@ import {
   rejectHomeGroupApplication,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 type Feedback = { type: "success" | "error"; message: string } | null;
+
+const STATUS_CONFIG: Record<
+  AdminHomeGroupApplication["status"],
+  { label: string; bg: string; text: string; dot: string; pulse?: boolean }
+> = {
+  pending: { label: "En attente", bg: "bg-gold/10", text: "text-gold-dark", dot: "bg-gold", pulse: true },
+  approved: { label: "Approuvée", bg: "bg-online/10", text: "text-online", dot: "bg-online" },
+  rejected: { label: "Rejetée", bg: "bg-live/10", text: "text-live", dot: "bg-live" },
+};
 
 export function ApplicationsManager({
   initialApplications,
@@ -64,34 +75,48 @@ export function ApplicationsManager({
     return false;
   };
 
-  const handleApprove = (appId: number) => {
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionNotePublic, setDecisionNotePublic] = useState(false);
+
+  const openApp = (app: AdminHomeGroupApplication) => {
+    setSelectedApp(app);
+    setDecisionNote(app.decision_note ?? "");
+    setDecisionNotePublic(app.decision_note_public ?? false);
     setStatus(null);
-    startTransition(async () => {
-      try {
-        const res = await approveHomeGroupApplication(appId);
-        setApplications((prev) =>
-          prev.map((app) => (app.id === appId ? res.data : app))
-        );
-        setSelectedApp(res.data);
-        setStatus({ type: "success", message: "La demande a été acceptée avec succès." });
-      } catch (err) {
-        setStatus({ type: "error", message: (err as Error).message || "Impossible d'approuver cette demande." });
-      }
-    });
   };
 
-  const handleReject = (appId: number) => {
+  const handleDecision = (
+    application: AdminHomeGroupApplication,
+    decision: "approve" | "reject"
+  ) => {
     setStatus(null);
     startTransition(async () => {
       try {
-        const res = await rejectHomeGroupApplication(appId);
+        const payload = {
+          decision_note: decisionNote.trim() || null,
+          decision_note_public: decisionNotePublic,
+        };
+        const res =
+          decision === "approve"
+            ? await approveHomeGroupApplication(application.id, payload)
+            : await rejectHomeGroupApplication(application.id, payload);
         setApplications((prev) =>
-          prev.map((app) => (app.id === appId ? res.data : app))
+          prev.map((a) => (a.id === application.id ? res.data : a))
         );
-        setSelectedApp(res.data);
-        setStatus({ type: "success", message: "La demande a été rejetée." });
+        setStatus({
+          type: "success",
+          message: decision === "approve" ? "Demande d'adhésion approuvée." : "Demande d'adhésion rejetée.",
+        });
+        setSelectedApp(null);
       } catch (err) {
-        setStatus({ type: "error", message: (err as Error).message || "Impossible de rejeter cette demande." });
+        const message = (err as Error).message;
+        setStatus({
+          type: "error",
+          message:
+            message === "FORBIDDEN"
+              ? "Accès restreint : vous n'êtes pas autorisé à traiter cette demande."
+              : message || "Action impossible.",
+        });
       }
     });
   };
@@ -127,9 +152,12 @@ export function ApplicationsManager({
     }
   };
 
-  const getWhatsAppLink = (phoneStr: string) => {
-    const cleanDigits = phoneStr.replace(/\D/g, "");
-    return `https://api.whatsapp.com/send?phone=${cleanDigits}`;
+  const whatsappUrl = (application: AdminHomeGroupApplication) => {
+    const phone = application.phone.replace(/[^0-9]/g, "");
+    const text = encodeURIComponent(
+      `Bonjour ${application.name}, merci pour votre demande d'adhésion au groupe de maison « ${application.home_group?.name ?? ""} » à MFM Ficgayo.`
+    );
+    return `https://wa.me/${phone}?text=${text}`;
   };
 
   return (
@@ -158,7 +186,7 @@ export function ApplicationsManager({
         </div>
       </header>
 
-      {status && !selectedApp && (
+      {status && (
         <div
           className={cn(
             "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
@@ -168,9 +196,9 @@ export function ApplicationsManager({
           )}
         >
           {status.type === "success" ? (
-            <CheckCircle2 className="size-5 shrink-0 text-online" />
+            <CheckCircle className="size-5 shrink-0 text-online" />
           ) : (
-            <AlertTriangle className="size-5 shrink-0 text-live" />
+            <AlertCircle className="size-5 shrink-0 text-live" />
           )}
           <p className="font-semibold">{status.message}</p>
         </div>
@@ -258,10 +286,7 @@ export function ApplicationsManager({
                 filteredApplications.map((app) => (
                   <tr
                     key={app.id}
-                    onClick={() => {
-                      setSelectedApp(app);
-                      setStatus(null);
-                    }}
+                    onClick={() => openApp(app)}
                     className="group/row cursor-pointer transition hover:bg-cream/20"
                   >
                     <td className="whitespace-nowrap px-6 py-4 text-xs text-body">
@@ -290,35 +315,18 @@ export function ApplicationsManager({
                     <td className="px-6 py-4">
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border",
-                          app.status === "pending" && "bg-amber-50 text-amber-700 border-amber-200",
-                          app.status === "approved" && "bg-emerald-50 text-emerald-700 border-emerald-200",
-                          app.status === "rejected" && "bg-rose-50 text-rose-700 border-rose-200"
+                          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
+                          STATUS_CONFIG[app.status].bg,
+                          STATUS_CONFIG[app.status].text
                         )}
                       >
-                        {app.status === "pending" && (
-                          <>
-                            <Clock className="size-3.5" /> En attente
-                          </>
-                        )}
-                        {app.status === "approved" && (
-                          <>
-                            <Check className="size-3.5" /> Approuvé
-                          </>
-                        )}
-                        {app.status === "rejected" && (
-                          <>
-                            <XCircle className="size-3.5" /> Rejeté
-                          </>
-                        )}
+                        <span className={cn("size-1.5 rounded-full", STATUS_CONFIG[app.status].dot, STATUS_CONFIG[app.status].pulse && "animate-pulse")} />
+                        {STATUS_CONFIG[app.status].label}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => {
-                          setSelectedApp(app);
-                          setStatus(null);
-                        }}
+                        onClick={() => openApp(app)}
                         className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-indigo/5 px-4 py-2 text-xs font-bold text-indigo transition hover:bg-indigo hover:text-white"
                       >
                         Traiter
@@ -332,189 +340,179 @@ export function ApplicationsManager({
         </div>
       </div>
 
-      {/* Centered Modal Details */}
-      {selectedApp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-            onClick={() => setSelectedApp(null)}
-          />
-
-          {/* Modal Container: perfectly centered */}
-          <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-[22px] shadow-2xl overflow-hidden border border-[rgba(40,25,80,0.08)] z-50 animate-in fade-in-50 zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-[rgba(40,25,80,0.08)] px-6 py-4 bg-[#faf8f4]">
+      {/* Processing Dialog */}
+      <Dialog open={selectedApp !== null} onOpenChange={(open) => !open && setSelectedApp(null)}>
+        {selectedApp && (
+          <DialogContent
+            showCloseButton
+            className="w-[95vw] md:max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-0 gap-0 border-0 outline-none animate-fade-up"
+          >
+            <div className="flex items-center justify-between border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
               <div>
-                <span className="text-[10px] font-bold tracking-wider text-gold-dark uppercase">
-                  Détails de la demande
+                <span className="text-[10px] font-bold tracking-[0.18em] text-gold-dark uppercase">
+                  Demande d'adhésion - {selectedApp.home_group?.name ?? "—"}
                 </span>
-                <h2 className="font-display text-lg font-bold text-indigo italic">
-                  Candidature de {selectedApp.name}
+                <h2 className="mt-0.5 font-display text-xl font-bold text-indigo italic">
+                  {selectedApp.name}
                 </h2>
               </div>
-              <button
-                onClick={() => setSelectedApp(null)}
-                className="cursor-pointer rounded-lg p-2 text-faint hover:bg-cream hover:text-indigo transition"
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
+                  STATUS_CONFIG[selectedApp.status].bg,
+                  STATUS_CONFIG[selectedApp.status].text
+                )}
               >
-                <X className="size-5" />
-              </button>
+                {selectedApp.status === "pending" && <Clock className="size-3" />}
+                {selectedApp.status === "approved" && <CheckCircle className="size-3" />}
+                {selectedApp.status === "rejected" && <XCircle className="size-3" />}
+                {STATUS_CONFIG[selectedApp.status].label}
+              </span>
             </div>
 
-            {/* Content Body */}
-            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-              {status && (
-                <div
-                  className={cn(
-                    "flex items-start gap-3 rounded-xl border p-4 text-xs",
-                    status.type === "success"
-                      ? "border-online/20 bg-online/5 text-body-strong"
-                      : "border-live/20 bg-live/5 text-live"
-                  )}
-                >
-                  {status.type === "success" ? (
-                    <CheckCircle2 className="size-4 shrink-0 text-online" />
-                  ) : (
-                    <AlertTriangle className="size-4 shrink-0 text-live" />
-                  )}
-                  <p className="font-semibold">{status.message}</p>
-                </div>
-              )}
-
-              {/* Grid detail fields */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex gap-3 items-center rounded-xl bg-[#faf8f4] p-3">
-                  <User className="size-5 text-gold-dark shrink-0" />
-                  <div>
+            <div className="space-y-5 px-6 py-6">
+              {/* Grille d'informations */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Nom complet */}
+                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+                  <User className="size-4 text-faint" />
+                  <div className="min-w-0">
                     <div className="text-[10px] font-bold text-faint uppercase">Nom complet</div>
-                    <div className="text-sm font-semibold text-indigo">{selectedApp.name}</div>
+                    <div className="text-sm font-semibold text-indigo truncate">{selectedApp.name}</div>
                   </div>
                 </div>
 
-                <div className="flex gap-3 items-center rounded-xl bg-[#faf8f4] p-3">
-                  <Mail className="size-5 text-gold-dark shrink-0" />
-                  <div>
-                    <div className="text-[10px] font-bold text-faint uppercase">Adresse email</div>
-                    <div className="text-sm font-semibold text-indigo truncate max-w-[200px]">{selectedApp.email}</div>
+                {/* Email */}
+                <a
+                  href={`mailto:${selectedApp.email}`}
+                  className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10 transition hover:border-gold hover:bg-cream"
+                >
+                  <Mail className="size-4 text-faint" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-faint uppercase">Email</div>
+                    <div className="text-sm font-semibold text-indigo truncate">{selectedApp.email}</div>
                   </div>
+                </a>
+
+                {/* Téléphone et WhatsApp */}
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2 bg-muted/10">
+                  <div className="flex gap-3 items-center min-w-0">
+                    <Phone className="size-4 text-faint" />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-faint uppercase">Téléphone</div>
+                      <a
+                        href={`tel:${selectedApp.phone}`}
+                        className="text-sm font-semibold text-indigo hover:underline truncate"
+                      >
+                        {selectedApp.phone}
+                      </a>
+                    </div>
+                  </div>
+                  <a
+                    href={whatsappUrl(selectedApp)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#25D366] text-white shadow-sm transition hover:brightness-110"
+                    title="Contacter sur WhatsApp"
+                  >
+                    <MessageCircle className="size-4" />
+                  </a>
                 </div>
 
-                <div className="flex gap-3 items-center rounded-xl bg-[#faf8f4] p-3">
-                  <Phone className="size-5 text-gold-dark shrink-0" />
-                  <div>
-                    <div className="text-[10px] font-bold text-faint uppercase">Téléphone</div>
-                    <div className="text-sm font-semibold text-indigo">{selectedApp.phone}</div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 items-center rounded-xl bg-[#faf8f4] p-3">
-                  <Home className="size-5 text-gold-dark shrink-0" />
-                  <div>
-                    <div className="text-[10px] font-bold text-faint uppercase">Cellule demandée</div>
-                    <div className="text-sm font-semibold text-indigo">
-                      {selectedApp.home_group?.name || `Cellule #${selectedApp.home_group_id}`}
+                {/* Zone / Quartier de la cellule visée */}
+                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+                  <Home className="size-4 text-faint" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-faint uppercase">Zone / Quartier</div>
+                    <div className="text-sm font-semibold text-indigo truncate">
+                      {selectedApp.home_group?.address || "Non spécifiée"}
                     </div>
                   </div>
                 </div>
-
-                <div className="flex gap-3 items-center rounded-xl bg-[#faf8f4] p-3 sm:col-span-2">
-                  <Calendar className="size-5 text-gold-dark shrink-0" />
-                  <div>
-                    <div className="text-[10px] font-bold text-faint uppercase">Date de soumission</div>
-                    <div className="text-sm font-semibold text-indigo">{formatDate(selectedApp.created_at)}</div>
-                  </div>
-                </div>
               </div>
 
-              {/* Motivation */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-indigo uppercase tracking-wider">Lettre de Motivation</h4>
-                <div className="rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/30 p-4 text-sm text-body leading-relaxed whitespace-pre-line italic">
-                  « {selectedApp.motivation} »
-                </div>
-              </div>
-
-              {/* WhatsApp direct contact button */}
-              <div className="pt-2">
-                <a
-                  href={getWhatsAppLink(selectedApp.phone)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-3 text-sm font-bold text-white shadow-md transition"
-                >
-                  <Phone className="size-4" /> Contacter le fidèle sur WhatsApp
-                </a>
-              </div>
-
-              {/* Security Matrix / Context Check feedback */}
-              {!canProcess(selectedApp) && (
-                <div className="flex gap-3 rounded-xl border border-live/20 bg-live/5 p-4 text-xs text-live">
-                  <AlertTriangle className="size-5 shrink-0" />
-                  <p className="font-semibold leading-relaxed">
-                    Action impossible : Seuls les Pasteurs, Super Admins ou le leader désigné de cette cellule ({selectedApp.home_group?.leader}) sont autorisés à approuver ou rejeter cette demande.
-                  </p>
-                </div>
-              )}
-
-              {/* Decision info (if already processed) */}
-              {selectedApp.status !== "pending" && (
-                <div className="flex gap-3 rounded-xl border border-indigo/10 bg-indigo/5 p-4 text-xs text-indigo">
-                  <CheckCircle2 className="size-5 shrink-0 text-gold-dark" />
-                  <div>
-                    <p className="font-bold">Demande déjà traitée</p>
-                    <p className="mt-1 leading-relaxed">
-                      Statut final : <span className="font-bold uppercase">{selectedApp.status}</span>.
-                      {selectedApp.processor && (
-                        <span> Traité par : {selectedApp.processor.name}</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Bloc de Motivation */}
+              <section className="space-y-2">
+                <h3 className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">Motivation</h3>
+                <p className="rounded-lg bg-muted/50 p-4 text-sm leading-relaxed text-body-strong whitespace-pre-line">
+                  {selectedApp.motivation}
+                </p>
+              </section>
             </div>
 
-            {/* Footer Buttons */}
-            <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4 bg-[#faf8f4]">
-              <button
-                onClick={() => setSelectedApp(null)}
-                className="cursor-pointer rounded-xl px-5 py-3 text-xs font-bold text-body hover:bg-cream transition"
-              >
-                Fermer
-              </button>
-
-              {selectedApp.status === "pending" && canProcess(selectedApp) && (
+            {/* Footer actions */}
+            <div className="space-y-4 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
+              {canProcess(selectedApp) ? (
                 <>
-                  <button
-                    disabled={isPending}
-                    onClick={() => handleReject(selectedApp.id)}
-                    className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-live/30 bg-white hover:bg-live/5 px-5 py-3 text-xs font-bold text-live transition disabled:opacity-50"
-                  >
-                    {isPending ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <XCircle className="size-3.5" />
-                    )}
-                    Rejeter
-                  </button>
-
-                  <button
-                    disabled={isPending}
-                    onClick={() => handleApprove(selectedApp.id)}
-                    className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark hover:brightness-105 px-5 py-3 text-xs font-bold text-indigo shadow-md transition disabled:opacity-50"
-                  >
-                    {isPending ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="size-3.5" />
-                    )}
-                    Approuver
-                  </button>
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">
+                      Motif de la décision{" "}
+                      <span className="font-normal normal-case tracking-normal text-faint">(optionnel)</span>
+                    </label>
+                    <textarea
+                      value={decisionNote}
+                      onChange={(e) => setDecisionNote(e.target.value)}
+                      rows={2}
+                      placeholder="Ajoutez un motif (ex. raison du refus, détails d'affectation…)"
+                      className="w-full resize-none rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-sm leading-relaxed text-indigo outline-none transition placeholder:text-faint focus:border-gold"
+                    />
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(40,25,80,0.1)] bg-cream/50 px-3.5 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-indigo">Visible par le candidat</p>
+                        <p className="text-[11px] text-body">
+                          {decisionNotePublic
+                            ? "Le motif sera affiché lors du suivi de sa candidature."
+                            : "Le motif reste interne (non visible par le candidat)."}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={decisionNotePublic}
+                        onCheckedChange={setDecisionNotePublic}
+                        label="Partager le motif avec le candidat"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleDecision(selectedApp, "approve")}
+                      disabled={isPending || selectedApp.status === "approved"}
+                      className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-online/10 px-4 py-3 text-xs font-bold text-online transition hover:bg-online/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle className="size-4" />}
+                      Approuver
+                    </button>
+                    <button
+                      onClick={() => handleDecision(selectedApp, "reject")}
+                      disabled={isPending || selectedApp.status === "rejected"}
+                      className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-live/20 px-4 py-3 text-xs font-bold text-live transition hover:bg-live/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isPending ? <Loader2 className="size-4 animate-spin" /> : <XCircle className="size-4" />}
+                      Rejeter
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {selectedApp.decision_note && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">
+                        Motif de la décision
+                      </p>
+                      <p className="rounded-xl bg-cream p-3 text-sm leading-relaxed text-body-strong">
+                        {selectedApp.decision_note}
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-center gap-2 rounded-xl bg-cream/60 px-4 py-3 text-xs font-semibold text-body">
+                    <ShieldCheck className="size-4 text-faint" />
+                    Seul le responsable désigné de cette cellule peut traiter cette demande.
+                  </div>
                 </>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }

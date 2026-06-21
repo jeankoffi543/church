@@ -13,10 +13,12 @@ import {
   AlertCircle,
   XCircle,
   Search,
+  ClipboardCheck,
+  Inbox,
 } from "lucide-react";
 
 import { type HomeGroup } from "@/lib/data";
-import { submitHomeGroupApplication, verifyHomeGroupApplication } from "@/lib/api";
+import { submitHomeGroupApplication, verifyHomeGroupApplication, checkHomeGroupApplicationStatus, type HomeGroupApplicationStatusItem } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +50,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     message: string;
   } | null>(null);
 
-  // Verification states
+  // Verification states (deprecated bottom layout but kept for compatibility)
   const [verifyEmail, setVerifyEmail] = useState("");
   const [verifyPhone, setVerifyPhone] = useState("");
   const [verifyLoading, setVerifyLoading] = useState(false);
@@ -57,6 +59,13 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     homeGroupName?: string;
     message?: string;
   } | null>(null);
+
+  // Status-lookup dialog
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusContact, setStatusContact] = useState("");
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusResults, setStatusResults] = useState<HomeGroupApplicationStatusItem[] | null>(null);
 
   const open = selection !== null;
   const group = selection && selection !== "general" ? selection : null;
@@ -150,8 +159,55 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     }
   };
 
+  const openStatusDialog = (prefill?: string) => {
+    setStatusContact(prefill ?? "");
+    setStatusResults(null);
+    setStatusError(null);
+    setStatusOpen(true);
+  };
+
+  const handleStatusOpenChange = (open: boolean) => {
+    setStatusOpen(open);
+    if (!open) {
+      setStatusContact("");
+      setStatusResults(null);
+      setStatusError(null);
+    }
+  };
+
+  const handleStatusCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const contact = statusContact.trim();
+    if (!contact) {
+      setStatusError("Veuillez saisir votre email ou votre téléphone.");
+      return;
+    }
+    setStatusLoading(true);
+    setStatusError(null);
+    try {
+      const results = await checkHomeGroupApplicationStatus(contact);
+      setStatusResults(results);
+    } catch (err) {
+      setStatusError((err as Error).message || "Impossible de vérifier le statut.");
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
   return (
     <>
+      {/* Toolbar: check existing application */}
+      <div className="mb-6 flex justify-end">
+        <button
+          type="button"
+          onClick={() => openStatusDialog()}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[rgba(40,25,80,0.12)] bg-white px-4 py-2.5 text-[13px] font-bold text-indigo shadow-[0_1px_3px_rgba(22,15,51,0.05)] transition hover:border-gold hover:text-gold-dark"
+        >
+          <ClipboardCheck className="size-4" />
+          Vérifier ma candidature
+        </button>
+      </div>
+
       <div className="flex flex-wrap gap-[22px]">
         {/* List */}
         <div className="flex flex-[1_1_360px] flex-col gap-3">
@@ -174,7 +230,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
                   </span>
                 </div>
                 <div className="mt-1 text-[12.5px] text-faint">
-                  Responsable · {g.leader}
+                  Responsable · {g.leader || "Non assigné"}
                 </div>
               </div>
               <span className="flex shrink-0 items-center gap-1 text-[13px] font-bold text-indigo-mid">
@@ -220,118 +276,124 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
         </div>
       </div>
 
-      {/* Verify Application Status Section */}
-      <div className="mt-12 rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-[0_4px_20px_rgba(22,15,51,0.03)] md:p-8 max-w-4xl mx-auto">
-        <div className="flex flex-col md:flex-row gap-8 items-start">
-          <div className="flex-1 space-y-2">
-            <span className="text-[10px] font-bold tracking-widest text-gold-dark uppercase">
+      {/* ── Status-lookup dialog ──────────────────────────────────── */}
+      <Dialog open={statusOpen} onOpenChange={handleStatusOpenChange}>
+        <DialogContent className="max-w-[90%] sm:max-w-md border border-white/10 bg-ink p-6 text-cream shadow-2xl rounded-xl">
+          <DialogHeader className="gap-1 text-left">
+            <span className="text-[10px] font-bold tracking-widest text-gold uppercase">
               Suivi d&apos;inscription
             </span>
-            <h3 className="font-display text-xl font-bold text-indigo italic">
-              Vérifier le statut de mon groupe
-            </h3>
-            <p className="text-xs text-body leading-relaxed">
-              Saisissez l&apos;adresse email et le téléphone utilisés lors de votre demande d&apos;inscription pour connaître son état de traitement.
-            </p>
-          </div>
+            <DialogTitle className="font-display text-2xl font-bold text-cream italic leading-tight">
+              Vérifier mon statut
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#9a8fb5] leading-relaxed">
+              Saisissez l&apos;email ou le téléphone utilisé lors de votre candidature.
+            </DialogDescription>
+          </DialogHeader>
 
-          <form onSubmit={handleVerify} className="w-full md:w-auto flex-1 flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 space-y-3">
+          <form onSubmit={handleStatusCheck} className="mt-2 space-y-3 text-left">
+            <div className="flex gap-2">
               <Input
-                type="email"
                 required
-                placeholder="Email (ex: jean@mail.com)"
-                value={verifyEmail}
-                onChange={(e) => setVerifyEmail(e.target.value)}
-                className="h-11 rounded-xl border-[rgba(40,25,80,0.12)] bg-[#faf8f4] text-indigo text-xs"
+                placeholder="Email ou téléphone"
+                value={statusContact}
+                onChange={(e) => {
+                  setStatusContact(e.target.value);
+                  setStatusError(null);
+                }}
+                className="h-11 flex-1 rounded-xl border-white/15 bg-white/5 px-4 text-sm text-cream placeholder:text-white/30 focus-visible:border-gold focus-visible:ring-gold/30 focus-visible:ring-3 transition-all"
               />
-              <Input
-                type="text"
-                required
-                placeholder="Téléphone (ex: +225...)"
-                value={verifyPhone}
-                onChange={(e) => setVerifyPhone(e.target.value)}
-                className="h-11 rounded-xl border-[rgba(40,25,80,0.12)] bg-[#faf8f4] text-indigo text-xs"
-              />
+              <BrandButton
+                type="submit"
+                disabled={statusLoading}
+                variant="gold"
+                className="h-11 shrink-0 px-4 text-sm font-extrabold"
+              >
+                {statusLoading ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Search className="size-4" />
+                )}
+              </BrandButton>
             </div>
-            <BrandButton
-              type="submit"
-              disabled={verifyLoading}
-              variant="dark"
-              className="h-11 px-6 font-bold shrink-0 self-end sm:self-auto w-full sm:w-auto"
-            >
-              {verifyLoading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <>
-                  Vérifier <Search className="size-4 ml-1.5" />
-                </>
-              )}
-            </BrandButton>
+
+            {statusError && (
+              <div className="flex items-start gap-2 rounded-xl border border-[#ff8a8a]/30 bg-[#ff8a8a]/10 p-3 text-xs font-semibold text-[#ffb3b3]">
+                <AlertCircle className="size-4 shrink-0" />
+                {statusError}
+              </div>
+            )}
           </form>
-        </div>
 
-        {/* Verification result display */}
-        {verifyResult && (
-          <div className="mt-6 border-t border-[rgba(40,25,80,0.06)] pt-6 flex items-start gap-4 animate-fade-up">
-            {verifyResult.status === "approved" && (
-              <>
-                <div className="flex size-10 items-center justify-center rounded-xl bg-online/15 text-online shrink-0">
-                  <CheckCircle className="size-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-indigo">Demande Approuvée !</p>
-                  <p className="text-xs text-body leading-relaxed">
-                    Félicitations ! Vous êtes officiellement inscrit dans le groupe de maison <span className="font-bold text-indigo">{verifyResult.homeGroupName}</span>. Le responsable vous contactera sous peu.
+          {/* Results */}
+          {statusResults !== null && (
+            <div className="mt-2 space-y-2.5 animate-fade-up">
+              {statusResults.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-8 text-center">
+                  <Inbox className="size-8 text-[#9a8fb5]" />
+                  <p className="text-sm font-semibold text-cream">Aucune demande trouvée</p>
+                  <p className="text-xs text-[#9a8fb5]">
+                    Vérifiez la saisie, ou postulez à une cellule ci-dessus.
                   </p>
                 </div>
-              </>
-            )}
-
-            {verifyResult.status === "pending" && (
-              <>
-                <div className="flex size-10 items-center justify-center rounded-xl bg-gold/15 text-gold-dark shrink-0">
-                  <Clock className="size-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-indigo">Demande en cours d&apos;examen</p>
-                  <p className="text-xs text-body leading-relaxed">
-                    Votre candidature pour rejoindre le groupe de maison <span className="font-bold text-indigo">{verifyResult.homeGroupName}</span> est en attente de validation par le leader de cellule. Merci pour votre patience.
-                  </p>
-                </div>
-              </>
-            )}
-
-            {verifyResult.status === "rejected" && (
-              <>
-                <div className="flex size-10 items-center justify-center rounded-xl bg-live/15 text-live shrink-0">
-                  <XCircle className="size-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-indigo">Demande non retenue</p>
-                  <p className="text-xs text-body leading-relaxed">
-                    Votre demande d&apos;adhésion au groupe de maison <span className="font-bold text-indigo">{verifyResult.homeGroupName}</span> a été rejetée ou archivée. Vous pouvez contacter l&apos;administration pour plus de détails.
-                  </p>
-                </div>
-              </>
-            )}
-
-            {verifyResult.status === "not_found" && (
-              <>
-                <div className="flex size-10 items-center justify-center rounded-xl bg-[rgba(40,25,80,0.06)] text-faint shrink-0">
-                  <AlertCircle className="size-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-indigo">Aucune inscription trouvée</p>
-                  <p className="text-xs text-body leading-relaxed">
-                    {verifyResult.message || "Aucune demande de cellule de maison en cours ou validée n'a été trouvée pour ce couple email et téléphone."}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+              ) : (
+                statusResults.map((item, idx) => (
+                  <div
+                    key={`${item.home_group}-${idx}`}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-cream">
+                          {item.home_group ?? "Cellule"}
+                        </p>
+                        {item.created_at && (
+                          <p className="text-[11px] text-[#9a8fb5]">
+                            Soumise le{" "}
+                            {new Date(item.created_at).toLocaleDateString("fr-FR", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                          item.status === "approved"
+                            ? "bg-emerald-400/15 text-emerald-300 ring-emerald-400/30"
+                            : item.status === "pending"
+                            ? "bg-[#e2b85f]/15 text-[#e2b85f] ring-[#e2b85f]/30"
+                            : "bg-[#ff9a9a]/15 text-[#ff9a9a] ring-[#ff9a9a]/30"
+                        }`}
+                      >
+                        {item.status === "approved" ? (
+                          <CheckCircle className="size-3.5 text-emerald-300" />
+                        ) : item.status === "pending" ? (
+                          <Clock className="size-3.5 text-[#e2b85f]" />
+                        ) : (
+                          <XCircle className="size-3.5 text-[#ff9a9a]" />
+                        )}
+                        {item.status === "approved"
+                          ? "Approuvée"
+                          : item.status === "pending"
+                          ? "En attente"
+                          : "Non retenue"}
+                      </span>
+                    </div>
+                    {item.decision_note && (
+                      <p className="mt-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-[#cfc6e0]">
+                        <span className="font-bold text-[#e2b85f]">Message : </span>
+                        {item.decision_note}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Join dialog */}
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -345,7 +407,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
             </DialogTitle>
             <DialogDescription className="text-xs leading-relaxed text-[#9a8fb5]">
               {group
-                ? `${group.area} · ${group.when} · Responsable ${group.leader}.`
+                ? `${group.area} · ${group.when} · Responsable : ${group.leader || "Non assigné"}.`
                 : "Sélectionnez une cellule ou décrivez votre besoin pour être orienté."}
             </DialogDescription>
           </DialogHeader>
@@ -456,6 +518,19 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
                 <p className="text-[11px] text-live mt-1">{formErrors.motivation}</p>
               )}
             </Field>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelection(null);
+                  openStatusDialog(formEmail);
+                }}
+                className="cursor-pointer text-[11px] font-bold text-[#9a8fb5] underline-offset-2 transition hover:text-gold hover:underline"
+              >
+                Déjà inscrit ? Vérifier mon statut
+              </button>
+            </div>
 
             <BrandButton
               type="submit"

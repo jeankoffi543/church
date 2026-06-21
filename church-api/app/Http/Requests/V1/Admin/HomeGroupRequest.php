@@ -21,7 +21,7 @@ class HomeGroupRequest extends FormRequest
 
         return [
             'name' => [$required, 'string', 'max:255'],
-            'leader' => [$required, 'string', 'max:255'],
+            'leader' => ['nullable', 'string', 'max:255'],
             'address' => [$required, 'string', 'max:255'],
             'schedule' => ['nullable', 'string', 'max:255'],
             'coordinates' => ['nullable', 'array'],

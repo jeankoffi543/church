@@ -93,4 +93,34 @@ class HomeGroupApplicationController extends Controller
             'application' => $application,
         ]);
     }
+
+    /**
+     * Look up the status of a candidate's applications by email or phone.
+     */
+    public function status(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'contact' => ['required', 'string', 'max:255'],
+        ]);
+
+        $contact = trim($validated['contact']);
+        $phoneDigits = str_replace(' ', '', $contact);
+
+        $applications = HomeGroupApplication::query()
+            ->with('homeGroup')
+            ->where('email', $contact)
+            ->orWhere('phone', $contact)
+            ->orWhereRaw("REPLACE(phone, ' ', '') = ?", [$phoneDigits])
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'data' => $applications->map(fn (HomeGroupApplication $application) => [
+                'home_group' => $application->homeGroup?->name,
+                'status' => $application->status,
+                'decision_note' => $application->decision_note_public ? $application->decision_note : null,
+                'created_at' => $application->created_at?->toIso8601String(),
+            ])->all(),
+        ]);
+    }
 }

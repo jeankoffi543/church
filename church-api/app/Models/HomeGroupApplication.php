@@ -19,6 +19,12 @@ class HomeGroupApplication extends Model
         'motivation',
         'status',
         'processed_by',
+        'decision_note',
+        'decision_note_public',
+    ];
+
+    protected $casts = [
+        'decision_note_public' => 'boolean',
     ];
 
     /**

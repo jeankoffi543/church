@@ -23,6 +23,10 @@ Route::prefix('v1')->group(function (): void {
         // Ministries (Phase 1 & 2)
         Route::get('ministries', [Public\MinistryController::class, 'index'])->name('ministries.index');
 
+        // Ministry recruitment (public application submission + status lookup)
+        Route::post('ministries/applications', [Public\MinistryApplicationController::class, 'store'])->name('ministries.applications.store');
+        Route::post('ministries/applications/status', [Public\MinistryApplicationController::class, 'status'])->name('ministries.applications.status');
+
         // Sermons (Phase 1) — `latest` before `{sermon}` to avoid clashing.
         Route::get('sermons/latest', [Public\SermonController::class, 'latest'])->name('sermons.latest');
         Route::get('sermons', [Public\SermonController::class, 'index'])->name('sermons.index');
@@ -32,10 +36,10 @@ Route::prefix('v1')->group(function (): void {
         Route::get('events', [Public\EventController::class, 'index'])->name('events.index');
         Route::get('events/{event}', [Public\EventController::class, 'show'])->name('events.show');
 
-        // Home groups (Phase 2)
         Route::get('home-groups', [Public\HomeGroupController::class, 'index'])->name('home-groups.index');
         Route::post('home-groups/applications', [Public\HomeGroupApplicationController::class, 'store'])->name('home-groups.applications.store');
         Route::post('home-groups/applications/verify', [Public\HomeGroupApplicationController::class, 'verify'])->name('home-groups.applications.verify');
+        Route::post('home-groups/applications/status', [Public\HomeGroupApplicationController::class, 'status'])->name('home-groups.applications.status');
 
         // Prayer requests (public submission)
         Route::post('prayer-requests', [Public\PrayerRequestController::class, 'store'])->name('prayer-requests.store');
@@ -91,6 +95,17 @@ Route::prefix('v1')->group(function (): void {
             // Ministères — structural site content, gated with general settings.
             Route::apiResource('ministries', Admin\MinistryController::class)
                 ->middleware('permission:manage_settings');
+
+            // Recrutement — candidatures aux ministères (contextual chief rule
+            // is enforced inside the controller for non-global validators).
+            Route::middleware('permission:validate_ministry_applications')->group(function (): void {
+                Route::get('ministry-applications', [Admin\MinistryApplicationController::class, 'index'])
+                    ->name('ministry-applications.index');
+                Route::post('ministry-applications/{application}/approve', [Admin\MinistryApplicationController::class, 'approve'])
+                    ->name('ministry-applications.approve');
+                Route::post('ministry-applications/{application}/reject', [Admin\MinistryApplicationController::class, 'reject'])
+                    ->name('ministry-applications.reject');
+            });
 
             // Prayer requests (admin CRUD + quick actions)
             Route::apiResource('prayers', Admin\PrayerRequestController::class)

@@ -8,10 +8,13 @@ const API_URL = `${process.env.NEXT_PUBLIC_API_URL || ""}/admin`;
 export type AdminMinistry = {
   id: number;
   name: string;
+  image: string | null;
   description: string | null;
   schedule: string | null;
   sort_order: number;
   is_active: boolean;
+  chef_id: number | null;
+  chef: { id: number; name: string; email: string } | null;
 };
 
 export type AdminSermon = {
@@ -46,7 +49,7 @@ export type AdminEvent = {
 export type AdminHomeGroup = {
   id: number;
   name: string;
-  leader: string;
+  leader: string | null;
   leader_id: number | null;
   address: string;
   schedule: string | null;
@@ -146,37 +149,66 @@ export async function getAdminMinistries(): Promise<AdminMinistry[]> {
   return response.data;
 }
 
-export async function createMinistry(data: {
-  name: string;
-  description?: string | null;
-  schedule?: string | null;
-  sort_order?: number;
-  is_active?: boolean;
-}): Promise<{ data: AdminMinistry }> {
-  const result = await adminFetch<{ data: AdminMinistry }>("/ministries", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  revalidateTag("ministries", { expire: 0 });
-  revalidatePath("/");
-  revalidatePath("/eglise");
-  return result;
-}
-
-export async function updateMinistry(id: number, data: {
+export type MinistryInput = {
   name?: string;
   description?: string | null;
   schedule?: string | null;
   sort_order?: number;
   is_active?: boolean;
-}): Promise<{ data: AdminMinistry }> {
-  const result = await adminFetch<{ data: AdminMinistry }>(`/ministries/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
+  chef_id?: number | null;
+};
+
+/** Build multipart form data for a ministry (text fields + optional image). */
+function buildMinistryFormData(
+  data: MinistryInput,
+  image?: File | null,
+  removeImage?: boolean
+): FormData {
+  const fd = new FormData();
+  if (data.name !== undefined) fd.append("name", data.name);
+  if (data.description !== undefined) fd.append("description", data.description ?? "");
+  if (data.schedule !== undefined) fd.append("schedule", data.schedule ?? "");
+  if (data.sort_order !== undefined) fd.append("sort_order", String(data.sort_order));
+  if (data.is_active !== undefined) fd.append("is_active", data.is_active ? "1" : "0");
+  if (data.chef_id !== undefined) fd.append("chef_id", data.chef_id == null ? "" : String(data.chef_id));
+  if (image) fd.append("image", image);
+  if (removeImage) fd.append("remove_image", "1");
+  return fd;
+}
+
+function revalidateMinistries() {
   revalidateTag("ministries", { expire: 0 });
   revalidatePath("/");
   revalidatePath("/eglise");
+  revalidatePath("/ministeres");
+}
+
+export async function createMinistry(
+  data: MinistryInput & { name: string },
+  image?: File | null
+): Promise<{ data: AdminMinistry }> {
+  const result = await adminFetch<{ data: AdminMinistry }>("/ministries", {
+    method: "POST",
+    body: buildMinistryFormData(data, image),
+  });
+  revalidateMinistries();
+  return result;
+}
+
+export async function updateMinistry(
+  id: number,
+  data: MinistryInput,
+  image?: File | null,
+  removeImage?: boolean
+): Promise<{ data: AdminMinistry }> {
+  // POST + _method=PUT so PHP parses the multipart body.
+  const fd = buildMinistryFormData(data, image, removeImage);
+  fd.append("_method", "PUT");
+  const result = await adminFetch<{ data: AdminMinistry }>(`/ministries/${id}`, {
+    method: "POST",
+    body: fd,
+  });
+  revalidateMinistries();
   return result;
 }
 
@@ -320,7 +352,7 @@ export async function getAdminHomeGroups(): Promise<AdminHomeGroup[]> {
 
 export async function createHomeGroup(data: {
   name: string;
-  leader: string;
+  leader: string | null;
   address: string;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
@@ -338,7 +370,7 @@ export async function createHomeGroup(data: {
 
 export async function updateHomeGroup(id: number, data: {
   name?: string;
-  leader?: string;
+  leader?: string | null;
   address?: string;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
@@ -567,6 +599,8 @@ export async function deleteServant(id: number): Promise<void> {
 
 /* ── Home Groups Applications CRUD ────────────────────────────────── */
 
+export type DecisionPayload = { decision_note: string | null; decision_note_public: boolean };
+
 export type AdminHomeGroupApplication = {
   id: number;
   user_id: number | null;
@@ -576,6 +610,8 @@ export type AdminHomeGroupApplication = {
   home_group_id: number;
   motivation: string;
   status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  decision_note_public: boolean;
   processed_by: number | null;
   created_at: string;
   updated_at: string;
@@ -601,19 +637,67 @@ export async function getAdminHomeGroupApplications(params?: {
   return response.data;
 }
 
-export async function approveHomeGroupApplication(id: number): Promise<{ data: AdminHomeGroupApplication }> {
+export async function approveHomeGroupApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminHomeGroupApplication }> {
   const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/approve`, {
     method: "POST",
+    body: JSON.stringify(decision),
   });
   revalidatePath("/admins/home_groups/applications");
   return result;
 }
 
-export async function rejectHomeGroupApplication(id: number): Promise<{ data: AdminHomeGroupApplication }> {
+export async function rejectHomeGroupApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminHomeGroupApplication }> {
   const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/reject`, {
     method: "POST",
+    body: JSON.stringify(decision),
   });
   revalidatePath("/admins/home_groups/applications");
   return result;
 }
 
+/* ── Ministry recruitment (applications) ─────────────────────────── */
+
+export type AdminMinistryApplication = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  motivation: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  decision_note_public: boolean;
+  ministry_id: number;
+  ministry: { id: number; name: string; chef_id: number | null } | null;
+  created_at: string | null;
+};
+
+export async function getMinistryApplications(): Promise<AdminMinistryApplication[]> {
+  const response = await adminFetch<{ data: AdminMinistryApplication[] }>("/ministry-applications");
+  return response.data;
+}
+
+export async function approveMinistryApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminMinistryApplication }> {
+  return adminFetch<{ data: AdminMinistryApplication }>(`/ministry-applications/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(decision),
+  });
+}
+
+export async function rejectMinistryApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminMinistryApplication }> {
+  return adminFetch<{ data: AdminMinistryApplication }>(`/ministry-applications/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify(decision),
+  });
+}

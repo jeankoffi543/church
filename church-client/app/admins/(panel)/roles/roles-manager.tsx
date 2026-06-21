@@ -13,6 +13,7 @@ import {
   Users,
   Lock,
   ArrowLeftRight,
+  Info,
 } from "lucide-react";
 
 import type { AdminRole, AdminPermissionCategory } from "@/lib/admin-api";
@@ -51,6 +52,7 @@ const SHORT_LABELS: Record<string, string> = {
   manage_announcements: "Annonces",
   moderate_comments: "Modérer",
   manage_testimonies: "Témoignages",
+  validate_ministry_applications: "Candidatures",
 };
 
 type Feedback = { type: "success" | "error"; message: string } | null;
@@ -415,11 +417,14 @@ export function RolesManager({
                       key={perm.name}
                       title={perm.label}
                       className={cn(
-                        "sticky top-11 z-20 h-9 border-b border-[rgba(40,25,80,0.08)] bg-[#f6f2ea] px-3 text-center text-[11px] font-semibold text-body",
+                        "sticky top-11 z-20 h-9 cursor-help border-b border-[rgba(40,25,80,0.08)] bg-[#f6f2ea] px-3 text-center text-[11px] font-semibold text-body",
                         idx === 0 && "border-l border-[rgba(40,25,80,0.08)]"
                       )}
                     >
-                      {SHORT_LABELS[perm.name] ?? perm.label}
+                      <span className="mx-auto flex max-w-[88px] items-center justify-center gap-1">
+                        <span className="truncate">{SHORT_LABELS[perm.name] ?? perm.label}</span>
+                        <Info className="size-3 shrink-0 text-faint" />
+                      </span>
                     </th>
                   ))
                 )}
@@ -516,7 +521,7 @@ export function RolesManager({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmitRole();
                 }}
-                placeholder="Ex : Huissiers, Louange, Protocole…"
+                placeholder="Ex : Huissier, Louange, Protocole…"
                 autoFocus
                 className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
               />

@@ -40,9 +40,16 @@ class HomeGroupApplicationController extends Controller
     {
         $this->authorizeContextualAccess($request->user(), $application);
 
+        $validated = $request->validate([
+            'decision_note' => ['nullable', 'string', 'max:2000'],
+            'decision_note_public' => ['boolean'],
+        ]);
+
         $application->update([
             'status' => 'approved',
             'processed_by' => $request->user()->id,
+            'decision_note' => $validated['decision_note'] ?? null,
+            'decision_note_public' => $validated['decision_note_public'] ?? false,
         ]);
 
         return new HomeGroupApplicationResource($application->load(['homeGroup', 'user', 'processor']));
@@ -55,9 +62,16 @@ class HomeGroupApplicationController extends Controller
     {
         $this->authorizeContextualAccess($request->user(), $application);
 
+        $validated = $request->validate([
+            'decision_note' => ['nullable', 'string', 'max:2000'],
+            'decision_note_public' => ['boolean'],
+        ]);
+
         $application->update([
             'status' => 'rejected',
             'processed_by' => $request->user()->id,
+            'decision_note' => $validated['decision_note'] ?? null,
+            'decision_note_public' => $validated['decision_note_public'] ?? false,
         ]);
 
         return new HomeGroupApplicationResource($application->load(['homeGroup', 'user', 'processor']));

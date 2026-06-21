@@ -12,6 +12,7 @@ import {
   HandHeart,
   ShieldCheck,
   UserCog,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,8 +46,16 @@ const ACCESS_NAV: NavItem[] = [
 export function AdminNav({ me }: { me: AdminMe | null }) {
   const pathname = usePathname();
 
+  // Resolve a single active link: the longest href that matches the current
+  // path, so a nested route (e.g. /ministries/applications) doesn't also light
+  // up its parent (/ministries).
+  const activeHref = [...NAV, ...ACCESS_NAV]
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(href + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+
   const renderLink = ({ href, label, icon: Icon }: NavItem) => {
-    const active = pathname === href || pathname.startsWith(href + "/");
+    const active = href === activeHref;
     return (
       <Link
         key={href}

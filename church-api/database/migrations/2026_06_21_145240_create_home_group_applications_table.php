@@ -26,6 +26,8 @@ return new class extends Migration
             $table->foreignId('home_group_id')->constrained('home_groups')->onDelete('cascade');
             $table->text('motivation');
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->text('decision_note')->nullable();
+            $table->boolean('decision_note_public')->default(false);
             $table->foreignId('processed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
         });

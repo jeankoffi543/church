@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Ministry;
+use App\Models\MinistryApplication;
 use App\Models\User;
 use App\Support\AccessControl;
 use Illuminate\Database\Seeder;
@@ -26,10 +28,22 @@ class DemoSeeder extends Seeder
      * matrix shows a wide spread of granted / denied privileges.
      */
     private const array EXTRA_GROUPS = [
-        'Louange & Adoration', 'Protocole', 'École du dimanche', 'Jeunesse Embrasée',
-        'Femmes de Feu', 'Hommes Forts', 'Évangelisation', 'Accueil & Hospitalité',
-        'Sonorisation', 'Décoration', 'Trésorerie', 'Communication & Réseaux',
-        'Transport & Logistique', 'Sécurité', 'Enfants (Garderie)', 'Couples',
+        'Louange & Adoration',
+        'Protocole',
+        'École du dimanche',
+        'Jeunesse Embrasée',
+        'Femmes de Feu',
+        'Hommes Forts',
+        'Évangelisation',
+        'Accueil & Hospitalité',
+        'Sonorisation',
+        'Décoration',
+        'Trésorerie',
+        'Communication & Réseaux',
+        'Transport & Logistique',
+        'Sécurité',
+        'Enfants (Garderie)',
+        'Couples',
     ];
 
     public function run(): void
@@ -59,6 +73,45 @@ class DemoSeeder extends Seeder
                     'leader_id' => $leaders[$index]->id,
                     'leader' => $leaders[$index]->name,
                 ]);
+                $this->seedRecruitment();
+            }
+        }
+    }
+
+
+
+    /**
+     * Designate ministry chiefs and seed sample applications so the recruitment
+     * screens are populated for testing.
+     */
+    private function seedRecruitment(): void
+    {
+        $ministries = Ministry::query()->get();
+
+        if ($ministries->isEmpty()) {
+            return;
+        }
+
+        $chiefPool = User::query()
+            ->where('email', 'like', '%@' . self::DEMO_DOMAIN)
+            ->where('is_active', true)
+            ->limit($ministries->count())
+            ->get();
+
+        foreach ($ministries as $index => $ministry) {
+            $chief = $chiefPool[$index] ?? null;
+
+            if ($chief !== null) {
+                $chief->assignRole(AccessControl::MINISTRY_CHIEF);
+                $ministry->update(['chef_id' => $chief->id]);
+            }
+
+            // A few pending applications per ministry, plus the occasional
+            // already-processed one for visual variety.
+            MinistryApplication::factory()->count(3)->create(['ministry_id' => $ministry->id]);
+
+            if ($index % 3 === 0) {
+                MinistryApplication::factory()->approved()->create(['ministry_id' => $ministry->id]);
             }
         }
     }
@@ -76,7 +129,7 @@ class DemoSeeder extends Seeder
 
             // Deterministic subset: ~30%-70% of permissions per group.
             $subset = collect($permissions)
-                ->filter(fn (string $p, int $i): bool => (($index + 1) * ($i + 3)) % 10 < 4)
+                ->filter(fn(string $p, int $i): bool => (($index + 1) * ($i + 3)) % 10 < 4)
                 ->values()
                 ->all();
 
@@ -93,12 +146,12 @@ class DemoSeeder extends Seeder
         $roleNames = Role::query()->pluck('name')->all();
         $assignable = array_values(array_filter(
             $roleNames,
-            fn (string $name): bool => $name !== AccessControl::SUPER_ADMIN,
+            fn(string $name): bool => $name !== AccessControl::SUPER_ADMIN,
         ));
 
         for ($i = 1; $i <= self::DEMO_USERS; $i++) {
             $user = User::updateOrCreate(
-                ['email' => "serviteur{$i}@".self::DEMO_DOMAIN],
+                ['email' => "serviteur{$i}@" . self::DEMO_DOMAIN],
                 [
                     'name' => fake()->name(),
                     'password' => Hash::make('password'),

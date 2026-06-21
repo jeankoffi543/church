@@ -1,4 +1,4 @@
-import { getAdminMe, getAdminMinistries } from "@/lib/admin-api";
+import { getAdminMe, getAdminMinistries, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
 import { MinistriesManager } from "./ministries-manager";
@@ -12,7 +12,10 @@ export default async function AdminMinistriesPage() {
     return <AccessRestricted />;
   }
 
-  const ministries = await getAdminMinistries();
+  const [ministries, staff] = await Promise.all([
+    getAdminMinistries(),
+    getAdminUsers(),
+  ]);
 
-  return <MinistriesManager initialMinistries={ministries} />;
+  return <MinistriesManager initialMinistries={ministries} staff={staff} />;
 }

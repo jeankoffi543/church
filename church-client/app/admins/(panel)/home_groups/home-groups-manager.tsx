@@ -7,23 +7,21 @@ import {
   Edit, 
   Trash2, 
   Loader2, 
-  X, 
   Eye, 
   EyeOff, 
   CheckCircle, 
   AlertCircle,
-  ChevronDown,
-  Check
 } from "lucide-react";
 import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { SearchableSelect } from "../_components/searchable-select";
 
 type HomeGroup = {
   id: number;
   name: string;
-  leader: string;
+  leader: string | null;
   leader_id: number | null;
   address: string;
   schedule: string | null;
@@ -52,8 +50,6 @@ export function HomeGroupsManager({
   const [name, setName] = useState("");
   const [leader, setLeader] = useState("");
   const [leaderId, setLeaderId] = useState<number | "">("");
-  const [userSearch, setUserSearch] = useState("");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [schedule, setSchedule] = useState("");
   const [topPercent, setTopPercent] = useState("50%");
@@ -66,8 +62,6 @@ export function HomeGroupsManager({
     setName("");
     setLeader("");
     setLeaderId("");
-    setUserSearch("");
-    setIsDropdownOpen(false);
     setAddress("");
     setSchedule("Mensuel · 1er dimanche");
     setTopPercent("50%");
@@ -80,10 +74,8 @@ export function HomeGroupsManager({
   const openEditModal = (group: HomeGroup) => {
     setEditingHomeGroup(group);
     setName(group.name);
-    setLeader(group.leader);
+    setLeader(group.leader ?? "");
     setLeaderId(group.leader_id || "");
-    setUserSearch("");
-    setIsDropdownOpen(false);
     setAddress(group.address);
     setSchedule(group.schedule ?? "");
     setTopPercent(group.coordinates?.top ?? "50%");
@@ -116,7 +108,7 @@ export function HomeGroupsManager({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !leader.trim() || !address.trim()) return;
+    if (!name.trim() || !address.trim()) return;
 
     setStatus(null);
     startTransition(async () => {
@@ -129,7 +121,7 @@ export function HomeGroupsManager({
 
         const payload = {
           name,
-          leader,
+          leader: leader || null,
           leader_id: leaderId ? Number(leaderId) : null,
           address,
           schedule: schedule || null,
@@ -160,18 +152,15 @@ export function HomeGroupsManager({
     });
   };
 
-  // Filter users based on search
-  const filteredUsers = users.filter((u) =>
-    u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-    u.email.toLowerCase().includes(userSearch.toLowerCase())
-  );
-
-  // Find currently selected user object
-  const selectedUser = users.find((u) => u.id === leaderId);
+  const userOptions = users.map((u) => ({
+    value: u.id,
+    label: u.name,
+    sublabel: u.email,
+  }));
 
   const filtered = homeGroups.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()) ||
-    g.leader.toLowerCase().includes(search.toLowerCase()) ||
+    (g.leader && g.leader.toLowerCase().includes(search.toLowerCase())) ||
     g.address.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -255,7 +244,18 @@ export function HomeGroupsManager({
               {filtered.map((group) => (
                 <tr key={group.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4 font-semibold">{group.name}</td>
-                  <td className="px-6 py-4 font-medium">{group.leader}</td>
+                  <td className="px-6 py-4">
+                    {group.leader ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-[10px] font-bold text-indigo">
+                          {group.leader.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-xs font-semibold text-indigo">{group.leader}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs italic text-faint">Non assigné</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4">
                     <div>
                       <p className="font-semibold text-xs text-indigo">{group.address}</p>
@@ -335,86 +335,23 @@ export function HomeGroupsManager({
                 />
               </label>
 
-              <div className="flex flex-col gap-2 relative">
-                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Responsable / Leader *</span>
-                
-                {/* Trigger Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="flex items-center justify-between w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none text-left focus:border-gold"
-                >
-                  <span className="truncate">
-                    {selectedUser ? selectedUser.name : (leader || "Sélectionner un chef de cellule...")}
-                  </span>
-                  <ChevronDown className="size-4 ml-2 text-faint shrink-0" />
-                </button>
-
-                {/* Dropdown Menu click-catcher */}
-                {isDropdownOpen && (
-                  <div 
-                    className="fixed inset-0 z-40 bg-transparent" 
-                    onClick={() => setIsDropdownOpen(false)} 
-                  />
-                )}
-
-                {/* Dropdown Menu */}
-                {isDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-[rgba(40,25,80,0.08)] bg-white p-2 shadow-2xl animate-in fade-in-50 slide-in-from-top-1 duration-150">
-                    <div className="sticky top-0 bg-white pb-2 border-b border-[rgba(40,25,80,0.06)] mb-2 flex items-center px-2 z-10">
-                      <Search className="size-3.5 text-faint mr-2 shrink-0" />
-                      <input
-                        type="text"
-                        placeholder="Rechercher un chef..."
-                        value={userSearch}
-                        onChange={(e) => setUserSearch(e.target.value)}
-                        className="w-full text-xs text-indigo outline-none py-1 placeholder:text-faint bg-white"
-                        autoFocus
-                      />
-                      {userSearch && (
-                        <button type="button" onClick={() => setUserSearch("")} className="text-faint hover:text-indigo">
-                          <X className="size-3" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="space-y-0.5">
-                      {filteredUsers.length === 0 ? (
-                        <div className="px-3 py-4 text-center text-xs text-faint">
-                          Aucun utilisateur trouvé
-                        </div>
-                      ) : (
-                        filteredUsers.map((u) => {
-                          const isCurrentlySelected = u.id === leaderId;
-                          return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              onClick={() => {
-                                setLeaderId(u.id);
-                                setLeader(u.name);
-                                setIsDropdownOpen(false);
-                                setUserSearch("");
-                              }}
-                              className={cn(
-                                "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors",
-                                isCurrentlySelected
-                                  ? "bg-gold/15 font-semibold text-indigo"
-                                  : "text-body hover:bg-cream/40 hover:text-indigo"
-                              )}
-                            >
-                              <div className="truncate pr-4">
-                                <p className="font-semibold">{u.name}</p>
-                                <p className="text-[10px] text-faint truncate">{u.email}</p>
-                              </div>
-                              {isCurrentlySelected && <Check className="size-3.5 text-gold-dark shrink-0" />}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Responsable / Leader</span>
+                <SearchableSelect
+                  options={userOptions}
+                  value={leaderId === "" ? null : leaderId}
+                  onChange={(val) => {
+                    setLeaderId(val ?? "");
+                    if (val !== null) {
+                      const u = users.find((user) => user.id === val);
+                      if (u) setLeader(u.name);
+                    } else {
+                      setLeader("");
+                    }
+                  }}
+                  placeholder="Assigner un responsable…"
+                  clearLabel="— Aucun responsable —"
+                />
               </div>
 
               <label className="flex flex-col gap-2">

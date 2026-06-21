@@ -19,11 +19,18 @@ class MinistryResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'image' => $this->image,
             'initial' => $this->initial(),
             'description' => $this->description,
             'schedule' => $this->schedule,
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
+            'chef_id' => $this->chef_id,
+            'chef' => $this->whenLoaded('chef', fn () => $this->chef ? [
+                'id' => $this->chef->id,
+                'name' => $this->chef->name,
+                'email' => $this->chef->email,
+            ] : null),
         ];
     }
 }

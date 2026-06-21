@@ -48,10 +48,12 @@ async function apiGet<T>(path: string, tags?: string[]): Promise<T | null> {
 /* ── Resource shapes returned by the API ──────────────────────────── */
 
 type ApiMinistry = {
+  id: number;
   name: string;
   initial: string;
   description: string | null;
   schedule: string | null;
+  image: string | null;
 };
 
 type ApiSermon = {
@@ -92,10 +94,12 @@ type ApiHomeGroup = {
 /* ── Mappers (API → front-end types) ──────────────────────────────── */
 
 const mapMinistry = (m: ApiMinistry): Ministry => ({
+  id: m.id,
   name: m.name,
   initial: m.initial,
   desc: m.description ?? "",
   schedule: m.schedule ?? "",
+  image: m.image ?? null,
 });
 
 const mapSermon = (s: ApiSermon): Sermon => ({
@@ -417,5 +421,30 @@ export async function verifyHomeGroupApplication(data: {
       message: (err as Error).message || "Impossible de se connecter au serveur.",
     };
   }
+}
+
+export type HomeGroupApplicationStatusItem = {
+  home_group?: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  created_at?: string;
+};
+
+export async function checkHomeGroupApplicationStatus(
+  contact: string
+): Promise<HomeGroupApplicationStatusItem[]> {
+  const res = await fetch(`${API_URL}/public/home-groups/applications/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ contact }),
+  });
+
+  if (!res.ok) {
+    const json = await res.json();
+    throw new Error(json.message || "Impossible de vérifier le statut.");
+  }
+
+  const body = (await res.json()) as { data: HomeGroupApplicationStatusItem[] };
+  return body.data;
 }
 
