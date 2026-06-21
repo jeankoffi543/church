@@ -9,6 +9,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Accueil" },
   { href: "/mediatheque", label: "Médiathèque" },
+  { href: "/ministeres", label: "Ministères" },
   { href: "/eglise", label: "L'Église" },
   { href: "/agenda", label: "Agenda" },
   { href: "/contact", label: "Contact" },
