@@ -44,6 +44,8 @@ const SHORT_LABELS: Record<string, string> = {
   manage_prayer_settings: "Config",
   view_cells: "Voir",
   process_cells: "Traiter",
+  validate_home_group_applications: "Valider dmd",
+  manage_ministries: "Ministères",
   view_offerings: "Voir",
   manage_offerings: "Gérer",
   send_notifications: "Envoyer",

@@ -12,6 +12,7 @@ import {
   Phone,
   MessageCircle,
   ShieldCheck,
+  User,
 } from "lucide-react";
 
 import type { AdminMe, AdminMinistryApplication } from "@/lib/admin-api";
@@ -305,12 +306,12 @@ export function ApplicationsManager({
         {selected && (
           <DialogContent
             showCloseButton
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-0 gap-0 border-0 outline-none animate-fade-up"
+            className="w-[95vw] md:max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-0 gap-0 border-0 outline-none animate-fade-up"
           >
             <div className="flex items-center justify-between border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
               <div>
                 <span className="text-[10px] font-bold tracking-[0.18em] text-gold-dark uppercase">
-                  Candidature · {selected.ministry?.name ?? "—"}
+                  Demande d'adhésion - {selected.ministry?.name ?? "—"}
                 </span>
                 <h2 className="mt-0.5 font-display text-xl font-bold text-indigo italic">
                   {selected.name}
@@ -331,40 +332,70 @@ export function ApplicationsManager({
             </div>
 
             <div className="space-y-5 px-6 py-6">
-              {/* Contact */}
-              <section className="space-y-3">
-                <h3 className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">Coordonnées</h3>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <a
-                    href={`mailto:${selected.email}`}
-                    className="flex items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 text-sm text-body transition hover:border-gold hover:bg-cream"
-                  >
-                    <Mail className="size-4 text-faint" />
-                    <span className="truncate">{selected.email}</span>
-                  </a>
-                  <a
-                    href={`tel:${selected.phone}`}
-                    className="flex items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 text-sm text-body transition hover:border-gold hover:bg-cream"
-                  >
+              {/* Grille d'informations */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Nom complet */}
+                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+                  <User className="size-4 text-faint" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-faint uppercase">Nom complet</div>
+                    <div className="text-sm font-semibold text-indigo truncate">{selected.name}</div>
+                  </div>
+                </div>
+
+                {/* Email */}
+                <a
+                  href={`mailto:${selected.email}`}
+                  className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10 transition hover:border-gold hover:bg-cream"
+                >
+                  <Mail className="size-4 text-faint" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-faint uppercase">Email</div>
+                    <div className="text-sm font-semibold text-indigo truncate">{selected.email}</div>
+                  </div>
+                </a>
+
+                {/* Téléphone et WhatsApp */}
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2 bg-muted/10">
+                  <div className="flex gap-3 items-center min-w-0">
                     <Phone className="size-4 text-faint" />
-                    <span>{selected.phone}</span>
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-faint uppercase">Téléphone</div>
+                      <a
+                        href={`tel:${selected.phone}`}
+                        className="text-sm font-semibold text-indigo hover:underline truncate"
+                      >
+                        {selected.phone}
+                      </a>
+                    </div>
+                  </div>
+                  <a
+                    href={whatsappUrl(selected)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#25D366] text-white shadow-sm transition hover:brightness-110"
+                    title="Contacter sur WhatsApp"
+                  >
+                    <MessageCircle className="size-4" />
                   </a>
                 </div>
-                <a
-                  href={whatsappUrl(selected)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:brightness-110"
-                >
-                  <MessageCircle className="size-4" />
-                  Contacter sur WhatsApp
-                </a>
-              </section>
 
-              {/* Motivation */}
-              <section className="space-y-3">
+                {/* Ministère visé */}
+                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+                  <ShieldCheck className="size-4 text-faint" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold text-faint uppercase">Ministère visé</div>
+                    <div className="text-sm font-semibold text-indigo truncate">
+                      {selected.ministry?.name || "Non spécifié"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bloc de Motivation */}
+              <section className="space-y-2">
                 <h3 className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">Motivation</h3>
-                <p className="rounded-xl bg-cream p-4 text-sm leading-relaxed text-body-strong">
+                <p className="rounded-lg bg-muted/50 p-4 text-sm leading-relaxed text-body-strong whitespace-pre-line">
                   {selected.motivation}
                 </p>
               </section>

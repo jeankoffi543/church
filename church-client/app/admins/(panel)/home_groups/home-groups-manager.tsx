@@ -7,20 +7,27 @@ import {
   Edit, 
   Trash2, 
   Loader2, 
-  X, 
   Eye, 
   EyeOff, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
 } from "lucide-react";
-import { createHomeGroup, updateHomeGroup, deleteHomeGroup } from "@/lib/admin-api";
+import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { SearchableSelect } from "../_components/searchable-select";
+import { LocationPicker } from "../_components/location-picker";
 
 type HomeGroup = {
   id: number;
   name: string;
-  leader: string;
+  leader: string | null;
+  leader_id: number | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
@@ -29,8 +36,10 @@ type HomeGroup = {
 
 export function HomeGroupsManager({
   initialHomeGroups,
+  users = [],
 }: {
   initialHomeGroups: HomeGroup[];
+  users?: AdminUser[];
 }) {
   const [homeGroups, setHomeGroups] = useState<HomeGroup[]>(initialHomeGroups);
   const [search, setSearch] = useState("");
@@ -44,10 +53,12 @@ export function HomeGroupsManager({
   // Form states
   const [name, setName] = useState("");
   const [leader, setLeader] = useState("");
+  const [leaderId, setLeaderId] = useState<number | "">("");
   const [address, setAddress] = useState("");
   const [schedule, setSchedule] = useState("");
-  const [topPercent, setTopPercent] = useState("50%");
-  const [leftPercent, setLeftPercent] = useState("50%");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [zoneName, setZoneName] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
 
@@ -55,10 +66,12 @@ export function HomeGroupsManager({
     setEditingHomeGroup(null);
     setName("");
     setLeader("");
+    setLeaderId("");
     setAddress("");
     setSchedule("Mensuel · 1er dimanche");
-    setTopPercent("50%");
-    setLeftPercent("50%");
+    setLatitude(null);
+    setLongitude(null);
+    setZoneName(null);
     setSortOrder(0);
     setIsActive(true);
     setIsModalOpen(true);
@@ -67,11 +80,13 @@ export function HomeGroupsManager({
   const openEditModal = (group: HomeGroup) => {
     setEditingHomeGroup(group);
     setName(group.name);
-    setLeader(group.leader);
+    setLeader(group.leader ?? "");
+    setLeaderId(group.leader_id || "");
     setAddress(group.address);
     setSchedule(group.schedule ?? "");
-    setTopPercent(group.coordinates?.top ?? "50%");
-    setLeftPercent(group.coordinates?.left ?? "50%");
+    setLatitude(group.latitude ?? null);
+    setLongitude(group.longitude ?? null);
+    setZoneName(group.zone_name ?? null);
     setSortOrder(group.sort_order);
     setIsActive(group.is_active);
     setIsModalOpen(true);
@@ -100,26 +115,20 @@ export function HomeGroupsManager({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !leader.trim() || !address.trim()) return;
+    if (!name.trim() || !address.trim()) return;
 
     setStatus(null);
     startTransition(async () => {
       try {
-        // Enforce percentage symbol on map offsets
-        const formatPercent = (val: string) => {
-          const num = val.replace(/[^0-9.]/g, "");
-          return num ? `${num}%` : "50%";
-        };
-
         const payload = {
           name,
-          leader,
+          leader: leader || null,
+          leader_id: leaderId ? Number(leaderId) : null,
           address,
+          latitude,
+          longitude,
+          zone_name: zoneName,
           schedule: schedule || null,
-          coordinates: {
-            top: formatPercent(topPercent),
-            left: formatPercent(leftPercent),
-          },
           sort_order: Number(sortOrder),
           is_active: isActive,
         };
@@ -143,9 +152,15 @@ export function HomeGroupsManager({
     });
   };
 
+  const userOptions = users.map((u) => ({
+    value: u.id,
+    label: u.name,
+    sublabel: u.email,
+  }));
+
   const filtered = homeGroups.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()) ||
-    g.leader.toLowerCase().includes(search.toLowerCase()) ||
+    (g.leader && g.leader.toLowerCase().includes(search.toLowerCase())) ||
     g.address.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -164,12 +179,20 @@ export function HomeGroupsManager({
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-        >
-          <Plus className="size-4" /> Nouveau Groupe
-        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/admins/home_groups/applications"
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo/20 bg-white px-5 py-3 text-sm font-bold text-indigo transition hover:bg-cream"
+          >
+            Voir les Candidatures
+          </Link>
+          <button
+            onClick={openCreateModal}
+            className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+          >
+            <Plus className="size-4" /> Nouveau Groupe
+          </button>
+        </div>
       </header>
 
       {status && (
@@ -212,7 +235,7 @@ export function HomeGroupsManager({
                 <th className="px-6 py-4">Nom du groupe</th>
                 <th className="px-6 py-4">Responsable</th>
                 <th className="px-6 py-4">Quartier / Adresse</th>
-                <th className="px-6 py-4">Position Carte</th>
+                <th className="px-6 py-4">Coordonnées</th>
                 <th className="px-6 py-4">Statut</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -221,7 +244,18 @@ export function HomeGroupsManager({
               {filtered.map((group) => (
                 <tr key={group.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4 font-semibold">{group.name}</td>
-                  <td className="px-6 py-4 font-medium">{group.leader}</td>
+                  <td className="px-6 py-4">
+                    {group.leader ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-[10px] font-bold text-indigo">
+                          {group.leader.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-xs font-semibold text-indigo">{group.leader}</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs italic text-faint">Non assigné</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4">
                     <div>
                       <p className="font-semibold text-xs text-indigo">{group.address}</p>
@@ -229,7 +263,13 @@ export function HomeGroupsManager({
                     </div>
                   </td>
                   <td className="px-6 py-4 text-xs font-mono text-faint">
-                    Top: {group.coordinates?.top ?? "50%"} · Left: {group.coordinates?.left ?? "50%"}
+                    {group.latitude != null && group.longitude != null ? (
+                      <span title={group.zone_name ?? undefined}>
+                        {group.latitude.toFixed(4)}, {group.longitude.toFixed(4)}
+                      </span>
+                    ) : (
+                      <span className="italic">Non localisé</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     {group.is_active ? (
@@ -275,106 +315,86 @@ export function HomeGroupsManager({
         </div>
       </div>
 
-      {/* Modal Dialog */}
-      {isModalOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-xs" onClick={closeModal} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[520px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
-            <div className="contents">
-              <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-display text-xl font-bold text-indigo italic">
-                {editingHomeGroup ? "Modifier le groupe de maison" : "Créer un groupe de maison"}
-              </h3>
-              <button onClick={closeModal} className="text-faint hover:text-indigo">
-                <X className="size-5" />
-              </button>
-            </div>
+      {/* Add / edit modal */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) closeModal(); }}>
+        <DialogContent
+          showCloseButton
+          className="w-[95vw] md:max-w-3xl rounded-2xl bg-white p-0 gap-0 border-0 outline-none max-h-[92vh] overflow-y-auto"
+        >
+          <div className="border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
+            <h2 className="font-display text-lg font-bold text-indigo italic">
+              {editingHomeGroup ? "Modifier le groupe de maison" : "Créer un groupe de maison"}
+            </h2>
+          </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Nom du groupe *</span>
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-5 px-6 py-6">
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Nom du groupe *</span>
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="ex: Cellule Ficgayo Temple"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Responsable / Leader *</span>
-                <input
-                  type="text"
-                  required
-                  value={leader}
-                  onChange={(e) => setLeader(e.target.value)}
-                  placeholder="ex: Frère Emmanuel"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Responsable / Leader</span>
+                <SearchableSelect
+                  options={userOptions}
+                  value={leaderId === "" ? null : leaderId}
+                  onChange={(val) => {
+                    setLeaderId(val ?? "");
+                    if (val !== null) {
+                      const u = users.find((user) => user.id === val);
+                      if (u) setLeader(u.name);
+                    } else {
+                      setLeader("");
+                    }
+                  }}
+                  placeholder="Assigner un responsable…"
+                  clearLabel="— Aucun responsable —"
                 />
-              </label>
+              </div>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Adresse complète (Quartier...) *</span>
-                <input
-                  type="text"
-                  required
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="ex: Yopougon, Cité Ficgayo, Rue des Bananiers"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
+              <LocationPicker
+                value={{ address, latitude, longitude, zone: zoneName }}
+                onChange={(next) => {
+                  setAddress(next.address);
+                  setLatitude(next.latitude);
+                  setLongitude(next.longitude);
+                  setZoneName(next.zone ?? null);
+                }}
+              />
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Programme des réunions</span>
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Programme des réunions</span>
                 <input
                   type="text"
                   value={schedule}
                   onChange={(e) => setSchedule(e.target.value)}
                   placeholder="ex: Chaque mardi de 19:00 à 20:30"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
 
               <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Position Carte (Top %)</span>
-                  <input
-                    type="text"
-                    value={topPercent}
-                    onChange={(e) => setTopPercent(e.target.value)}
-                    placeholder="45%"
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold font-mono"
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Position Carte (Left %)</span>
-                  <input
-                    type="text"
-                    value={leftPercent}
-                    onChange={(e) => setLeftPercent(e.target.value)}
-                    placeholder="28%"
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold font-mono"
-                  />
-                </label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Ordre de tri</span>
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Ordre de tri</span>
                   <input
                     type="number"
                     min={0}
                     value={sortOrder}
                     onChange={(e) => setSortOrder(Number(e.target.value))}
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                   />
                 </label>
 
                 <div className="flex flex-col gap-2.5 justify-center">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Visibilité</span>
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Visibilité</span>
                   <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="checkbox"
@@ -386,29 +406,28 @@ export function HomeGroupsManager({
                   </label>
                 </div>
               </div>
+            </div>
 
-              <div className="mt-4 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </>
-      )}
+            <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4 bg-[#faf8f4]">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
+              >
+                {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

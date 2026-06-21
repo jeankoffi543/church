@@ -92,7 +92,7 @@ export type HomeGroup = {
   name: string;
   area: string;
   when: string;
-  leader: string;
+  leader: string | null;
   top: string;
   left: string;
   /** Real geo coordinates + sector/schedule for the interactive map. */

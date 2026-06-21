@@ -1,30 +1,26 @@
 "use client";
 
-import "mapbox-gl/dist/mapbox-gl.css";
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Map as MbMap, Marker as MbMarker, Popup as MbPopup } from "mapbox-gl";
+import { useState } from "react";
 import {
   ArrowRight,
-  MapPin,
   Clock,
   Check,
   X,
   Loader2,
-  Compass,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
   Search,
-  List,
-  Map as MapIcon,
-  Users,
+  ClipboardCheck,
+  Inbox,
 } from "lucide-react";
 
-import { HOME_GROUPS, type HomeGroup } from "@/lib/data";
-import { cn } from "@/lib/utils";
+import { type HomeGroup } from "@/lib/data";
 import {
-  ABIDJAN_CENTER,
-  buildZonePolygons,
-  withCoords,
-} from "@/components/eglise/map-utils";
+  submitHomeGroupApplication,
+  checkHomeGroupApplicationStatus,
+  type HomeGroupApplicationStatusItem,
+} from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -35,441 +31,277 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandButton } from "@/components/ui/brand-button";
-
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
-const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
+import { HomeGroupsMap } from "@/components/eglise/home-groups-map";
 
 type Selection = HomeGroup | "general" | null;
 
-/* ── Custom marker DOM element (Tailwind classes kept as literals so the
-   JIT compiler picks them up even though the node is created imperatively) ── */
-function createMarkerElement(): { root: HTMLButtonElement; pin: HTMLSpanElement } {
-  const root = document.createElement("button");
-  root.type = "button";
-  root.className = "block cursor-pointer";
-
-  const pin = document.createElement("span");
-  pin.className =
-    "flex size-9 items-center justify-center rounded-full bg-[#e2b85f] text-[#160f33] shadow-[0_6px_16px_rgba(200,144,46,0.5)] ring-2 ring-white transition-transform duration-200";
-  pin.innerHTML =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/></svg>';
-
-  root.appendChild(pin);
-  return { root, pin };
-}
-
-function popupHtml(group: HomeGroup): string {
-  return `
-    <div class="w-[230px] overflow-hidden rounded-2xl border border-white/10 bg-[#160f33] p-4 text-cream shadow-[0_18px_50px_rgba(22,15,51,0.5)]">
-      <span class="text-[9px] font-bold tracking-widest text-[#e2b85f] uppercase">${group.zone ?? "Cellule"}</span>
-      <h4 class="mt-0.5 font-display text-lg font-bold italic leading-tight text-cream">${group.name}</h4>
-      <p class="mt-1 text-[11px] text-[#9a8fb5]">Responsable · ${group.leader}</p>
-      <p class="mt-0.5 text-[11px] text-[#9a8fb5]">${group.when || `${group.day ?? ""} ${group.time ?? ""}`.trim()}</p>
-      <button class="js-join mt-3 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-[#e2b85f] to-[#c8902e] px-3 py-2 text-[12px] font-extrabold text-[#160f33] transition hover:brightness-105">
-        S'inscrire / Rejoindre
-      </button>
-    </div>`;
-}
-
-export function HomeGroups({ groups = HOME_GROUPS }: { groups?: HomeGroup[] }) {
-  /* ── Filters & UI state ─────────────────────────────────────────── */
-  const [search, setSearch] = useState("");
-  const [zoneFilter, setZoneFilter] = useState<string | null>(null);
-  const [dayFilter, setDayFilter] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<number | null>(null);
-  const [mobileView, setMobileView] = useState<"list" | "map">("list");
-
-  /* ── Join dialog ────────────────────────────────────────────────── */
+export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
   const [selection, setSelection] = useState<Selection>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  /* ── Map refs ───────────────────────────────────────────────────── */
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<MbMap | null>(null);
-  const popupRef = useRef<MbPopup | null>(null);
-  const markersRef = useRef<Map<number, { marker: MbMarker; pin: HTMLElement; root: HTMLElement }>>(
-    new Map()
-  );
-  // Stable indirections so imperatively-created markers/popups always reach the
-  // latest handlers without being recreated.
-  const markerClickRef = useRef<(g: HomeGroup) => void>(() => {});
-  const openJoinRef = useRef<(g: HomeGroup) => void>(() => {});
+  // Form states
+  const [formName, setFormName] = useState("");
+  const [formEmail, setFormEmail] = useState("");
+  const [formPhone, setFormPhone] = useState("");
+  const [formMotivation, setFormMotivation] = useState("");
+  const [formGroupId, setFormGroupId] = useState<number | "">("");
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [formStatusMsg, setFormStatusMsg] = useState<{
+    status: "pending" | "approved" | "rejected";
+    groupName: string;
+    message: string;
+  } | null>(null);
 
-  /* ── Derived data ───────────────────────────────────────────────── */
-  const located = useMemo(() => withCoords(groups), [groups]);
+  // Status-lookup dialog
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [statusContact, setStatusContact] = useState("");
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [statusResults, setStatusResults] = useState<HomeGroupApplicationStatusItem[] | null>(null);
 
-  const zones = useMemo(
-    () => Array.from(new Set(groups.map((g) => g.zone).filter(Boolean))) as string[],
-    [groups]
-  );
-  const days = useMemo(
-    () => Array.from(new Set(groups.map((g) => g.day).filter(Boolean))) as string[],
-    [groups]
-  );
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return groups.filter((g) => {
-      const matchesSearch =
-        !q ||
-        [g.name, g.leader, g.area, g.zone].some((v) => v?.toLowerCase().includes(q));
-      const matchesZone = !zoneFilter || g.zone === zoneFilter;
-      const matchesDay = !dayFilter || g.day === dayFilter;
-      return matchesSearch && matchesZone && matchesDay;
-    });
-  }, [groups, search, zoneFilter, dayFilter]);
-
-  const filteredKey = filtered.map((g) => g.id ?? g.name).join("|");
-
-  /* ── Actions ────────────────────────────────────────────────────── */
-  const flyTo = useCallback((g: HomeGroup) => {
-    if (typeof g.lat !== "number" || typeof g.lng !== "number") return;
-    mapRef.current?.flyTo({ center: [g.lng, g.lat], zoom: 15, speed: 1.2, curve: 1.4, essential: true });
-  }, []);
-
-  const openPopup = useCallback(async (g: HomeGroup) => {
-    const map = mapRef.current;
-    if (!map || typeof g.lat !== "number" || typeof g.lng !== "number") return;
-    const mapboxgl = (await import("mapbox-gl")).default;
-
-    popupRef.current?.remove();
-    const node = document.createElement("div");
-    node.innerHTML = popupHtml(g);
-    node.querySelector(".js-join")?.addEventListener("click", () => {
-      popupRef.current?.remove();
-      openJoinRef.current(g);
-    });
-
-    popupRef.current = new mapboxgl.Popup({
-      closeButton: false,
-      closeOnClick: true,
-      offset: 22,
-      className: "mfm-popup",
-      maxWidth: "260px",
-    })
-      .setLngLat([g.lng, g.lat])
-      .setDOMContent(node)
-      .addTo(map);
-  }, []);
-
-  const openJoin = useCallback((g: HomeGroup) => setSelection(g), []);
-
-  const handleSelectCard = useCallback(
-    (g: HomeGroup) => {
-      setActiveId(g.id ?? null);
-      flyTo(g);
-      void openPopup(g);
-      setMobileView("map");
-    },
-    [flyTo, openPopup]
-  );
-
-  // Keep the indirections current.
-  useEffect(() => {
-    markerClickRef.current = (g) => {
-      setActiveId(g.id ?? null);
-      flyTo(g);
-      void openPopup(g);
-    };
-    openJoinRef.current = openJoin;
-  });
-
-  /* ── Map init (once) ────────────────────────────────────────────── */
-  useEffect(() => {
-    if (!MAPBOX_TOKEN || !containerRef.current) return;
-    let cancelled = false;
-    const markers = markersRef.current;
-
-    (async () => {
-      const mapboxgl = (await import("mapbox-gl")).default;
-      if (cancelled || !containerRef.current) return;
-      mapboxgl.accessToken = MAPBOX_TOKEN;
-
-      const map = new mapboxgl.Map({
-        container: containerRef.current,
-        style: MAP_STYLE,
-        center: ABIDJAN_CENTER,
-        zoom: 11.5,
-        attributionControl: false,
-        cooperativeGestures: true,
-      });
-      mapRef.current = map;
-      map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
-      map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-left");
-
-      map.on("load", () => {
-        if (cancelled) return;
-
-        // Zone "sector blob" polygons.
-        const zonePolygons = buildZonePolygons(groups);
-        if (zonePolygons.features.length > 0) {
-          map.addSource("zones", { type: "geojson", data: zonePolygons });
-          map.addLayer({
-            id: "zones-fill",
-            type: "fill",
-            source: "zones",
-            paint: { "fill-color": ["get", "color"], "fill-opacity": 0.15 },
-          });
-          map.addLayer({
-            id: "zones-line",
-            type: "line",
-            source: "zones",
-            paint: { "line-color": ["get", "color"], "line-width": 1.5, "line-opacity": 0.5 },
-          });
-        }
-
-        // Custom markers.
-        for (const g of located) {
-          const { root, pin } = createMarkerElement();
-          root.addEventListener("click", (e) => {
-            e.stopPropagation();
-            markerClickRef.current(g);
-          });
-          const marker = new mapboxgl.Marker({ element: root, anchor: "bottom" })
-            .setLngLat([g.lng, g.lat])
-            .addTo(map);
-          if (typeof g.id === "number") {
-            markers.set(g.id, { marker, pin, root });
-          }
-        }
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      popupRef.current?.remove();
-      markers.forEach(({ marker }) => marker.remove());
-      markers.clear();
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-    // groups/located are stable (server data); init must run once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* ── Marker visibility follows the active filters ───────────────── */
-  useEffect(() => {
-    const visibleIds = new Set(filtered.map((g) => g.id));
-    markersRef.current.forEach(({ root }, id) => {
-      root.style.display = visibleIds.has(id) ? "" : "none";
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredKey]);
-
-  /* ── Active marker highlight ────────────────────────────────────── */
-  useEffect(() => {
-    markersRef.current.forEach(({ pin, root }, id) => {
-      const active = id === activeId;
-      pin.classList.toggle("scale-125", active);
-      pin.classList.toggle("ring-[#160f33]", active);
-      root.style.zIndex = active ? "10" : "1";
-    });
-  }, [activeId]);
-
-  /* ── Resize when the map (re)appears on mobile ──────────────────── */
-  useEffect(() => {
-    if (mobileView === "map") {
-      const t = setTimeout(() => mapRef.current?.resize(), 60);
-      return () => clearTimeout(t);
-    }
-  }, [mobileView]);
-
-  /* ── Join form submit (placeholder, as designed) ────────────────── */
   const open = selection !== null;
   const group = selection && selection !== "general" ? selection : null;
 
-  const onOpenChange = (next: boolean) => {
-    if (!next) setSelection(null);
+  const handleSelectGroup = (g: Selection) => {
+    setSelection(g);
+    setFormErrors({});
+    setFormStatusMsg(null);
+    if (g && g !== "general") {
+      setFormGroupId(g.id || "");
+    } else {
+      setFormGroupId("");
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const onOpenChange = (next: boolean) => {
+    if (!next) handleSelectGroup(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormErrors({});
+    setFormStatusMsg(null);
+
+    const targetGroupId = group ? group.id : formGroupId;
+    if (!targetGroupId) {
+      setFormErrors({ home_group_id: "Veuillez choisir un groupe de maison." });
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+
+    const res = await submitHomeGroupApplication({
+      name: formName,
+      email: formEmail,
+      phone: formPhone,
+      home_group_id: Number(targetGroupId),
+      motivation: formMotivation,
+    });
+
+    setLoading(false);
+
+    if (res.success) {
       const label = group ? `la ${group.name}` : "un groupe de maison";
       setSelection(null);
       setToast(
         `Merci ! Ta demande pour rejoindre ${label} a bien été reçue. Un responsable te contactera très vite.`
       );
+      setFormName("");
+      setFormEmail("");
+      setFormPhone("");
+      setFormMotivation("");
+      setFormGroupId("");
       setTimeout(() => setToast(null), 4500);
-    }, 1400);
+    } else {
+      if (res.status === "approved" || res.status === "pending") {
+        setFormStatusMsg({
+          status: res.status,
+          groupName: res.home_group_name || "",
+          message: res.message,
+        });
+      } else {
+        setFormErrors({ general: res.message });
+      }
+    }
   };
 
-  /* ── Render ─────────────────────────────────────────────────────── */
+  const openStatusDialog = (prefill?: string) => {
+    setStatusContact(prefill ?? "");
+    setStatusResults(null);
+    setStatusError(null);
+    setStatusOpen(true);
+  };
+
+  const handleStatusOpenChange = (next: boolean) => {
+    setStatusOpen(next);
+    if (!next) {
+      setStatusContact("");
+      setStatusResults(null);
+      setStatusError(null);
+    }
+  };
+
+  const handleStatusCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const contact = statusContact.trim();
+    if (!contact) {
+      setStatusError("Veuillez saisir votre email ou votre téléphone.");
+      return;
+    }
+    setStatusLoading(true);
+    setStatusError(null);
+    try {
+      const results = await checkHomeGroupApplicationStatus(contact);
+      setStatusResults(results);
+    } catch (err) {
+      setStatusError((err as Error).message || "Impossible de vérifier le statut.");
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
   return (
     <>
-      {/* Mobile view toggle */}
-      <div className="mb-4 flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 md:hidden">
-        {(["list", "map"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setMobileView(v)}
-            className={cn(
-              "flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition",
-              mobileView === v ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo"
-            )}
-          >
-            {v === "list" ? <List className="size-4" /> : <MapIcon className="size-4" />}
-            {v === "list" ? "Vue Liste" : "Vue Carte"}
-          </button>
-        ))}
+      {/* Toolbar: check existing application */}
+      <div className="mb-6 flex justify-end">
+        <button
+          type="button"
+          onClick={() => openStatusDialog()}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[rgba(40,25,80,0.12)] bg-white px-4 py-2.5 text-[13px] font-bold text-indigo shadow-[0_1px_3px_rgba(22,15,51,0.05)] transition hover:border-gold hover:text-gold-dark"
+        >
+          <ClipboardCheck className="size-4" />
+          Vérifier ma candidature
+        </button>
       </div>
 
-      <div className="grid gap-4 overflow-hidden rounded-[24px] border border-[rgba(40,25,80,0.1)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.05)] md:h-[640px] md:grid-cols-3">
-        {/* ── Sidebar ──────────────────────────────────────────────── */}
-        <aside
-          className={cn(
-            "flex min-h-0 flex-col md:col-span-1 md:border-r md:border-[rgba(40,25,80,0.08)]",
-            mobileView === "map" && "hidden md:flex"
-          )}
+      {/* Interactive Mapbox cartography (join is delegated back here) */}
+      <HomeGroupsMap groups={groups} onJoin={handleSelectGroup} />
+
+      {/* ── Status-lookup dialog ──────────────────────────────────── */}
+      <Dialog open={statusOpen} onOpenChange={handleStatusOpenChange}>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-[90%] sm:max-w-md border border-white/10 bg-ink p-6 text-cream shadow-2xl rounded-xl"
         >
-          {/* Search + filters */}
-          <div className="space-y-3 border-b border-[rgba(40,25,80,0.08)] p-4">
-            <div className="flex items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 focus-within:border-gold">
-              <Search className="size-4 shrink-0 text-faint" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Quartier, responsable, rue…"
-                className="w-full bg-transparent text-sm text-indigo outline-none placeholder:text-faint"
+          <DialogHeader className="gap-1 text-left">
+            <span className="text-[10px] font-bold tracking-widest text-gold uppercase">
+              Suivi d&apos;inscription
+            </span>
+            <DialogTitle className="font-display text-2xl font-bold text-cream italic leading-tight">
+              Vérifier mon statut
+            </DialogTitle>
+            <DialogDescription className="text-xs text-[#9a8fb5] leading-relaxed">
+              Saisissez l&apos;email ou le téléphone utilisé lors de votre candidature.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleStatusCheck} className="mt-2 space-y-3 text-left">
+            <div className="flex gap-2">
+              <Input
+                required
+                placeholder="Email ou téléphone"
+                value={statusContact}
+                onChange={(e) => {
+                  setStatusContact(e.target.value);
+                  setStatusError(null);
+                }}
+                className="h-11 flex-1 rounded-xl border-white/15 bg-white/5 px-4 text-sm text-cream placeholder:text-white/30 focus-visible:border-gold focus-visible:ring-gold/30 focus-visible:ring-3 transition-all"
               />
-              {search && (
-                <button onClick={() => setSearch("")} className="cursor-pointer text-faint hover:text-indigo">
-                  <X className="size-3.5" />
-                </button>
-              )}
+              <BrandButton
+                type="submit"
+                disabled={statusLoading}
+                variant="gold"
+                className="h-11 shrink-0 px-4 text-sm font-extrabold"
+              >
+                {statusLoading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+              </BrandButton>
             </div>
 
-            {/* Zone badges */}
-            {zones.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <FilterBadge active={zoneFilter === null} onClick={() => setZoneFilter(null)}>
-                  Toutes zones
-                </FilterBadge>
-                {zones.map((z) => (
-                  <FilterBadge key={z} active={zoneFilter === z} onClick={() => setZoneFilter(zoneFilter === z ? null : z)}>
-                    {z}
-                  </FilterBadge>
-                ))}
+            {statusError && (
+              <div className="flex items-start gap-2 rounded-xl border border-[#ff8a8a]/30 bg-[#ff8a8a]/10 p-3 text-xs font-semibold text-[#ffb3b3]">
+                <AlertCircle className="size-4 shrink-0" />
+                {statusError}
               </div>
             )}
+          </form>
 
-            {/* Day filter */}
-            {days.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                <FilterBadge active={dayFilter === null} onClick={() => setDayFilter(null)} variant="day">
-                  Tous les jours
-                </FilterBadge>
-                {days.map((d) => (
-                  <FilterBadge key={d} active={dayFilter === d} onClick={() => setDayFilter(dayFilter === d ? null : d)} variant="day">
-                    {d}
-                  </FilterBadge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Listing */}
-          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
-            <p className="px-1 text-[11px] font-bold tracking-wide text-faint uppercase">
-              {filtered.length} cellule{filtered.length > 1 ? "s" : ""}
-            </p>
-            {filtered.map((g) => {
-              const isActive = g.id != null && g.id === activeId;
-              return (
-                <button
-                  key={g.id ?? g.name}
-                  onClick={() => handleSelectCard(g)}
-                  onMouseEnter={() => setActiveId(g.id ?? null)}
-                  className={cn(
-                    "w-full rounded-[14px] border bg-white p-4 text-left transition-all duration-200",
-                    isActive
-                      ? "border-gold shadow-[0_12px_30px_rgba(200,144,46,0.18)]"
-                      : "border-[rgba(40,25,80,0.08)] hover:border-gold/50 hover:shadow-[0_10px_24px_rgba(22,15,51,0.08)]"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-[15px] font-bold text-indigo">{g.name}</h3>
-                    {g.zone && (
-                      <span className="shrink-0 rounded-full bg-indigo/5 px-2 py-0.5 text-[10px] font-bold text-indigo">
-                        {g.zone}
+          {/* Results */}
+          {statusResults !== null && (
+            <div className="mt-2 space-y-2.5 animate-fade-up">
+              {statusResults.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-8 text-center">
+                  <Inbox className="size-8 text-[#9a8fb5]" />
+                  <p className="text-sm font-semibold text-cream">Aucune demande trouvée</p>
+                  <p className="text-xs text-[#9a8fb5]">
+                    Vérifiez la saisie, ou postulez à une cellule ci-dessus.
+                  </p>
+                </div>
+              ) : (
+                statusResults.map((item, idx) => (
+                  <div
+                    key={`${item.home_group}-${idx}`}
+                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-cream">
+                          {item.home_group ?? "Cellule"}
+                        </p>
+                        {item.created_at && (
+                          <p className="text-[11px] text-[#9a8fb5]">
+                            Soumise le{" "}
+                            {new Date(item.created_at).toLocaleDateString("fr-FR", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                          item.status === "approved"
+                            ? "bg-emerald-400/15 text-emerald-300 ring-emerald-400/30"
+                            : item.status === "pending"
+                            ? "bg-[#e2b85f]/15 text-[#e2b85f] ring-[#e2b85f]/30"
+                            : "bg-[#ff9a9a]/15 text-[#ff9a9a] ring-[#ff9a9a]/30"
+                        }`}
+                      >
+                        {item.status === "approved" ? (
+                          <CheckCircle className="size-3.5 text-emerald-300" />
+                        ) : item.status === "pending" ? (
+                          <Clock className="size-3.5 text-[#e2b85f]" />
+                        ) : (
+                          <XCircle className="size-3.5 text-[#ff9a9a]" />
+                        )}
+                        {item.status === "approved"
+                          ? "Approuvée"
+                          : item.status === "pending"
+                          ? "En attente"
+                          : "Non retenue"}
                       </span>
+                    </div>
+                    {item.decision_note && (
+                      <p className="mt-2.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs leading-relaxed text-[#cfc6e0]">
+                        <span className="font-bold text-[#e2b85f]">Message : </span>
+                        {item.decision_note}
+                      </p>
                     )}
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[12px] text-body">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="size-3.5 text-gold-dark" /> {g.area}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="size-3.5 text-gold-dark" /> {g.when || `${g.day ?? ""} ${g.time ?? ""}`.trim()}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-[11.5px] text-faint">Responsable · {g.leader}</span>
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openJoin(g);
-                      }}
-                      className="flex cursor-pointer items-center gap-1 text-[12px] font-bold text-indigo-mid transition hover:text-gold"
-                    >
-                      Rejoindre <ArrowRight className="size-3.5" />
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-
-            {filtered.length === 0 && (
-              <div className="flex flex-col items-center gap-2 py-12 text-center">
-                <Users className="size-8 text-gold/40" />
-                <p className="text-sm font-semibold text-body-strong">Aucune cellule trouvée</p>
-                <p className="max-w-[220px] text-xs text-body">
-                  Essaie une autre zone, un autre jour, ou trouve un groupe près de chez toi.
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* General CTA */}
-          <div className="border-t border-[rgba(40,25,80,0.08)] p-4">
-            <button
-              onClick={() => setSelection("general")}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-indigo py-3 text-sm font-bold text-white transition hover:bg-indigo-mid"
-            >
-              <Compass className="size-4" /> Trouver un groupe près de chez moi
-            </button>
-          </div>
-        </aside>
-
-        {/* ── Map ──────────────────────────────────────────────────── */}
-        <div
-          className={cn(
-            "relative min-h-[460px] md:col-span-2 md:min-h-0",
-            mobileView === "list" && "hidden md:block"
-          )}
-        >
-          <div ref={containerRef} className="absolute inset-0 size-full" />
-          {!MAPBOX_TOKEN && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-lilac-200 to-lilac-300 p-6 text-center">
-              <MapIcon className="size-9 text-indigo-mid/50" />
-              <p className="max-w-xs text-sm font-semibold text-indigo">
-                Carte interactive indisponible
-              </p>
-              <p className="max-w-xs text-xs text-body">
-                Configurez <code className="rounded bg-white/60 px-1 font-mono text-[11px]">NEXT_PUBLIC_MAPBOX_TOKEN</code>{" "}
-                pour activer la cartographie des cellules.
-              </p>
+                ))
+              )}
             </div>
           )}
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* ── Join dialog (as designed) ────────────────────────────────── */}
+      {/* ── Join dialog ──────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-[90%] rounded-xl border border-white/10 bg-ink p-6 text-cream shadow-2xl sm:max-w-md">
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-[90%] rounded-xl border border-white/10 bg-ink p-6 text-cream shadow-2xl sm:max-w-md"
+        >
           <DialogHeader className="gap-1 text-left">
             <span className="text-[10px] font-bold tracking-widest text-gold uppercase">
               Groupe de maison
@@ -479,28 +311,138 @@ export function HomeGroups({ groups = HOME_GROUPS }: { groups?: HomeGroup[] }) {
             </DialogTitle>
             <DialogDescription className="text-xs leading-relaxed text-[#9a8fb5]">
               {group
-                ? `${group.area} · ${group.when || `${group.day ?? ""} ${group.time ?? ""}`.trim()} · Responsable ${group.leader}.`
-                : "Dis-nous où tu habites, nous t'orientons vers la cellule la plus proche de chez toi."}
+                ? `${group.area} · ${group.when} · Responsable : ${group.leader || "Non assigné"}.`
+                : "Sélectionnez une cellule ou décrivez votre besoin pour être orienté."}
             </DialogDescription>
           </DialogHeader>
 
+          {formStatusMsg && (
+            <div className="mt-2 rounded-xl border border-gold/30 bg-gold/5 p-4 text-xs text-cream space-y-1 animate-fade-up">
+              <p className="font-bold text-gold flex items-center gap-1.5">
+                <AlertCircle className="size-4" /> Statut de votre inscription
+              </p>
+              <p className="text-[#9a8fb5] leading-relaxed">{formStatusMsg.message}</p>
+            </div>
+          )}
+
+          {formErrors.general && (
+            <div className="mt-2 rounded-xl border border-live/30 bg-live/5 p-4 text-xs text-live flex items-center gap-2 animate-fade-up">
+              <AlertCircle className="size-4 shrink-0" />
+              <span>{formErrors.general}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="mt-2 space-y-4 text-left">
             <Field label="Nom complet">
-              <Input required placeholder="Ex: Jean Koffi" className={DARK_FIELD} />
-            </Field>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Téléphone">
-                <Input type="tel" required placeholder="+225 07 00 00 00" className={DARK_FIELD} />
-              </Field>
-              <Field label="Quartier">
-                <Input required defaultValue={group?.zone ?? group?.area ?? ""} placeholder="Ex: Yopougon" className={DARK_FIELD} />
-              </Field>
-            </div>
-            <Field label="Message (optionnel)">
-              <Textarea rows={3} placeholder="Une précision pour le responsable…" className={`${DARK_FIELD} min-h-20 resize-none`} />
+              <Input
+                required
+                placeholder="Ex: Jean Koffi"
+                value={formName}
+                onChange={(e) => {
+                  setFormName(e.target.value);
+                  if (formErrors.name) setFormErrors((p) => ({ ...p, name: "" }));
+                }}
+                className={DARK_FIELD}
+              />
+              {formErrors.name && <p className="text-[11px] text-live mt-1">{formErrors.name}</p>}
             </Field>
 
-            <BrandButton type="submit" disabled={loading} variant="gold" size="full" className="h-12 text-sm font-extrabold">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Adresse Email">
+                <Input
+                  type="email"
+                  required
+                  placeholder="Ex: jean@mail.com"
+                  value={formEmail}
+                  onChange={(e) => {
+                    setFormEmail(e.target.value);
+                    if (formErrors.email) setFormErrors((p) => ({ ...p, email: "" }));
+                  }}
+                  className={DARK_FIELD}
+                />
+                {formErrors.email && <p className="text-[11px] text-live mt-1">{formErrors.email}</p>}
+              </Field>
+
+              <Field label="Téléphone">
+                <Input
+                  type="tel"
+                  required
+                  placeholder="Ex: +225 07 00 00 00"
+                  value={formPhone}
+                  onChange={(e) => {
+                    setFormPhone(e.target.value);
+                    if (formErrors.phone) setFormErrors((p) => ({ ...p, phone: "" }));
+                  }}
+                  className={DARK_FIELD}
+                />
+                {formErrors.phone && <p className="text-[11px] text-live mt-1">{formErrors.phone}</p>}
+              </Field>
+            </div>
+
+            {/* Group selection dropdown when the general "find a group" was used */}
+            {selection === "general" && (
+              <Field label="Choisir une cellule">
+                <select
+                  required
+                  value={formGroupId}
+                  onChange={(e) => {
+                    setFormGroupId(e.target.value ? Number(e.target.value) : "");
+                    if (formErrors.home_group_id) setFormErrors((p) => ({ ...p, home_group_id: "" }));
+                  }}
+                  className="w-full h-11 rounded-xl border border-white/15 bg-[#1f1933] px-3 text-sm text-cream focus:border-gold outline-none transition-all"
+                >
+                  <option value="" disabled className="text-white/30">
+                    -- Sélectionner une cellule --
+                  </option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id} className="text-cream bg-ink">
+                      {g.name} ({g.area})
+                    </option>
+                  ))}
+                </select>
+                {formErrors.home_group_id && (
+                  <p className="text-[11px] text-live mt-1">{formErrors.home_group_id}</p>
+                )}
+              </Field>
+            )}
+
+            <Field label="Motivation (pourquoi voulez-vous nous rejoindre ?)">
+              <Textarea
+                required
+                rows={3}
+                placeholder="Ex: Je souhaite grandir dans ma vie de prière et fraterniser avec les frères de mon quartier…"
+                value={formMotivation}
+                onChange={(e) => {
+                  setFormMotivation(e.target.value);
+                  if (formErrors.motivation) setFormErrors((p) => ({ ...p, motivation: "" }));
+                }}
+                className={`${DARK_FIELD} min-h-20 resize-none`}
+              />
+              {formErrors.motivation && (
+                <p className="text-[11px] text-live mt-1">{formErrors.motivation}</p>
+              )}
+            </Field>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelection(null);
+                  openStatusDialog(formEmail);
+                }}
+                className="cursor-pointer text-[11px] font-bold text-[#9a8fb5] underline-offset-2 transition hover:text-gold hover:underline"
+              >
+                Déjà inscrit ? Vérifier mon statut
+              </button>
+            </div>
+
+            <BrandButton
+              type="submit"
+              disabled={loading || formStatusMsg?.status === "approved" || formStatusMsg?.status === "pending"}
+              variant="gold"
+              size="full"
+              className="h-12 text-sm font-extrabold"
+            >
               {loading ? (
                 <>
                   <Loader2 className="size-4 animate-spin" /> Envoi en cours…
@@ -537,36 +479,6 @@ export function HomeGroups({ groups = HOME_GROUPS }: { groups?: HomeGroup[] }) {
         </div>
       )}
     </>
-  );
-}
-
-/* ── Small building blocks ──────────────────────────────────────────── */
-
-function FilterBadge({
-  active,
-  onClick,
-  children,
-  variant = "zone",
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  variant?: "zone" | "day";
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "cursor-pointer rounded-full px-3 py-1 text-[11px] font-bold transition",
-        active
-          ? variant === "zone"
-            ? "bg-indigo text-white shadow-sm"
-            : "bg-gold text-indigo shadow-sm"
-          : "border border-[rgba(40,25,80,0.12)] bg-white text-body hover:border-gold hover:text-indigo"
-      )}
-    >
-      {children}
-    </button>
   );
 }
 

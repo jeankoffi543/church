@@ -330,3 +330,131 @@ export async function getLiveConfig(): Promise<LiveConfig> {
 
 // Re-export the settings response type for consumers that need it.
 export type { SettingsResponse };
+
+/* ── Home Group Applications Public Actions ─────────────────────── */
+
+export async function submitHomeGroupApplication(data: {
+  name: string;
+  email: string;
+  phone: string;
+  home_group_id: number;
+  motivation: string;
+}): Promise<{
+  success: boolean;
+  message: string;
+  status?: "pending" | "approved" | "rejected";
+  home_group_name?: string;
+  application?: any;
+}> {
+  try {
+    const res = await fetch(`${API_URL}/public/home-groups/applications`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok) {
+      return {
+        success: false,
+        message: json.message || "Une erreur est survenue lors de l'envoi de la demande.",
+        status: json.status,
+        home_group_name: json.home_group_name,
+      };
+    }
+
+    return {
+      success: true,
+      message: json.message || "Demande soumise avec succès.",
+      application: json.application,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: (err as Error).message || "Impossible de se connecter au serveur.",
+    };
+  }
+}
+
+export async function verifyHomeGroupApplication(data: {
+  email: string;
+  phone: string;
+}): Promise<{
+  success: boolean;
+  status: "pending" | "approved" | "rejected" | "not_found";
+  home_group_name?: string;
+  application?: any;
+  message?: string;
+}> {
+  try {
+    const res = await fetch(`${API_URL}/public/home-groups/applications/verify`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    const json = await res.json();
+
+    if (res.status === 404) {
+      return {
+        success: false,
+        status: "not_found",
+        message: json.message || "Aucune demande trouvée avec ces coordonnées.",
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        success: false,
+        status: "not_found",
+        message: json.message || "Impossible de vérifier le statut.",
+      };
+    }
+
+    return {
+      success: true,
+      status: json.status,
+      home_group_name: json.home_group_name,
+      application: json.application,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      status: "not_found",
+      message: (err as Error).message || "Impossible de se connecter au serveur.",
+    };
+  }
+}
+
+export type HomeGroupApplicationStatusItem = {
+  home_group?: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  created_at?: string;
+};
+
+export async function checkHomeGroupApplicationStatus(
+  contact: string
+): Promise<HomeGroupApplicationStatusItem[]> {
+  const res = await fetch(`${API_URL}/public/home-groups/applications/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ contact }),
+  });
+
+  if (!res.ok) {
+    const json = await res.json();
+    throw new Error(json.message || "Impossible de vérifier le statut.");
+  }
+
+  const body = (await res.json()) as { data: HomeGroupApplicationStatusItem[] };
+  return body.data;
+}
+

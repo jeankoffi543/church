@@ -31,7 +31,6 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, required: [] },
   { href: "/admins/ministries", label: "Ministères", icon: Users, required: [PERMISSIONS.manageSettings] },
-  { href: "/admins/ministries/applications", label: "Candidatures", icon: Inbox, required: [PERMISSIONS.validateMinistryApplications] },
   { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, required: [PERMISSIONS.manageSermons] },
   { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, required: [PERMISSIONS.manageEvents] },
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },

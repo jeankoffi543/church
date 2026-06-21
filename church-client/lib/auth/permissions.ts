@@ -13,9 +13,11 @@ export const PERMISSIONS = {
   managePrayerSettings: "manage_prayer_settings",
   viewCells: "view_cells",
   processCells: "process_cells",
+  validateHomeGroupApplications: "validate_home_group_applications",
   manageSermons: "manage_sermons",
   manageEvents: "manage_events",
   manageAccess: "manage_access",
+  manageMinistries: "manage_ministries",
   validateMinistryApplications: "validate_ministry_applications",
 } as const;
 

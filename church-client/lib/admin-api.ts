@@ -49,8 +49,12 @@ export type AdminEvent = {
 export type AdminHomeGroup = {
   id: number;
   name: string;
-  leader: string;
+  leader: string | null;
+  leader_id: number | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
@@ -351,8 +355,12 @@ export async function getAdminHomeGroups(): Promise<AdminHomeGroup[]> {
 
 export async function createHomeGroup(data: {
   name: string;
-  leader: string;
+  leader: string | null;
+  leader_id?: number | null;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  zone_name?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
@@ -369,8 +377,12 @@ export async function createHomeGroup(data: {
 
 export async function updateHomeGroup(id: number, data: {
   name?: string;
-  leader?: string;
+  leader?: string | null;
+  leader_id?: number | null;
   address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  zone_name?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
@@ -596,6 +608,70 @@ export async function deleteServant(id: number): Promise<void> {
   await adminFetch<void>(`/admin-users/${id}`, { method: "DELETE" });
 }
 
+/* ── Home Groups Applications CRUD ────────────────────────────────── */
+
+export type DecisionPayload = { decision_note: string | null; decision_note_public: boolean };
+
+export type AdminHomeGroupApplication = {
+  id: number;
+  user_id: number | null;
+  name: string;
+  email: string;
+  phone: string;
+  home_group_id: number;
+  motivation: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  decision_note_public: boolean;
+  processed_by: number | null;
+  created_at: string;
+  updated_at: string;
+  home_group?: AdminHomeGroup | null;
+  user?: { id: number; name: string; email: string } | null;
+  processor?: { id: number; name: string; email: string } | null;
+};
+
+export async function getAdminHomeGroupApplications(params?: {
+  home_group_id?: number;
+  status?: string;
+}): Promise<AdminHomeGroupApplication[]> {
+  const query = new URLSearchParams();
+  if (params?.home_group_id) {
+    query.set("home_group_id", params.home_group_id.toString());
+  }
+  if (params?.status) {
+    query.set("status", params.status);
+  }
+  const queryString = query.toString();
+  const path = `/home-groups/applications${queryString ? `?${queryString}` : ""}`;
+  const response = await adminFetch<{ data: AdminHomeGroupApplication[] }>(path);
+  return response.data;
+}
+
+export async function approveHomeGroupApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminHomeGroupApplication }> {
+  const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(decision),
+  });
+  revalidatePath("/admins/home_groups/applications");
+  return result;
+}
+
+export async function rejectHomeGroupApplication(
+  id: number,
+  decision: DecisionPayload
+): Promise<{ data: AdminHomeGroupApplication }> {
+  const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify(decision),
+  });
+  revalidatePath("/admins/home_groups/applications");
+  return result;
+}
+
 /* ── Ministry recruitment (applications) ─────────────────────────── */
 
 export type AdminMinistryApplication = {
@@ -616,8 +692,6 @@ export async function getMinistryApplications(): Promise<AdminMinistryApplicatio
   const response = await adminFetch<{ data: AdminMinistryApplication[] }>("/ministry-applications");
   return response.data;
 }
-
-type DecisionPayload = { decision_note: string | null; decision_note_public: boolean };
 
 export async function approveMinistryApplication(
   id: number,
