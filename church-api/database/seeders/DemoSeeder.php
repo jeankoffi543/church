@@ -41,6 +41,26 @@ class DemoSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $this->seedUsers();
+
+        $this->assignHomeGroupLeaders();
+    }
+
+    /**
+     * Assign home group leaders from the seeded "Responsables de cellule" users.
+     */
+    private function assignHomeGroupLeaders(): void
+    {
+        $leaders = User::role('Responsables de cellule')->where('is_active', true)->limit(4)->get();
+        $groups = \App\Models\HomeGroup::orderBy('id')->get();
+
+        foreach ($groups as $index => $group) {
+            if (isset($leaders[$index])) {
+                $group->update([
+                    'leader_id' => $leaders[$index]->id,
+                    'leader' => $leaders[$index]->name,
+                ]);
+            }
+        }
     }
 
     /**

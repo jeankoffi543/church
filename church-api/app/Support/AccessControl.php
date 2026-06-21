@@ -33,6 +33,7 @@ final class AccessControl
                 ['name' => 'manage_sermons', 'label' => 'Gérer les messages et la médiathèque'],
                 ['name' => 'manage_events', 'label' => "Gérer l'agenda et les événements"],
                 ['name' => 'manage_access', 'label' => 'Gérer les accès, groupes et permissions'],
+                ['name' => 'manage_ministries', 'label' => 'Créer et configurer les ministères et assigner les chefs'],
             ],
             'Tableau de bord' => [
                 ['name' => 'view_dashboard', 'label' => 'Accéder au tableau de bord'],
@@ -49,6 +50,7 @@ final class AccessControl
             'Cellules' => [
                 ['name' => 'view_cells', 'label' => 'Consulter les groupes de maison / cellules'],
                 ['name' => 'process_cells', 'label' => 'Traiter et gérer les groupes de maison / cellules'],
+                ['name' => 'validate_home_group_applications', 'label' => "Valider les demandes d'adhésion aux cellules"],
             ],
             'Finances' => [
                 ['name' => 'view_offerings', 'label' => 'Consulter les dons et offrandes'],
@@ -96,11 +98,11 @@ final class AccessControl
             'Pasteurs' => [
                 'manage_settings', 'manage_sermons', 'manage_events',
                 'view_prayers', 'process_prayers', 'manage_prayer_settings',
-                'view_cells', 'process_cells', 'manage_live',
+                'view_cells', 'process_cells', 'validate_home_group_applications', 'manage_live',
                 'view_dashboard', 'view_statistics',
                 'view_offerings', 'manage_offerings',
                 'send_notifications', 'manage_announcements',
-                'moderate_comments', 'manage_testimonies',
+                'moderate_comments', 'manage_testimonies', 'manage_ministries',
             ],
             'Intercesseurs' => [
                 'view_prayers', 'process_prayers', 'view_dashboard', 'manage_testimonies',
@@ -112,7 +114,7 @@ final class AccessControl
                 'view_cells', 'view_dashboard',
             ],
             'Responsables de cellule' => [
-                'view_cells', 'process_cells', 'view_dashboard',
+                'view_cells', 'process_cells', 'validate_home_group_applications', 'view_dashboard',
             ],
         ];
     }

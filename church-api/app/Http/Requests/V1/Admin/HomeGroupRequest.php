@@ -32,6 +32,7 @@ class HomeGroupRequest extends FormRequest
             'coordinates.lng' => ['nullable', 'numeric'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['boolean'],
+            'leader_id' => ['nullable', 'integer', 'exists:users,id'],
         ];
     }
 }

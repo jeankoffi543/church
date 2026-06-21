@@ -47,6 +47,7 @@ export type AdminHomeGroup = {
   id: number;
   name: string;
   leader: string;
+  leader_id: number | null;
   address: string;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
@@ -563,3 +564,56 @@ export async function updateServant(id: number, data: {
 export async function deleteServant(id: number): Promise<void> {
   await adminFetch<void>(`/admin-users/${id}`, { method: "DELETE" });
 }
+
+/* ── Home Groups Applications CRUD ────────────────────────────────── */
+
+export type AdminHomeGroupApplication = {
+  id: number;
+  user_id: number | null;
+  name: string;
+  email: string;
+  phone: string;
+  home_group_id: number;
+  motivation: string;
+  status: "pending" | "approved" | "rejected";
+  processed_by: number | null;
+  created_at: string;
+  updated_at: string;
+  home_group?: AdminHomeGroup | null;
+  user?: { id: number; name: string; email: string } | null;
+  processor?: { id: number; name: string; email: string } | null;
+};
+
+export async function getAdminHomeGroupApplications(params?: {
+  home_group_id?: number;
+  status?: string;
+}): Promise<AdminHomeGroupApplication[]> {
+  const query = new URLSearchParams();
+  if (params?.home_group_id) {
+    query.set("home_group_id", params.home_group_id.toString());
+  }
+  if (params?.status) {
+    query.set("status", params.status);
+  }
+  const queryString = query.toString();
+  const path = `/home-groups/applications${queryString ? `?${queryString}` : ""}`;
+  const response = await adminFetch<{ data: AdminHomeGroupApplication[] }>(path);
+  return response.data;
+}
+
+export async function approveHomeGroupApplication(id: number): Promise<{ data: AdminHomeGroupApplication }> {
+  const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/approve`, {
+    method: "POST",
+  });
+  revalidatePath("/admins/home_groups/applications");
+  return result;
+}
+
+export async function rejectHomeGroupApplication(id: number): Promise<{ data: AdminHomeGroupApplication }> {
+  const result = await adminFetch<{ data: AdminHomeGroupApplication }>(`/home-groups/applications/${id}/reject`, {
+    method: "POST",
+  });
+  revalidatePath("/admins/home_groups/applications");
+  return result;
+}
+

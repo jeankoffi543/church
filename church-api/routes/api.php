@@ -34,6 +34,8 @@ Route::prefix('v1')->group(function (): void {
 
         // Home groups (Phase 2)
         Route::get('home-groups', [Public\HomeGroupController::class, 'index'])->name('home-groups.index');
+        Route::post('home-groups/applications', [Public\HomeGroupApplicationController::class, 'store'])->name('home-groups.applications.store');
+        Route::post('home-groups/applications/verify', [Public\HomeGroupApplicationController::class, 'verify'])->name('home-groups.applications.verify');
 
         // Prayer requests (public submission)
         Route::post('prayer-requests', [Public\PrayerRequestController::class, 'store'])->name('prayer-requests.store');
@@ -67,6 +69,19 @@ Route::prefix('v1')->group(function (): void {
             // Agenda / événements
             Route::apiResource('events', Admin\EventController::class)
                 ->middleware('permission:manage_events');
+
+            // Applications des groupes de maison
+            Route::prefix('home-groups/applications')->name('home-groups.applications.')->group(function (): void {
+                Route::get('/', [Admin\HomeGroupApplicationController::class, 'index'])
+                    ->middleware('permission:validate_home_group_applications')
+                    ->name('index');
+                Route::post('{application}/approve', [Admin\HomeGroupApplicationController::class, 'approve'])
+                    ->middleware('permission:validate_home_group_applications')
+                    ->name('approve');
+                Route::post('{application}/reject', [Admin\HomeGroupApplicationController::class, 'reject'])
+                    ->middleware('permission:validate_home_group_applications')
+                    ->name('reject');
+            });
 
             // Cellules / groupes de maison
             Route::apiResource('home-groups', Admin\HomeGroupController::class)

@@ -86,6 +86,7 @@ export const MINISTRIES: Ministry[] = [
 ];
 
 export type HomeGroup = {
+  id?: number;
   name: string;
   area: string;
   when: string;

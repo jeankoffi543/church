@@ -11,15 +11,20 @@ import {
   Eye, 
   EyeOff, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  ChevronDown,
+  Check
 } from "lucide-react";
-import { createHomeGroup, updateHomeGroup, deleteHomeGroup } from "@/lib/admin-api";
+import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 type HomeGroup = {
   id: number;
   name: string;
   leader: string;
+  leader_id: number | null;
   address: string;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
@@ -29,8 +34,10 @@ type HomeGroup = {
 
 export function HomeGroupsManager({
   initialHomeGroups,
+  users = [],
 }: {
   initialHomeGroups: HomeGroup[];
+  users?: AdminUser[];
 }) {
   const [homeGroups, setHomeGroups] = useState<HomeGroup[]>(initialHomeGroups);
   const [search, setSearch] = useState("");
@@ -44,6 +51,9 @@ export function HomeGroupsManager({
   // Form states
   const [name, setName] = useState("");
   const [leader, setLeader] = useState("");
+  const [leaderId, setLeaderId] = useState<number | "">("");
+  const [userSearch, setUserSearch] = useState("");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [address, setAddress] = useState("");
   const [schedule, setSchedule] = useState("");
   const [topPercent, setTopPercent] = useState("50%");
@@ -55,6 +65,9 @@ export function HomeGroupsManager({
     setEditingHomeGroup(null);
     setName("");
     setLeader("");
+    setLeaderId("");
+    setUserSearch("");
+    setIsDropdownOpen(false);
     setAddress("");
     setSchedule("Mensuel · 1er dimanche");
     setTopPercent("50%");
@@ -68,6 +81,9 @@ export function HomeGroupsManager({
     setEditingHomeGroup(group);
     setName(group.name);
     setLeader(group.leader);
+    setLeaderId(group.leader_id || "");
+    setUserSearch("");
+    setIsDropdownOpen(false);
     setAddress(group.address);
     setSchedule(group.schedule ?? "");
     setTopPercent(group.coordinates?.top ?? "50%");
@@ -114,6 +130,7 @@ export function HomeGroupsManager({
         const payload = {
           name,
           leader,
+          leader_id: leaderId ? Number(leaderId) : null,
           address,
           schedule: schedule || null,
           coordinates: {
@@ -143,6 +160,15 @@ export function HomeGroupsManager({
     });
   };
 
+  // Filter users based on search
+  const filteredUsers = users.filter((u) =>
+    u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
+    u.email.toLowerCase().includes(userSearch.toLowerCase())
+  );
+
+  // Find currently selected user object
+  const selectedUser = users.find((u) => u.id === leaderId);
+
   const filtered = homeGroups.filter((g) =>
     g.name.toLowerCase().includes(search.toLowerCase()) ||
     g.leader.toLowerCase().includes(search.toLowerCase()) ||
@@ -164,12 +190,20 @@ export function HomeGroupsManager({
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-        >
-          <Plus className="size-4" /> Nouveau Groupe
-        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/admins/home_groups/applications"
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo/20 bg-white px-5 py-3 text-sm font-bold text-indigo transition hover:bg-cream"
+          >
+            Voir les Candidatures
+          </Link>
+          <button
+            onClick={openCreateModal}
+            className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+          >
+            <Plus className="size-4" /> Nouveau Groupe
+          </button>
+        </div>
       </header>
 
       {status && (
@@ -275,106 +309,174 @@ export function HomeGroupsManager({
         </div>
       </div>
 
-      {/* Modal Dialog */}
-      {isModalOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-xs" onClick={closeModal} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[520px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
-            <div className="contents">
-              <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-display text-xl font-bold text-indigo italic">
-                {editingHomeGroup ? "Modifier le groupe de maison" : "Créer un groupe de maison"}
-              </h3>
-              <button onClick={closeModal} className="text-faint hover:text-indigo">
-                <X className="size-5" />
-              </button>
-            </div>
+      {/* Add / edit modal */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) closeModal(); }}>
+        <DialogContent
+          showCloseButton
+          className="w-[95vw] md:max-w-3xl rounded-2xl bg-white p-0 gap-0 border-0 outline-none max-h-[92vh] overflow-y-auto"
+        >
+          <div className="border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
+            <h2 className="font-display text-lg font-bold text-indigo italic">
+              {editingHomeGroup ? "Modifier le groupe de maison" : "Créer un groupe de maison"}
+            </h2>
+          </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Nom du groupe *</span>
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-5 px-6 py-6">
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Nom du groupe *</span>
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="ex: Cellule Ficgayo Temple"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Responsable / Leader *</span>
-                <input
-                  type="text"
-                  required
-                  value={leader}
-                  onChange={(e) => setLeader(e.target.value)}
-                  placeholder="ex: Frère Emmanuel"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
+              <div className="flex flex-col gap-2 relative">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Responsable / Leader *</span>
+                
+                {/* Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="flex items-center justify-between w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none text-left focus:border-gold"
+                >
+                  <span className="truncate">
+                    {selectedUser ? selectedUser.name : (leader || "Sélectionner un chef de cellule...")}
+                  </span>
+                  <ChevronDown className="size-4 ml-2 text-faint shrink-0" />
+                </button>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Adresse complète (Quartier...) *</span>
+                {/* Dropdown Menu click-catcher */}
+                {isDropdownOpen && (
+                  <div 
+                    className="fixed inset-0 z-40 bg-transparent" 
+                    onClick={() => setIsDropdownOpen(false)} 
+                  />
+                )}
+
+                {/* Dropdown Menu */}
+                {isDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-[rgba(40,25,80,0.08)] bg-white p-2 shadow-2xl animate-in fade-in-50 slide-in-from-top-1 duration-150">
+                    <div className="sticky top-0 bg-white pb-2 border-b border-[rgba(40,25,80,0.06)] mb-2 flex items-center px-2 z-10">
+                      <Search className="size-3.5 text-faint mr-2 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Rechercher un chef..."
+                        value={userSearch}
+                        onChange={(e) => setUserSearch(e.target.value)}
+                        className="w-full text-xs text-indigo outline-none py-1 placeholder:text-faint bg-white"
+                        autoFocus
+                      />
+                      {userSearch && (
+                        <button type="button" onClick={() => setUserSearch("")} className="text-faint hover:text-indigo">
+                          <X className="size-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-0.5">
+                      {filteredUsers.length === 0 ? (
+                        <div className="px-3 py-4 text-center text-xs text-faint">
+                          Aucun utilisateur trouvé
+                        </div>
+                      ) : (
+                        filteredUsers.map((u) => {
+                          const isCurrentlySelected = u.id === leaderId;
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => {
+                                setLeaderId(u.id);
+                                setLeader(u.name);
+                                setIsDropdownOpen(false);
+                                setUserSearch("");
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs transition-colors",
+                                isCurrentlySelected
+                                  ? "bg-gold/15 font-semibold text-indigo"
+                                  : "text-body hover:bg-cream/40 hover:text-indigo"
+                              )}
+                            >
+                              <div className="truncate pr-4">
+                                <p className="font-semibold">{u.name}</p>
+                                <p className="text-[10px] text-faint truncate">{u.email}</p>
+                              </div>
+                              {isCurrentlySelected && <Check className="size-3.5 text-gold-dark shrink-0" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Adresse complète (Quartier...) *</span>
                 <input
                   type="text"
                   required
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="ex: Yopougon, Cité Ficgayo, Rue des Bananiers"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Programme des réunions</span>
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Programme des réunions</span>
                 <input
                   type="text"
                   value={schedule}
                   onChange={(e) => setSchedule(e.target.value)}
                   placeholder="ex: Chaque mardi de 19:00 à 20:30"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
 
               <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Position Carte (Top %)</span>
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide whitespace-nowrap">Position Carte (Top %)</span>
                   <input
                     type="text"
                     value={topPercent}
                     onChange={(e) => setTopPercent(e.target.value)}
                     placeholder="45%"
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold font-mono"
+                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold font-mono"
                   />
                 </label>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Position Carte (Left %)</span>
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide whitespace-nowrap">Position Carte (Left %)</span>
                   <input
                     type="text"
                     value={leftPercent}
                     onChange={(e) => setLeftPercent(e.target.value)}
                     placeholder="28%"
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold font-mono"
+                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold font-mono"
                   />
                 </label>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Ordre de tri</span>
+                <label className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Ordre de tri</span>
                   <input
                     type="number"
                     min={0}
                     value={sortOrder}
                     onChange={(e) => setSortOrder(Number(e.target.value))}
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                   />
                 </label>
 
                 <div className="flex flex-col gap-2.5 justify-center">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Visibilité</span>
+                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Visibilité</span>
                   <label className="flex cursor-pointer items-center gap-2">
                     <input
                       type="checkbox"
@@ -386,29 +488,28 @@ export function HomeGroupsManager({
                   </label>
                 </div>
               </div>
+            </div>
 
-              <div className="mt-4 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </>
-      )}
+            <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4 bg-[#faf8f4]">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
+              >
+                {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
