@@ -4,6 +4,7 @@ import { MapPin, Phone, Mail, Clock } from "lucide-react";
 import { getContactInfo } from "@/lib/api";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { ContactForm } from "@/components/contact/contact-form";
+import { ContactMap } from "@/components/contact/contact-map";
 
 export const metadata: Metadata = {
   title: "Contact · MFM Ficgayo",
@@ -92,22 +93,11 @@ export default async function ContactPage() {
         </div>
 
         {/* Map strip */}
-        <div className="relative mt-8 h-[260px] overflow-hidden rounded-[26px] border border-[rgba(40,25,80,0.1)] bg-gradient-to-b from-lilac-200 to-lilac-300">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(58,42,110,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(58,42,110,.06) 1px,transparent 1px)",
-              backgroundSize: "40px 40px",
-            }}
-          />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
-            <div className="size-[30px] rotate-[-45deg] rounded-[50%_50%_50%_0] border-2 border-white bg-gradient-to-br from-gold to-gold-dark shadow-[0_8px_20px_rgba(200,144,46,0.45)]" />
-          </div>
-          <div className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-[10px] bg-white/90 px-4 py-2.5 text-[13px] font-bold text-indigo shadow-[0_4px_14px_rgba(22,15,51,0.12)]">
-            <MapPin className="size-4 text-gold-dark" /> {contact.mapHint}
-          </div>
-        </div>
+        <ContactMap
+          mapHint={contact.mapHint}
+          lat={contact.latitude ?? undefined}
+          lng={contact.longitude ?? undefined}
+        />
       </div>
     </section>
   );

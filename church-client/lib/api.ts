@@ -237,6 +237,8 @@ export type ContactInfo = {
   mapHint: string;
   socials: { label: string; url: string }[];
   subjects: string[];
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export async function getContactInfo(): Promise<ContactInfo> {
@@ -258,6 +260,8 @@ export async function getContactInfo(): Promise<ContactInfo> {
         { label: "Instagram", url: "#" },
       ],
     subjects: (contact?.contact_subjects as string[] | undefined) ?? CONTACT_SUBJECTS,
+    latitude: typeof contact?.latitude === "number" ? contact.latitude : (contact?.latitude ? Number(contact.latitude) : null),
+    longitude: typeof contact?.longitude === "number" ? contact.longitude : (contact?.longitude ? Number(contact.longitude) : null),
   };
 }
 
