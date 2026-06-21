@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             SermonSeeder::class,
             EventSeeder::class,
             HomeGroupSeeder::class,
+            DemoSeeder::class,
         ]);
     }
 }

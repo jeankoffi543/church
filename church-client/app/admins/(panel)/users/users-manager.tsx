@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   Loader2,
   CheckCircle,
@@ -25,6 +25,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { MultiSelect } from "../_components/multi-select";
 import { groupStyle } from "../_components/group-style";
+import { Pagination } from "../_components/pagination";
 
 type Feedback = { type: "success" | "error"; message: string } | null;
 
@@ -60,6 +61,19 @@ export function UsersManager({
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminServant | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+
+  // Pagination (client-side over the loaded servants).
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  const sorted = useMemo(
+    () => [...servants].sort((a, b) => a.name.localeCompare(b.name)),
+    [servants]
+  );
+  const pageCount = Math.max(1, Math.ceil(sorted.length / perPage));
+  // Clamp during render so the page stays valid when the list shrinks.
+  const currentPage = Math.min(page, pageCount);
+  const paged = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const openCreate = () => {
     setEditing(null);
@@ -239,7 +253,7 @@ export function UsersManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {servants.map((servant) => {
+              {paged.map((servant) => {
                 const isSelf = servant.id === currentUserId;
                 return (
                   <tr key={servant.id} className="transition-colors hover:bg-cream/40">
@@ -347,6 +361,20 @@ export function UsersManager({
             </tbody>
           </table>
         </div>
+        {sorted.length > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={sorted.length}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="serviteurs"
+          />
+        )}
       </div>
 
       {/* Add / edit modal */}
