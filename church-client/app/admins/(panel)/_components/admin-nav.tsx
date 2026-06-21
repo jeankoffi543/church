@@ -12,6 +12,7 @@ import {
   HandHeart,
   ShieldCheck,
   UserCog,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, required: [] },
   { href: "/admins/ministries", label: "Ministères", icon: Users, required: [PERMISSIONS.manageSettings] },
+  { href: "/admins/ministries/applications", label: "Candidatures", icon: Inbox, required: [PERMISSIONS.validateMinistryApplications] },
   { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, required: [PERMISSIONS.manageSermons] },
   { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, required: [PERMISSIONS.manageEvents] },
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },
@@ -45,8 +47,16 @@ const ACCESS_NAV: NavItem[] = [
 export function AdminNav({ me }: { me: AdminMe | null }) {
   const pathname = usePathname();
 
+  // Resolve a single active link: the longest href that matches the current
+  // path, so a nested route (e.g. /ministries/applications) doesn't also light
+  // up its parent (/ministries).
+  const activeHref = [...NAV, ...ACCESS_NAV]
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(href + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+
   const renderLink = ({ href, label, icon: Icon }: NavItem) => {
-    const active = pathname === href || pathname.startsWith(href + "/");
+    const active = href === activeHref;
     return (
       <Link
         key={href}

@@ -48,10 +48,12 @@ async function apiGet<T>(path: string, tags?: string[]): Promise<T | null> {
 /* ── Resource shapes returned by the API ──────────────────────────── */
 
 type ApiMinistry = {
+  id: number;
   name: string;
   initial: string;
   description: string | null;
   schedule: string | null;
+  image: string | null;
 };
 
 type ApiSermon = {
@@ -91,10 +93,12 @@ type ApiHomeGroup = {
 /* ── Mappers (API → front-end types) ──────────────────────────────── */
 
 const mapMinistry = (m: ApiMinistry): Ministry => ({
+  id: m.id,
   name: m.name,
   initial: m.initial,
   desc: m.description ?? "",
   schedule: m.schedule ?? "",
+  image: m.image ?? null,
 });
 
 const mapSermon = (s: ApiSermon): Sermon => ({
