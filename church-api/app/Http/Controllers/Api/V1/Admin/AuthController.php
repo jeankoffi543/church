@@ -57,4 +57,12 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Déconnecté.']);
     }
+
+    /**
+     * List all users.
+     */
+    public function users(): JsonResponse
+    {
+        return response()->json(['data' => User::query()->get(['id', 'name', 'email'])]);
+    }
 }

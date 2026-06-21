@@ -9,6 +9,7 @@ import {
   Video, 
   CalendarDays, 
   MapPin, 
+  HandHeart,
   type LucideIcon 
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video },
   { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays },
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin },
+  { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart },
   { href: "/admins/settings", label: "Paramètres", icon: Settings },
 ];
 

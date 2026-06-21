@@ -34,6 +34,9 @@ Route::prefix('v1')->group(function (): void {
 
         // Home groups (Phase 2)
         Route::get('home-groups', [Public\HomeGroupController::class, 'index'])->name('home-groups.index');
+
+        // Prayer requests (public submission)
+        Route::post('prayer-requests', [Public\PrayerRequestController::class, 'store'])->name('prayer-requests.store');
     });
 
     // ── Admin authentication ──────────────────────────────────────────
@@ -44,6 +47,7 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('auth:sanctum')->group(function (): void {
             Route::get('me', [Admin\AuthController::class, 'me'])->name('me');
             Route::post('logout', [Admin\AuthController::class, 'logout'])->name('logout');
+            Route::get('users', [Admin\AuthController::class, 'users'])->name('users');
 
             // Settings configuration (Phases 1, 4, 5, 6)
             Route::get('settings', [Admin\SettingController::class, 'index'])->name('settings.index');
@@ -55,6 +59,11 @@ Route::prefix('v1')->group(function (): void {
             Route::apiResource('sermons', Admin\SermonController::class);
             Route::apiResource('events', Admin\EventController::class);
             Route::apiResource('home-groups', Admin\HomeGroupController::class)->parameter('home-groups', 'homeGroup');
+
+            // Prayer requests (admin CRUD + quick actions)
+            Route::apiResource('prayers', Admin\PrayerRequestController::class)->parameter('prayers', 'prayer');
+            Route::patch('prayers/{prayer}/status', [Admin\PrayerRequestController::class, 'updateStatus'])->name('prayers.status');
+            Route::patch('prayers/{prayer}/assign', [Admin\PrayerRequestController::class, 'assign'])->name('prayers.assign');
         });
     });
 });

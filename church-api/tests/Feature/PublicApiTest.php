@@ -62,3 +62,33 @@ it('lists active home groups with coordinates', function () {
         ->assertOk()
         ->assertJsonPath('data.0.coordinates.top', '46%');
 });
+
+it('submits a prayer request and sends automated notification', function () {
+    Setting::set('prayer_success_ui_message', 'Success custom message', 'prayers');
+    Setting::set('prayer_automated_notification_message', 'Hello [Nom], we pray for you.', 'prayers');
+
+    \Illuminate\Support\Facades\Log::shouldReceive('info')
+        ->once()
+        ->with('Prayer notification sent', Mockery::on(function ($data) {
+            return $data['to_email'] === 'jean@example.com' && str_contains($data['message'], 'Hello Jean');
+        }));
+
+    $response = $this->postJson('/api/v1/public/prayer-requests', [
+        'name' => 'Jean',
+        'phone' => '+22501020304',
+        'email' => 'jean@example.com',
+        'category' => 'Santé',
+        'message' => 'Priez pour ma guérison.',
+    ]);
+
+    $response->assertStatus(201)
+        ->assertJsonPath('message', 'Success custom message')
+        ->assertJsonPath('data.name', 'Jean')
+        ->assertJsonPath('data.status', 'new');
+
+    $this->assertDatabaseHas('prayer_requests', [
+        'name' => 'Jean',
+        'email' => 'jean@example.com',
+        'status' => 'new',
+    ]);
+});

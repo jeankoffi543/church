@@ -357,3 +357,68 @@ export async function deleteHomeGroup(id: number): Promise<void> {
   revalidateTag("home-groups", { expire: 0 });
   revalidatePath("/eglise");
 }
+
+/* ── Prayer Requests CRUD ────────────────────────────────────────── */
+
+export type AdminPrayerRequest = {
+  id: number;
+  name: string | null;
+  phone: string;
+  email: string;
+  category: string;
+  message: string;
+  status: 'new' | 'praying' | 'answered' | 'archived';
+  assigned_to: number | null;
+  assignee: { id: number; name: string; email: string } | null;
+  pastoral_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminUser = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+export async function getAdminPrayers(): Promise<AdminPrayerRequest[]> {
+  const response = await adminFetch<{ data: AdminPrayerRequest[] }>("/prayers");
+  return response.data;
+}
+
+export async function getAdminUsers(): Promise<AdminUser[]> {
+  const response = await adminFetch<{ data: AdminUser[] }>("/users");
+  return response.data;
+}
+
+export async function updatePrayerStatus(id: number, status: string): Promise<{ data: AdminPrayerRequest }> {
+  return adminFetch<{ data: AdminPrayerRequest }>(`/prayers/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function assignPrayer(id: number, assignedTo: number | null): Promise<{ data: AdminPrayerRequest }> {
+  return adminFetch<{ data: AdminPrayerRequest }>(`/prayers/${id}/assign`, {
+    method: "PATCH",
+    body: JSON.stringify({ assigned_to: assignedTo }),
+  });
+}
+
+export async function updatePrayer(id: number, data: {
+  pastoral_notes?: string | null;
+  status?: string;
+  assigned_to?: number | null;
+}): Promise<{ data: AdminPrayerRequest }> {
+  const result = await adminFetch<{ data: AdminPrayerRequest }>(`/prayers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return result;
+}
+
+export async function deletePrayer(id: number): Promise<void> {
+  await adminFetch<void>(`/prayers/${id}`, {
+    method: "DELETE",
+  });
+}
