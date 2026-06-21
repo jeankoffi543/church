@@ -49,7 +49,7 @@ class SettingSeeder extends Seeder
             ['key' => 'map_hint', 'group' => 'contact', 'value' => 'Abidjan · Yopougon & environs'],
             ['key' => 'legal_mentions', 'group' => 'contact', 'value' => '© 2026 Église MFM Ficgayo. Tous droits réservés.'],
 
-            // ── Phase 6 · Live / streaming ─────────────────────────────
+                        // ── Phase 6 · Live / streaming ─────────────────────────────
             ['key' => 'live_embed_url', 'group' => 'live', 'value' => 'https://www.youtube.com/embed/live_stream?channel=MFM'],
             ['key' => 'live_status', 'group' => 'live', 'value' => false],
             ['key' => 'live_chat_enabled', 'group' => 'live', 'value' => true],
@@ -64,6 +64,11 @@ class SettingSeeder extends Seeder
                 ['id' => '04', 'text' => 'L\'amour de Dieu répandu dans nos cœurs', 'verse' => 'Romains 5.5'],
                 ['id' => '05', 'text' => 'Christ est mort pour nous, pécheurs', 'verse' => 'Romains 5.8'],
             ]],
+
+            // ── Phase 8 · Prayers ─────────────────────────────
+            ['key' => 'prayer_success_ui_message', 'group' => 'prayers', 'value' => 'Merci ! Votre requête est entrée dans la chaîne d\'intercession de MFM Ficgayo. Notre équipe prie pour vous et vous contactera bientôt.'],
+            ['key' => 'prayer_automated_notification_message', 'group' => 'prayers', 'value' => 'Bonjour [Nom], l\'équipe d\'intercession de MFM Ficgayo a bien reçu votre demande de prière concernant « [Catégorie] ». Soyez assuré(e) que nous prions avec ferveur pour vous. — MFM Ficgayo'],
+            ['key' => 'prayer_categories', 'group' => 'prayers', 'value' => ['Délivrance', 'Santé', 'Finances', 'Famille', 'Destinée', 'Autre']],
         ];
 
         foreach ($settings as $setting) {

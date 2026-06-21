@@ -288,9 +288,11 @@ export function SermonsManager({
 
       {/* Modal Dialog */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-[600px] overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
-            <div className="mb-5 flex items-center justify-between">
+        <>
+          <div className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-xs" onClick={closeModal} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[600px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
+            <div className="contents">
+              <div className="mb-5 flex items-center justify-between">
               <h3 className="font-display text-xl font-bold text-indigo italic">
                 {editingSermon ? "Modifier la prédication" : "Ajouter une prédication"}
               </h3>
@@ -434,6 +436,7 @@ export function SermonsManager({
             </form>
           </div>
         </div>
+      </>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { ShieldCheck, Send, Check, Download, Lock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -146,8 +146,106 @@ function ChatTab() {
 }
 
 /* ── Prière ───────────────────────────────────────────────── */
+
 function PrayerTab() {
   const [sent, setSent] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [category, setCategory] = useState("");
+  const [message, setMessage] = useState("");
+  const [categories, setCategories] = useState<string[]>([
+    "Délivrance",
+    "Santé",
+    "Finances",
+    "Famille",
+    "Destinée",
+    "Autre",
+  ]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+        const res = await fetch(`${apiUrl}/public/settings?group=prayers`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const data = json.data;
+          if (data && Array.isArray(data.prayer_categories)) {
+            setCategories(data.prayer_categories);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch prayer categories client-side:", err);
+      }
+    };
+    fetchCategories();
+  }, []);
+
+  const resetForm = () => {
+    setName("");
+    setPhone("");
+    setEmail("");
+    setCategory("");
+    setMessage("");
+    setError(null);
+  };
+
+  const handleFieldChange = (setter: (val: string) => void, val: string) => {
+    setter(val);
+    setError(null);
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+
+    if (!phone.trim() || !email.trim() || !category || !message.trim()) {
+      setError("Veuillez remplir tous les champs obligatoires.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/public/prayer-requests`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            name: name.trim() || "Anonyme",
+            phone: phone.trim(),
+            email: email.trim(),
+            category,
+            message: message.trim(),
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          body?.message || `Erreur ${res.status}`
+        );
+      }
+
+      const data = await res.json();
+      setSuccessMessage(data.message || "");
+      setSent(true);
+      resetForm();
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Une erreur est survenue.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (sent) {
     return (
@@ -159,8 +257,7 @@ function PrayerTab() {
           Nous prions pour toi
         </h3>
         <p className="max-w-[260px] text-sm leading-relaxed text-white/65">
-          Ta demande a été transmise. Tu n&apos;es pas seul(e) — la Maison se
-          tient avec toi dans la prière.
+          {successMessage || "Ta demande a été transmise. Tu n'es pas seul(e) \u2014 la Maison se tient avec toi dans la prière."}
         </p>
         <button
           onClick={() => setSent(false)}
@@ -172,28 +269,113 @@ function PrayerTab() {
     );
   }
 
+  const inputClass =
+    "w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-[13px] text-white outline-none placeholder:text-white/40 focus:border-gold/50";
+
   return (
-    <div className="flex flex-1 flex-col gap-3.5 p-5">
+    <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-4">
       <div>
-        <h3 className="mb-2 font-display text-[23px] text-white italic">
+        <h3 className="mb-1 font-display text-xl text-white italic">
           Demande de prière
         </h3>
-        <p className="text-[13.5px] leading-snug text-white/60">
+        <p className="text-[12.5px] leading-snug text-white/60">
           Tu traverses une épreuve ? L&apos;équipe d&apos;intercession prie avec
           toi, en toute confidentialité.
         </p>
       </div>
-      <textarea
-        placeholder="Partage ton sujet de prière…"
-        className="min-h-[120px] flex-1 resize-none rounded-xl border border-white/15 bg-white/10 p-3.5 text-sm leading-relaxed text-white outline-none placeholder:text-white/40"
-      />
+
+      {error && (
+        <div className="rounded-lg bg-red-500/15 px-3 py-2 text-[12.5px] text-red-300">
+          {error}
+        </div>
+      )}
+
+      {/* Name */}
+      <div>
+        <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
+          Nom (facultatif)
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => handleFieldChange(setName, e.target.value)}
+          placeholder="Anonyme"
+          className={inputClass}
+        />
+      </div>
+
+      {/* Phone & Email row */}
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
+            Téléphone <span className="text-gold">*</span>
+          </label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => handleFieldChange(setPhone, e.target.value)}
+            placeholder="+225 07 00 00 00"
+            className={inputClass}
+          />
+        </div>
+        <div className="flex-1">
+          <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
+            Email <span className="text-gold">*</span>
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => handleFieldChange(setEmail, e.target.value)}
+            placeholder="email@exemple.com"
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      {/* Category */}
+      <div>
+        <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
+          Catégorie <span className="text-gold">*</span>
+        </label>
+        <select
+          value={category}
+          onChange={(e) => handleFieldChange(setCategory, e.target.value)}
+          className={cn(inputClass, !category && "text-white/40")}
+        >
+          <option value="" disabled>
+            Choisir une catégorie
+          </option>
+          {categories.map((cat) => (
+            <option key={cat} value={cat} className="bg-[#160f33] text-white">
+              {cat}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Message */}
+      <div className="flex flex-1 flex-col">
+        <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
+          Votre sujet de prière <span className="text-gold">*</span>
+        </label>
+        <textarea
+          value={message}
+          onChange={(e) => handleFieldChange(setMessage, e.target.value)}
+          placeholder="Partage ton sujet de prière…"
+          className={cn(inputClass, "min-h-[80px] flex-1 resize-none leading-relaxed")}
+        />
+      </div>
+
+      {/* Submit */}
       <button
-        onClick={() => setSent(true)}
-        className="cursor-pointer rounded-xl bg-gradient-to-br from-gold to-gold-dark py-3.5 text-[15px] font-bold text-indigo transition hover:brightness-105"
+        onClick={handleSubmit}
+        disabled={loading}
+        className="cursor-pointer rounded-lg bg-gradient-to-br from-gold to-gold-dark py-2.5 text-[14px] font-bold text-indigo transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        Envoyer ma demande
+        {loading ? "Envoi en cours…" : "Envoyer ma demande"}
       </button>
-      <div className="flex items-center justify-center gap-1.5 text-center text-[11.5px] text-white/45">
+
+      <div className="flex items-center justify-center gap-1.5 text-center text-[11px] text-white/45">
         <Lock className="size-3" /> Confidentiel · transmis à l&apos;équipe
         d&apos;intercession
       </div>
