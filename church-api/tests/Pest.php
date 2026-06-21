@@ -1,6 +1,11 @@
 <?php
 
+use App\Models\User;
+use App\Support\AccessControl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /*
@@ -47,4 +52,40 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Create a user holding the given permissions (created on the fly) and
+ * authenticate them through Sanctum. Returns the user.
+ *
+ * @param  list<string>  $permissions
+ */
+function actingAsAdminWith(array $permissions = []): User
+{
+    $user = User::factory()->create();
+
+    foreach ($permissions as $permission) {
+        Permission::findOrCreate($permission, 'web');
+    }
+
+    $user->givePermissionTo($permissions);
+
+    Sanctum::actingAs($user);
+
+    return $user;
+}
+
+/**
+ * Create and authenticate a Super Admin. Thanks to the Gate::before hook this
+ * user passes every permission check without explicit grants.
+ */
+function actingAsSuperAdmin(): User
+{
+    $user = User::factory()->create();
+    $role = Role::findOrCreate(AccessControl::SUPER_ADMIN, 'web');
+    $user->assignRole($role);
+
+    Sanctum::actingAs($user);
+
+    return $user;
 }

@@ -45,25 +45,63 @@ Route::prefix('v1')->group(function (): void {
 
         // ── Admin (write / CRUD) — requires a valid Sanctum token ──────
         Route::middleware('auth:sanctum')->group(function (): void {
+            // Identity & session — available to every authenticated servant.
             Route::get('me', [Admin\AuthController::class, 'me'])->name('me');
             Route::post('logout', [Admin\AuthController::class, 'logout'])->name('logout');
             Route::get('users', [Admin\AuthController::class, 'users'])->name('users');
 
-            // Settings configuration (Phases 1, 4, 5, 6)
+            // Settings: readable by any authenticated admin (most pages need the
+            // config to render); writes are gated by the relevant privileges.
             Route::get('settings', [Admin\SettingController::class, 'index'])->name('settings.index');
-            Route::match(['put', 'patch'], 'settings', [Admin\SettingController::class, 'update'])->name('settings.update');
-            Route::delete('settings/{key}', [Admin\SettingController::class, 'destroy'])->name('settings.destroy');
+            Route::match(['put', 'patch'], 'settings', [Admin\SettingController::class, 'update'])
+                ->middleware('permission:manage_settings|manage_live|manage_prayer_settings')
+                ->name('settings.update');
+            Route::delete('settings/{key}', [Admin\SettingController::class, 'destroy'])
+                ->middleware('permission:manage_settings|manage_live|manage_prayer_settings')
+                ->name('settings.destroy');
 
-            // Structured resources
-            Route::apiResource('ministries', Admin\MinistryController::class);
-            Route::apiResource('sermons', Admin\SermonController::class);
-            Route::apiResource('events', Admin\EventController::class);
-            Route::apiResource('home-groups', Admin\HomeGroupController::class)->parameter('home-groups', 'homeGroup');
+            // Médiathèque / messages
+            Route::apiResource('sermons', Admin\SermonController::class)
+                ->middleware('permission:manage_sermons');
+
+            // Agenda / événements
+            Route::apiResource('events', Admin\EventController::class)
+                ->middleware('permission:manage_events');
+
+            // Cellules / groupes de maison
+            Route::apiResource('home-groups', Admin\HomeGroupController::class)
+                ->parameter('home-groups', 'homeGroup')
+                ->middleware('permission:view_cells|process_cells');
+
+            // Ministères — structural site content, gated with general settings.
+            Route::apiResource('ministries', Admin\MinistryController::class)
+                ->middleware('permission:manage_settings');
 
             // Prayer requests (admin CRUD + quick actions)
-            Route::apiResource('prayers', Admin\PrayerRequestController::class)->parameter('prayers', 'prayer');
-            Route::patch('prayers/{prayer}/status', [Admin\PrayerRequestController::class, 'updateStatus'])->name('prayers.status');
-            Route::patch('prayers/{prayer}/assign', [Admin\PrayerRequestController::class, 'assign'])->name('prayers.assign');
+            Route::apiResource('prayers', Admin\PrayerRequestController::class)
+                ->parameter('prayers', 'prayer')
+                ->middleware('permission:view_prayers|process_prayers');
+            Route::patch('prayers/{prayer}/status', [Admin\PrayerRequestController::class, 'updateStatus'])
+                ->middleware('permission:process_prayers')
+                ->name('prayers.status');
+            Route::patch('prayers/{prayer}/assign', [Admin\PrayerRequestController::class, 'assign'])
+                ->middleware('permission:process_prayers')
+                ->name('prayers.assign');
+
+            // ── Access management (Groups, Users, Permissions) ─────────
+            Route::middleware('permission:manage_access')->group(function (): void {
+                Route::get('permissions', [Admin\PermissionController::class, 'index'])->name('permissions.index');
+
+                // `admin-users` avoids clashing with the lightweight `users`
+                // lookup above; the route parameter stays `{user}`.
+                Route::apiResource('admin-users', Admin\UserController::class)
+                    ->parameter('admin-users', 'user')
+                    ->names('admin-users');
+
+                Route::put('roles/{role}/permissions', [Admin\RoleController::class, 'syncPermissions'])
+                    ->name('roles.permissions.sync');
+                Route::apiResource('roles', Admin\RoleController::class);
+            });
         });
     });
 });

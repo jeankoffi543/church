@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\LoginRequest;
 use App\Models\User;
+use App\Support\AccessControl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +26,12 @@ class AuthController extends Controller
             ]);
         }
 
+        if (! $user->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ['Votre accès a été suspendu. Contactez un administrateur.'],
+            ]);
+        }
+
         $token = $user->createToken(
             $request->string('device_name')->toString() ?: 'admin-backoffice',
             ['admin'],
@@ -32,20 +39,40 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token->plainTextToken,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
+            'user' => $this->profilePayload($user),
         ]);
     }
 
     /**
-     * The currently authenticated administrator.
+     * The currently authenticated administrator, with their resolved Groups and
+     * the flat list of permissions used to gate the front-end UI.
      */
     public function me(Request $request): JsonResponse
     {
-        return response()->json(['data' => $request->user()->only(['id', 'name', 'email'])]);
+        return response()->json(['data' => $this->profilePayload($request->user())]);
+    }
+
+    /**
+     * Shared identity + access payload. Super Admins report every permission so
+     * the front-end mirrors the back-end `Gate::before` immunity.
+     *
+     * @return array<string, mixed>
+     */
+    private function profilePayload(User $user): array
+    {
+        $isSuperAdmin = $user->hasRole(AccessControl::SUPER_ADMIN);
+
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'is_active' => (bool) $user->is_active,
+            'is_super_admin' => $isSuperAdmin,
+            'roles' => $user->getRoleNames()->all(),
+            'permissions' => $isSuperAdmin
+                ? AccessControl::permissions()
+                : $user->getAllPermissions()->pluck('name')->all(),
+        ];
     }
 
     /**

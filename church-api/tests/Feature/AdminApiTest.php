@@ -4,7 +4,6 @@ use App\Models\Ministry;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
-use Laravel\Sanctum\Sanctum;
 
 it('blocks admin routes without a token', function () {
     $this->getJson('/api/v1/admin/ministries')->assertUnauthorized();
@@ -41,7 +40,7 @@ it('rejects invalid credentials', function () {
 });
 
 it('creates a ministry when authenticated', function () {
-    Sanctum::actingAs(User::factory()->create());
+    actingAsSuperAdmin();
 
     $this->postJson('/api/v1/admin/ministries', [
         'name' => 'Intercession',
@@ -56,7 +55,7 @@ it('creates a ministry when authenticated', function () {
 });
 
 it('validates ministry creation', function () {
-    Sanctum::actingAs(User::factory()->create());
+    actingAsSuperAdmin();
 
     $this->postJson('/api/v1/admin/ministries', [])
         ->assertStatus(422)
@@ -64,7 +63,7 @@ it('validates ministry creation', function () {
 });
 
 it('auto-generates a unique slug for events', function () {
-    Sanctum::actingAs(User::factory()->create());
+    actingAsSuperAdmin();
 
     $first = $this->postJson('/api/v1/admin/events', [
         'title' => 'Maison de Feu',
@@ -81,7 +80,7 @@ it('auto-generates a unique slug for events', function () {
 });
 
 it('bulk updates settings', function () {
-    Sanctum::actingAs(User::factory()->create());
+    actingAsSuperAdmin();
 
     $this->putJson('/api/v1/admin/settings', [
         'settings' => [
