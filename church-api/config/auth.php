@@ -42,6 +42,15 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Token guard used by the API. Declaring it here (rather than relying
+        // solely on Sanctum's runtime guard) lets spatie/laravel-permission
+        // resolve the user model for the guard, e.g. when counting a role's
+        // members during an authenticated request.
+        'sanctum' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     /*

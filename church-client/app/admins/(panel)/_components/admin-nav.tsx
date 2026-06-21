@@ -2,52 +2,83 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Settings, 
-  Users, 
-  Video, 
-  CalendarDays, 
-  MapPin, 
+import {
+  LayoutDashboard,
+  Settings,
+  Users,
+  Video,
+  CalendarDays,
+  MapPin,
   HandHeart,
-  type LucideIcon 
+  ShieldCheck,
+  UserCog,
+  type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
+import type { AdminMe } from "@/lib/admin-api";
 
-const NAV: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/admins/ministries", label: "Ministères", icon: Users },
-  { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video },
-  { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays },
-  { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin },
-  { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart },
-  { href: "/admins/settings", label: "Paramètres", icon: Settings },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** Any of these permissions grants access (empty = always visible). */
+  required: readonly string[];
+};
+
+const NAV: NavItem[] = [
+  { href: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, required: [] },
+  { href: "/admins/ministries", label: "Ministères", icon: Users, required: [PERMISSIONS.manageSettings] },
+  { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, required: [PERMISSIONS.manageSermons] },
+  { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, required: [PERMISSIONS.manageEvents] },
+  { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },
+  { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, required: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers] },
+  { href: "/admins/settings", label: "Paramètres", icon: Settings, required: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings] },
 ];
 
-export function AdminNav() {
+const ACCESS_NAV: NavItem[] = [
+  { href: "/admins/users", label: "Serviteurs", icon: UserCog, required: [PERMISSIONS.manageAccess] },
+  { href: "/admins/roles", label: "Groupes & Accès", icon: ShieldCheck, required: [PERMISSIONS.manageAccess] },
+];
+
+export function AdminNav({ me }: { me: AdminMe | null }) {
   const pathname = usePathname();
+
+  const renderLink = ({ href, label, icon: Icon }: NavItem) => {
+    const active = pathname === href || pathname.startsWith(href + "/");
+    return (
+      <Link
+        key={href}
+        href={href}
+        className={cn(
+          "flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-sm font-semibold transition-colors",
+          active
+            ? "bg-gold/15 text-gold"
+            : "text-white/70 hover:bg-white/5 hover:text-white"
+        )}
+      >
+        <Icon className="size-[18px]" />
+        {label}
+      </Link>
+    );
+  };
+
+  const mainItems = NAV.filter((item) => hasAnyPermission(me, item.required));
+  const accessItems = ACCESS_NAV.filter((item) => hasAnyPermission(me, item.required));
 
   return (
     <nav className="flex flex-col gap-1">
-      {NAV.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname.startsWith(href + "/");
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-sm font-semibold transition-colors",
-              active
-                ? "bg-gold/15 text-gold"
-                : "text-white/70 hover:bg-white/5 hover:text-white"
-            )}
-          >
-            <Icon className="size-[18px]" />
-            {label}
-          </Link>
-        );
-      })}
+      {mainItems.map(renderLink)}
+
+      {accessItems.length > 0 && (
+        <>
+          <span className="mt-4 mb-1 px-3.5 text-[9px] font-bold tracking-[0.2em] text-white/30 uppercase">
+            Administration
+          </span>
+          {accessItems.map(renderLink)}
+        </>
+      )}
     </nav>
   );
 }

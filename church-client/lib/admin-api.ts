@@ -78,6 +78,9 @@ export async function adminFetch<T>(path: string, options: RequestInit = {}): Pr
     if (res.status === 401) {
       throw new Error("UNAUTHORIZED");
     }
+    if (res.status === 403) {
+      throw new Error("FORBIDDEN");
+    }
     const errorText = await res.text();
     let errorJson;
     try {
@@ -421,4 +424,142 @@ export async function deletePrayer(id: number): Promise<void> {
   await adminFetch<void>(`/prayers/${id}`, {
     method: "DELETE",
   });
+}
+
+/* ── Access control (Groups, Servants, Permissions) ──────────────── */
+
+/** The authenticated administrator's identity + resolved privileges. */
+export type AdminMe = {
+  id: number;
+  name: string;
+  email: string;
+  is_active: boolean;
+  is_super_admin: boolean;
+  roles: string[];
+  permissions: string[];
+};
+
+/** A Group / Department with its permission set and member count. */
+export type AdminRole = {
+  id: number;
+  name: string;
+  permissions: string[];
+  users_count: number;
+  created_at: string | null;
+};
+
+/** A servant / administrator account with its assigned Groups. */
+export type AdminServant = {
+  id: number;
+  name: string;
+  email: string;
+  is_active: boolean;
+  roles: string[];
+  created_at: string | null;
+};
+
+/** One column-group of the security matrix. */
+export type AdminPermissionCategory = {
+  category: string;
+  permissions: { name: string; label: string }[];
+};
+
+/**
+ * The currently authenticated administrator, including the flat permission list
+ * used to gate the admin UI. Returns `null` when the session is missing/expired.
+ */
+export async function getAdminMe(): Promise<AdminMe | null> {
+  try {
+    const response = await adminFetch<{ data: AdminMe }>("/me");
+    return response.data;
+  } catch (err) {
+    if (err instanceof Error && err.message === "UNAUTHORIZED") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/* Groups / Roles */
+
+export async function getAdminRoles(): Promise<AdminRole[]> {
+  const response = await adminFetch<{ data: AdminRole[] }>("/roles");
+  return response.data;
+}
+
+export async function getPermissionCatalog(): Promise<AdminPermissionCategory[]> {
+  const response = await adminFetch<{ data: AdminPermissionCategory[] }>("/permissions");
+  return response.data;
+}
+
+export async function createRole(data: {
+  name: string;
+  permissions?: string[];
+}): Promise<{ data: AdminRole }> {
+  return adminFetch<{ data: AdminRole }>("/roles", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateRole(id: number, data: {
+  name?: string;
+  permissions?: string[];
+}): Promise<{ data: AdminRole }> {
+  return adminFetch<{ data: AdminRole }>(`/roles/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteRole(id: number): Promise<void> {
+  await adminFetch<void>(`/roles/${id}`, { method: "DELETE" });
+}
+
+/** Sync the security-matrix selection for one Group in a single call. */
+export async function syncRolePermissions(
+  id: number,
+  permissions: string[]
+): Promise<{ data: AdminRole }> {
+  return adminFetch<{ data: AdminRole }>(`/roles/${id}/permissions`, {
+    method: "PUT",
+    body: JSON.stringify({ permissions }),
+  });
+}
+
+/* Servants / Users */
+
+export async function getServants(): Promise<AdminServant[]> {
+  const response = await adminFetch<{ data: AdminServant[] }>("/admin-users");
+  return response.data;
+}
+
+export async function createServant(data: {
+  name: string;
+  email: string;
+  password: string;
+  is_active?: boolean;
+  roles?: string[];
+}): Promise<{ data: AdminServant }> {
+  return adminFetch<{ data: AdminServant }>("/admin-users", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateServant(id: number, data: {
+  name?: string;
+  email?: string;
+  password?: string;
+  is_active?: boolean;
+  roles?: string[];
+}): Promise<{ data: AdminServant }> {
+  return adminFetch<{ data: AdminServant }>(`/admin-users/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteServant(id: number): Promise<void> {
+  await adminFetch<void>(`/admin-users/${id}`, { method: "DELETE" });
 }

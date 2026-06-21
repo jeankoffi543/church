@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $this->call([
+            AccessControlSeeder::class,
             SettingSeeder::class,
             MinistrySeeder::class,
             SermonSeeder::class,

@@ -1,9 +1,17 @@
-import { getAdminPrayers, getAdminUsers, getAdminSettings } from "@/lib/admin-api";
+import { getAdminMe, getAdminPrayers, getAdminUsers, getAdminSettings } from "@/lib/admin-api";
+import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
+import { AccessRestricted } from "../_components/access-restricted";
 import { PrayersManager } from "./prayers-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPrayersPage() {
+  const me = await getAdminMe();
+
+  if (!hasAnyPermission(me, [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers])) {
+    return <AccessRestricted />;
+  }
+
   const [prayers, users, settings] = await Promise.all([
     getAdminPrayers(),
     getAdminUsers(),

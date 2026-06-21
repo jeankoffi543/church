@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LogOut } from "lucide-react";
 
 import { getAdminSession } from "@/lib/auth/session";
+import { getAdminMe } from "@/lib/admin-api";
 import { ADMIN_LOGIN_PATH } from "@/lib/auth/config";
 import { logoutAdmin } from "../login/actions";
 import { AdminNav } from "./_components/admin-nav";
@@ -17,6 +18,13 @@ export default async function AdminPanelLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const session = await getAdminSession();
   if (!session) {
+    redirect(ADMIN_LOGIN_PATH);
+  }
+
+  // Resolve the administrator's identity + privileges so the sidebar only
+  // exposes the departments they are allowed to enter.
+  const me = await getAdminMe();
+  if (!me) {
     redirect(ADMIN_LOGIN_PATH);
   }
 
@@ -42,7 +50,7 @@ export default async function AdminPanelLayout({
           </span>
         </div>
 
-        <AdminNav />
+        <AdminNav me={me} />
 
         <form action={logoutAdmin} className="mt-auto">
           <button
