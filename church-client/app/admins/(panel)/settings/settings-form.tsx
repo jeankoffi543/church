@@ -10,9 +10,10 @@ import {
   Clock, 
   HeartHandshake, 
   PhoneCall, 
-  Tv, 
+  Tv,
   CheckCircle,
   AlertCircle,
+  ImagePlus,
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
@@ -34,6 +35,12 @@ export function SettingsForm({
   const [churchName, setChurchName] = useState((initialSettings.general?.church_name as string) ?? "");
   const [heroTitle, setHeroTitle] = useState((initialSettings.general?.hero_title as string) ?? "");
   const [heroDescription, setHeroDescription] = useState((initialSettings.general?.hero_description as string) ?? "");
+  // Hero background media (image OR video). Empty → default cover image is used.
+  const [heroBackground, setHeroBackground] = useState((initialSettings.general?.hero_background as string) ?? "");
+  const [heroBackgroundType, setHeroBackgroundType] = useState<"image" | "video">(
+    (initialSettings.general?.hero_background_type as "image" | "video") === "video" ? "video" : "image"
+  );
+  const [pendingHeroFile, setPendingHeroFile] = useState<File | null>(null);
 
   // Schedule state
   const [weeklySchedule, setWeeklySchedule] = useState<Array<{ day: string; time: string; label: string }>>(
@@ -126,6 +133,22 @@ export function SettingsForm({
     const previewUrl = URL.createObjectURL(file);
     setLiveFallbackImage(previewUrl);
     setPendingLiveFallbackFile(file);
+  };
+
+  const handleHeroBgSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (heroBackground.startsWith("blob:")) URL.revokeObjectURL(heroBackground);
+    setHeroBackground(URL.createObjectURL(file));
+    setHeroBackgroundType(file.type.startsWith("video") ? "video" : "image");
+    setPendingHeroFile(file);
+  };
+
+  const handleHeroBgRemove = () => {
+    if (heroBackground.startsWith("blob:")) URL.revokeObjectURL(heroBackground);
+    setHeroBackground("");
+    setHeroBackgroundType("image");
+    setPendingHeroFile(null);
   };
 
   // Dynamic list modifiers
@@ -235,6 +258,8 @@ export function SettingsForm({
           { key: "church_name", value: churchName, group: "general" },
           { key: "hero_title", value: heroTitle, group: "general" },
           { key: "hero_description", value: heroDescription, group: "general" },
+          { key: "hero_background", value: heroBackground.startsWith("blob:") ? "" : heroBackground, group: "general" },
+          { key: "hero_background_type", value: heroBackgroundType, group: "general" },
           
           // Schedule
           { key: "weekly_schedule", value: weeklySchedule, group: "schedule" },
@@ -276,6 +301,9 @@ export function SettingsForm({
         if (pendingLiveFallbackFile) {
           files["live_fallback_image"] = pendingLiveFallbackFile;
         }
+        if (pendingHeroFile) {
+          files["hero_background"] = pendingHeroFile;
+        }
 
         const res = (await updateAdminSettings(payload, files)) as {
           data: Record<string, Record<string, unknown>>;
@@ -285,6 +313,11 @@ export function SettingsForm({
           const newFallbackImage = (res.data.live.live_fallback_image as string) ?? "";
           setLiveFallbackImage(newFallbackImage);
           setPendingLiveFallbackFile(null);
+        }
+
+        if (res?.data?.general) {
+          setHeroBackground((res.data.general.hero_background as string) ?? "");
+          setPendingHeroFile(null);
         }
 
         setStatus({ type: "success", message: "Paramètres mis à jour avec succès !" });
@@ -418,6 +451,74 @@ export function SettingsForm({
                 placeholder="ex: Un lieu de grâce, de feu et de miracles..."
               />
             </label>
+
+            {/* Hero background media (image or video) */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">
+                Média d’arrière-plan de l’accueil
+              </span>
+              <p className="text-[12px] text-body">
+                Image ou vidéo affichée en fond de la section d’accueil. Si aucun média n’est
+                défini, l’image de couverture par défaut est utilisée.
+              </p>
+
+              {heroBackground ? (
+                <div className="relative aspect-video w-full max-w-[580px] overflow-hidden rounded-2xl border border-[rgba(40,25,80,0.12)] bg-[#160f33]">
+                  {heroBackgroundType === "video" ? (
+                    <video
+                      src={getPreviewUrl(heroBackground)}
+                      className="size-full object-cover"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={getPreviewUrl(heroBackground)}
+                      alt="Aperçu de l’arrière-plan d’accueil"
+                      className="size-full object-cover"
+                    />
+                  )}
+                  <span className="absolute top-2 left-2 rounded-full bg-ink/70 px-2.5 py-1 text-[10px] font-bold text-cream backdrop-blur-sm">
+                    {heroBackgroundType === "video" ? "Vidéo" : "Image"}
+                  </span>
+                  <div className="absolute right-2 bottom-2 flex gap-2">
+                    <label className="cursor-pointer rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-indigo shadow-sm backdrop-blur-sm transition hover:bg-white">
+                      Remplacer
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        className="hidden"
+                        onChange={handleHeroBgSelect}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleHeroBgRemove}
+                      className="cursor-pointer rounded-lg bg-live/90 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm transition hover:bg-live"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex aspect-video w-full max-w-[580px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
+                  <span className="flex size-12 items-center justify-center rounded-full bg-indigo/5 text-indigo">
+                    <ImagePlus className="size-5" />
+                  </span>
+                  <span className="text-[13px] font-bold text-indigo">Importer une image ou une vidéo</span>
+                  <span className="text-[11px] text-faint">JPG, PNG, WEBP · MP4, WEBM</span>
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    className="hidden"
+                    onChange={handleHeroBgSelect}
+                  />
+                </label>
+              )}
+            </div>
           </div>
         )}
 

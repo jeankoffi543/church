@@ -73,14 +73,33 @@ function HeroCtas({ isLive, tone = "light" }: { isLive: boolean; tone?: "light" 
 
 /* ── V1 · Immersif ────────────────────────────────────────── */
 function HeroImmersif({ content }: { content: HeroContent }) {
+  const isVideo = content.backgroundType === "video" && Boolean(content.background);
+  const imageBg =
+    content.backgroundType === "image" && content.background
+      ? content.background
+      : IMG.heroImmersif;
+
   return (
-    <section
-      className="flex min-h-[90vh] items-center justify-center bg-cover bg-center px-6 pt-[130px] pb-20 text-center text-white"
-      style={{
-        backgroundImage: `linear-gradient(180deg,rgba(22,15,51,.5),rgba(22,15,51,.92)),url('${IMG.heroImmersif}')`,
-      }}
-    >
-      <div className="max-w-[800px] animate-fade-up">
+    <section className="relative flex min-h-[90vh] items-center justify-center overflow-hidden px-6 pt-[130px] pb-20 text-center text-white">
+      {/* Background media: configured video/image, or the default cover image */}
+      {isVideo ? (
+        <video
+          className="absolute inset-0 size-full object-cover"
+          src={content.background ?? undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
+      ) : (
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url('${imageBg}')` }}
+        />
+      )}
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(22,15,51,.5),rgba(22,15,51,.92))]" />
+
+      <div className="relative z-10 max-w-[800px] animate-fade-up">
         <Eyebrow className="mb-[22px] tracking-[0.29em] text-gold">
           {content.eyebrow}
         </Eyebrow>

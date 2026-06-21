@@ -25,6 +25,15 @@ import {
 } from "./data";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+/** Origin serving uploaded assets (the API base without the `/api/v1` suffix). */
+const ASSET_BASE = API_URL.replace(/\/api\/v1\/?$/, "");
+
+/** Resolve a stored `/storage/...` path to an absolute URL. */
+function assetUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 /** Revalidate cached API data every 60s (content changes rarely). */
 const REVALIDATE = 60;
@@ -210,6 +219,9 @@ export type HeroContent = {
   description: string;
   serviceTimes: ServiceTime[];
   isLive: boolean;
+  /** Configured hero background (absolute URL), or null to use the default. */
+  background: string | null;
+  backgroundType: "image" | "video";
 };
 
 export async function getHeroContent(): Promise<HeroContent> {
@@ -226,6 +238,8 @@ export async function getHeroContent(): Promise<HeroContent> {
       "Un lieu de grâce, de feu et de miracles. Peu importe ton histoire, il y a une place pour toi à cette table.",
     serviceTimes: Array.isArray(weekly) && weekly.length ? weekly : SERVICE_TIMES,
     isLive: Boolean(live?.live_status),
+    background: assetUrl((general?.hero_background as string) || null),
+    backgroundType: (general?.hero_background_type as string) === "video" ? "video" : "image",
   };
 }
 
@@ -348,7 +362,7 @@ export async function submitHomeGroupApplication(data: {
   message: string;
   status?: "pending" | "approved" | "rejected";
   home_group_name?: string;
-  application?: any;
+  application?: unknown;
 }> {
   try {
     const res = await fetch(`${API_URL}/public/home-groups/applications`, {
@@ -391,7 +405,7 @@ export async function verifyHomeGroupApplication(data: {
   success: boolean;
   status: "pending" | "approved" | "rejected" | "not_found";
   home_group_name?: string;
-  application?: any;
+  application?: unknown;
   message?: string;
 }> {
   try {
