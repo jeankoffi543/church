@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Brand theme (literal values → generates utilities + :root vars) ── */
+@theme {
+  /* Fonts */
+  --font-sans: var(--font-jakarta), system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), Georgia, serif;
+  --font-heading: var(--font-cormorant), Georgia, serif;
+
+  /* MFM brand palette */
+  --color-cream: #faf8f4;
+  --color-ink: #160f33; /* deepest navy — dark sections */
+  --color-indigo: #211648; /* headings / primary */
+  --color-indigo-mid: #3a2a6e;
+  --color-gold: #e2b85f;
+  --color-gold-dark: #c8902e;
+  --color-live: #e23b3b;
+  --color-live-dark: #d22f2f;
+  --color-online: #3ad17e;
+  --color-body: #6f6a85; /* muted body text */
+  --color-body-soft: #5a5470;
+  --color-body-strong: #4a4360;
+  --color-faint: #9a93ad;
+  --color-lilac: #f0eaf6; /* chip background */
+  --color-lilac-200: #efe7f5;
+  --color-lilac-300: #e4d8f0;
+
+  /* Brand animations */
+  --animate-live-pulse: livePulse 2s infinite;
+  --animate-live-blink: liveBlink 1.2s infinite;
+  --animate-fade-up: fadeUp 0.8s ease both;
+
+  @keyframes livePulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(226, 59, 59, 0.55);
+    }
+    70% {
+      box-shadow: 0 0 0 12px rgba(226, 59, 59, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(226, 59, 59, 0);
+    }
+  }
+  @keyframes liveBlink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+  @keyframes fadeUp {
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ── shadcn semantic tokens → mapped to the brand (inlined var refs) ── */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+  --radius-3xl: calc(var(--radius) + 18px);
+}
+
+:root {
+  --radius: 0.875rem;
+  --background: #faf8f4;
+  --foreground: #211648;
+  --card: #ffffff;
+  --card-foreground: #211648;
+  --popover: #ffffff;
+  --popover-foreground: #211648;
+  --primary: #211648;
+  --primary-foreground: #ffffff;
+  --secondary: #f0eaf6;
+  --secondary-foreground: #211648;
+  --muted: #f0eaf6;
+  --muted-foreground: #6f6a85;
+  --accent: #f0eaf6;
+  --accent-foreground: #211648;
+  --destructive: #e23b3b;
+  --border: rgba(40, 25, 80, 0.1);
+  --input: rgba(40, 25, 80, 0.12);
+  --ring: #c8902e;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-cream text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: #e2b85f;
+    color: #160f33;
+  }
+  .font-display {
+    font-family: var(--font-serif);
+  }
+}
