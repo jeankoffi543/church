@@ -103,10 +103,25 @@ export async function getAdminSettings(): Promise<Record<string, Record<string, 
   return response.data;
 }
 
-export async function updateAdminSettings(settings: { key: string; value: unknown; group: string }[]): Promise<unknown> {
+export async function updateAdminSettings(
+  settings: { key: string; value: unknown; group: string }[],
+  files?: Record<string, File | null>
+): Promise<unknown> {
+  const formData = new FormData();
+  formData.append("_method", "PUT");
+  formData.append("settings", JSON.stringify(settings));
+
+  if (files) {
+    Object.entries(files).forEach(([key, file]) => {
+      if (file) {
+        formData.append(key, file);
+      }
+    });
+  }
+
   const result = await adminFetch<unknown>("/settings", {
-    method: "PUT",
-    body: JSON.stringify({ settings }),
+    method: "POST", // Use POST with _method=PUT to allow PHP to parse multipart/form-data
+    body: formData,
   });
   
   // Revalidate public cache

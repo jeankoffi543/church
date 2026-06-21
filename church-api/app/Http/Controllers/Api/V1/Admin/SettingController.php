@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\SettingsUpdateRequest;
 use App\Models\Setting;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use App\Traits\HandlesFileUploads;
+use Illuminate\Support\Facades\DB;
 
 class SettingController extends Controller
 {
+    use HandlesFileUploads;
+
     /**
      * All settings grouped by `group`, for the backoffice configuration panels.
      */
@@ -30,21 +34,27 @@ class SettingController extends Controller
      */
     public function update(SettingsUpdateRequest $request): JsonResponse
     {
-        foreach ($request->validated('settings') as $item) {
-            Setting::set(
-                $item['key'],
-                $item['value'],
-                $item['group'] ?? 'general',
-            );
-        }
+        return DB::transaction(function () use ($request) {
+            $settings = $this->mapRequestUploadsToSettings($request, $request->validated('settings'));
 
-        return response()->json([
-            'message' => 'Paramètres mis à jour.',
-            'data' => Setting::query()->get(['key', 'value', 'group'])
-                ->groupBy('group')
-                ->map(fn ($items) => $items->pluck('value', 'key')),
-        ]);
+            foreach ($settings as $item) {
+                Setting::set(
+                    $item['key'],
+                    $item['value'],
+                    $item['group'] ?? 'general',
+                );
+            }
+
+            return response()->json([
+                'message' => 'Paramètres mis à jour.',
+                'data' => Setting::query()->get(['key', 'value', 'group'])
+                    ->groupBy('group')
+                    ->map(fn ($items) => $items->pluck('value', 'key')),
+            ]);
+        });
     }
+
+
 
     /**
      * Delete a single setting by key.

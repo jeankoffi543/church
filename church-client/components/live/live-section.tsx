@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-import type { LiveConfig } from "@/lib/api";
+import type { LiveConfig, SermonPoint } from "@/lib/api";
 import { LivePlayer } from "./live-player";
 import { LivePanel, type LiveTab } from "./live-panel";
 import { LiveDot } from "@/components/ui/live-dot";
@@ -28,6 +28,11 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
               streamUrl: (live.live_embed_url as string) ?? "",
               chatEnabled: live.live_chat_enabled !== false,
               title: (live.live_title as string) ?? "Culte du dimanche",
+              fallbackImage: (live.live_fallback_image as string) ?? null,
+              description: (live.live_description as string) ?? "Diffusion en direct depuis le temple principal MFM Ficgayo",
+              sermonTitle: (live.live_sermon_title as string) ?? "La grâce qui transforme",
+              sermonReference: (live.live_sermon_reference as string) ?? "Romains 5.1-11",
+              sermonPoints: (live.live_sermon_points as SermonPoint[]) ?? [],
             });
           }
         }
@@ -40,11 +45,7 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (!config.chatEnabled && tab === "chat") {
-      setTab("priere");
-    }
-  }, [config.chatEnabled, tab]);
+  const activeTab = !config.chatEnabled && tab === "chat" ? "priere" : tab;
 
   return (
     <section className="min-h-screen bg-ink px-6 pt-[clamp(90px,11vw,110px)] pb-[70px] text-white">
@@ -62,9 +63,11 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
               HORS DIRECT
             </span>
           )}
-          <h1 className="font-display text-[clamp(28px,3.6vw,42px)] leading-none font-semibold italic">
-            {config.title}
-          </h1>
+          {config.isLive && (
+            <h1 className="font-display text-[clamp(28px,3.6vw,42px)] leading-none font-semibold italic">
+              {config.title}
+            </h1>
+          )}
           {config.isLive && (
             <span className="ml-auto flex items-center gap-1.5 text-[13px] font-semibold text-white/60">
               <span className="size-2 rounded-full bg-online" />
@@ -77,9 +80,14 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
         <div className="flex flex-wrap items-stretch gap-[22px]">
           <LivePlayer config={config} onFollowBible={() => setTab("notes")} />
           <LivePanel
-            tab={tab}
+            tab={activeTab}
             onTabChange={setTab}
             chatEnabled={config.chatEnabled}
+            isLive={config.isLive}
+            description={config.description}
+            sermonTitle={config.sermonTitle}
+            sermonReference={config.sermonReference}
+            sermonPoints={config.sermonPoints}
           />
         </div>
       </div>
