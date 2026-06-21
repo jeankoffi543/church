@@ -88,6 +88,11 @@ type ApiHomeGroup = {
   leader: string;
   address: string;
   schedule: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
+  meeting_day: string | null;
+  meeting_time: string | null;
   coordinates: { top?: string; left?: string } | null;
 };
 
@@ -134,6 +139,11 @@ const mapHomeGroup = (g: ApiHomeGroup): HomeGroup => ({
   when: g.schedule ?? "",
   top: g.coordinates?.top ?? "50%",
   left: g.coordinates?.left ?? "50%",
+  lat: g.latitude,
+  lng: g.longitude,
+  zone: g.zone_name,
+  day: g.meeting_day,
+  time: g.meeting_time,
 });
 
 /* ── Resource fetchers ────────────────────────────────────────────── */

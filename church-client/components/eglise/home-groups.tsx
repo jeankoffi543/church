@@ -3,12 +3,10 @@
 import { useState } from "react";
 import {
   ArrowRight,
-  MapPin,
   Clock,
   Check,
   X,
   Loader2,
-  Compass,
   CheckCircle,
   AlertCircle,
   XCircle,
@@ -18,7 +16,11 @@ import {
 } from "lucide-react";
 
 import { type HomeGroup } from "@/lib/data";
-import { submitHomeGroupApplication, verifyHomeGroupApplication, checkHomeGroupApplicationStatus, type HomeGroupApplicationStatusItem } from "@/lib/api";
+import {
+  submitHomeGroupApplication,
+  checkHomeGroupApplicationStatus,
+  type HomeGroupApplicationStatusItem,
+} from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandButton } from "@/components/ui/brand-button";
+import { HomeGroupsMap } from "@/components/eglise/home-groups-map";
 
 type Selection = HomeGroup | "general" | null;
 
@@ -48,16 +51,6 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     status: "pending" | "approved" | "rejected";
     groupName: string;
     message: string;
-  } | null>(null);
-
-  // Verification states (deprecated bottom layout but kept for compatibility)
-  const [verifyEmail, setVerifyEmail] = useState("");
-  const [verifyPhone, setVerifyPhone] = useState("");
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [verifyResult, setVerifyResult] = useState<{
-    status: "pending" | "approved" | "rejected" | "not_found";
-    homeGroupName?: string;
-    message?: string;
   } | null>(null);
 
   // Status-lookup dialog
@@ -114,7 +107,6 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
       setToast(
         `Merci ! Ta demande pour rejoindre ${label} a bien été reçue. Un responsable te contactera très vite.`
       );
-      // Reset form fields
       setFormName("");
       setFormEmail("");
       setFormPhone("");
@@ -134,31 +126,6 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     }
   };
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setVerifyLoading(true);
-    setVerifyResult(null);
-
-    const res = await verifyHomeGroupApplication({
-      email: verifyEmail,
-      phone: verifyPhone,
-    });
-
-    setVerifyLoading(false);
-
-    if (res.success) {
-      setVerifyResult({
-        status: res.status,
-        homeGroupName: res.home_group_name,
-      });
-    } else {
-      setVerifyResult({
-        status: res.status || "not_found",
-        message: res.message,
-      });
-    }
-  };
-
   const openStatusDialog = (prefill?: string) => {
     setStatusContact(prefill ?? "");
     setStatusResults(null);
@@ -166,9 +133,9 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
     setStatusOpen(true);
   };
 
-  const handleStatusOpenChange = (open: boolean) => {
-    setStatusOpen(open);
-    if (!open) {
+  const handleStatusOpenChange = (next: boolean) => {
+    setStatusOpen(next);
+    if (!next) {
       setStatusContact("");
       setStatusResults(null);
       setStatusError(null);
@@ -208,77 +175,15 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-[22px]">
-        {/* List */}
-        <div className="flex flex-[1_1_360px] flex-col gap-3">
-          {groups.map((g) => (
-            <button
-              key={g.name}
-              onClick={() => handleSelectGroup(g)}
-              className="flex cursor-pointer items-center justify-between gap-4 rounded-[14px] border border-[rgba(40,25,80,0.08)] border-l-4 border-l-gold-dark bg-white px-5 py-[18px] text-left transition-all duration-200 hover:translate-x-[3px] hover:shadow-[0_12px_30px_rgba(22,15,51,0.1)]"
-            >
-              <div>
-                <h3 className="mb-[5px] text-base font-bold text-indigo">
-                  {g.name}
-                </h3>
-                <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[13px] text-body">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="size-3.5" /> {g.area}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="size-3.5" /> {g.when}
-                  </span>
-                </div>
-                <div className="mt-1 text-[12.5px] text-faint">
-                  Responsable · {g.leader || "Non assigné"}
-                </div>
-              </div>
-              <span className="flex shrink-0 items-center gap-1 text-[13px] font-bold text-indigo-mid">
-                Rejoindre <ArrowRight className="size-3.5" />
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* Map */}
-        <div className="relative min-h-[440px] flex-[1_1_360px] overflow-hidden rounded-[20px] border border-[rgba(40,25,80,0.1)] bg-gradient-to-b from-lilac-200 to-lilac-300">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                "linear-gradient(rgba(58,42,110,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(58,42,110,.06) 1px,transparent 1px)",
-              backgroundSize: "38px 38px",
-            }}
-          />
-          <div className="absolute top-4 left-4 flex items-center gap-1 rounded-[10px] bg-white/90 px-3.5 py-2 text-[12.5px] font-bold text-indigo shadow-[0_4px_14px_rgba(22,15,51,0.1)]">
-            <MapPin className="size-3.5 text-gold-dark" /> Abidjan · Yopougon &
-            environs
-          </div>
-          {groups.map((g) => (
-            <button
-              key={g.name}
-              onClick={() => handleSelectGroup(g)}
-              aria-label={`Rejoindre ${g.name}`}
-              className="absolute -translate-x-1/2 -translate-y-full cursor-pointer transition-transform hover:scale-125"
-              style={{ top: g.top, left: g.left }}
-            >
-              <span className="block size-[26px] rotate-[-45deg] rounded-[50%_50%_50%_0] border-2 border-white bg-gradient-to-br from-gold to-gold-dark shadow-[0_6px_16px_rgba(200,144,46,0.4)]" />
-            </button>
-          ))}
-          <div className="absolute right-4 bottom-4 left-4">
-            <button
-              onClick={() => handleSelectGroup("general")}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-indigo py-3.5 text-sm font-bold text-white transition hover:bg-indigo-mid"
-            >
-              <Compass className="size-4" /> Trouver un groupe près de chez moi
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Interactive Mapbox cartography (join is delegated back here) */}
+      <HomeGroupsMap groups={groups} onJoin={handleSelectGroup} />
 
       {/* ── Status-lookup dialog ──────────────────────────────────── */}
       <Dialog open={statusOpen} onOpenChange={handleStatusOpenChange}>
-        <DialogContent className="max-w-[90%] sm:max-w-md border border-white/10 bg-ink p-6 text-cream shadow-2xl rounded-xl">
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-[90%] sm:max-w-md border border-white/10 bg-ink p-6 text-cream shadow-2xl rounded-xl"
+        >
           <DialogHeader className="gap-1 text-left">
             <span className="text-[10px] font-bold tracking-widest text-gold uppercase">
               Suivi d&apos;inscription
@@ -309,11 +214,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
                 variant="gold"
                 className="h-11 shrink-0 px-4 text-sm font-extrabold"
               >
-                {statusLoading ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Search className="size-4" />
-                )}
+                {statusLoading ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
               </BrandButton>
             </div>
 
@@ -395,9 +296,12 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
         </DialogContent>
       </Dialog>
 
-      {/* Join dialog */}
+      {/* ── Join dialog ──────────────────────────────────────────────── */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-[90%] rounded-xl border border-white/10 bg-ink p-6 text-cream shadow-2xl sm:max-w-md">
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="max-w-[90%] rounded-xl border border-white/10 bg-ink p-6 text-cream shadow-2xl sm:max-w-md"
+        >
           <DialogHeader className="gap-1 text-left">
             <span className="text-[10px] font-bold tracking-widest text-gold uppercase">
               Groupe de maison
@@ -475,7 +379,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
               </Field>
             </div>
 
-            {/* Group Selection Dropdown if general find was clicked */}
+            {/* Group selection dropdown when the general "find a group" was used */}
             {selection === "general" && (
               <Field label="Choisir une cellule">
                 <select
@@ -553,7 +457,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
         </DialogContent>
       </Dialog>
 
-      {/* Toast */}
+      {/* ── Toast ────────────────────────────────────────────────────── */}
       {toast && (
         <div className="fixed right-5 bottom-5 z-[100] w-full max-w-sm px-4 sm:px-0">
           <div className="flex gap-3 rounded-xl border border-gold/30 bg-ink p-4 shadow-[0_12px_40px_rgba(22,15,51,0.5)]">
@@ -561,12 +465,8 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
               <Check className="size-4" />
             </div>
             <div className="flex-1 text-left">
-              <p className="text-[13.5px] font-semibold leading-snug text-cream">
-                Demande envoyée
-              </p>
-              <p className="mt-1 text-xs leading-normal text-[#9a8fb5]">
-                {toast}
-              </p>
+              <p className="text-[13.5px] font-semibold leading-snug text-cream">Demande envoyée</p>
+              <p className="mt-1 text-xs leading-normal text-[#9a8fb5]">{toast}</p>
             </div>
             <button
               onClick={() => setToast(null)}
@@ -585,18 +485,10 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
 const DARK_FIELD =
   "h-11 rounded-xl border-white/15 bg-white/5 px-4 text-sm text-cream placeholder:text-white/30 focus-visible:border-gold focus-visible:ring-3 focus-visible:ring-gold/30 transition-all";
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-xs font-bold tracking-wider text-[#9a8fb5] uppercase">
-        {label}
-      </label>
+      <label className="text-xs font-bold tracking-wider text-[#9a8fb5] uppercase">{label}</label>
       {children}
     </div>
   );

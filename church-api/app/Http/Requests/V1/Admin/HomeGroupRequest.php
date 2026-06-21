@@ -23,6 +23,11 @@ class HomeGroupRequest extends FormRequest
             'name' => [$required, 'string', 'max:255'],
             'leader' => ['nullable', 'string', 'max:255'],
             'address' => [$required, 'string', 'max:255'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'zone_name' => ['nullable', 'string', 'max:120'],
+            'meeting_day' => ['nullable', 'string', 'max:60'],
+            'meeting_time' => ['nullable', 'string', 'max:60'],
             'schedule' => ['nullable', 'string', 'max:255'],
             'coordinates' => ['nullable', 'array'],
             // Accept either map percentages (top/left) or lat/lng pairs.

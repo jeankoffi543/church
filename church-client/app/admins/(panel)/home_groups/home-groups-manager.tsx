@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SearchableSelect } from "../_components/searchable-select";
+import { LocationPicker } from "../_components/location-picker";
 
 type HomeGroup = {
   id: number;
@@ -24,6 +25,9 @@ type HomeGroup = {
   leader: string | null;
   leader_id: number | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
@@ -52,8 +56,9 @@ export function HomeGroupsManager({
   const [leaderId, setLeaderId] = useState<number | "">("");
   const [address, setAddress] = useState("");
   const [schedule, setSchedule] = useState("");
-  const [topPercent, setTopPercent] = useState("50%");
-  const [leftPercent, setLeftPercent] = useState("50%");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [zoneName, setZoneName] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
 
@@ -64,8 +69,9 @@ export function HomeGroupsManager({
     setLeaderId("");
     setAddress("");
     setSchedule("Mensuel · 1er dimanche");
-    setTopPercent("50%");
-    setLeftPercent("50%");
+    setLatitude(null);
+    setLongitude(null);
+    setZoneName(null);
     setSortOrder(0);
     setIsActive(true);
     setIsModalOpen(true);
@@ -78,8 +84,9 @@ export function HomeGroupsManager({
     setLeaderId(group.leader_id || "");
     setAddress(group.address);
     setSchedule(group.schedule ?? "");
-    setTopPercent(group.coordinates?.top ?? "50%");
-    setLeftPercent(group.coordinates?.left ?? "50%");
+    setLatitude(group.latitude ?? null);
+    setLongitude(group.longitude ?? null);
+    setZoneName(group.zone_name ?? null);
     setSortOrder(group.sort_order);
     setIsActive(group.is_active);
     setIsModalOpen(true);
@@ -113,22 +120,15 @@ export function HomeGroupsManager({
     setStatus(null);
     startTransition(async () => {
       try {
-        // Enforce percentage symbol on map offsets
-        const formatPercent = (val: string) => {
-          const num = val.replace(/[^0-9.]/g, "");
-          return num ? `${num}%` : "50%";
-        };
-
         const payload = {
           name,
           leader: leader || null,
           leader_id: leaderId ? Number(leaderId) : null,
           address,
+          latitude,
+          longitude,
+          zone_name: zoneName,
           schedule: schedule || null,
-          coordinates: {
-            top: formatPercent(topPercent),
-            left: formatPercent(leftPercent),
-          },
           sort_order: Number(sortOrder),
           is_active: isActive,
         };
@@ -235,7 +235,7 @@ export function HomeGroupsManager({
                 <th className="px-6 py-4">Nom du groupe</th>
                 <th className="px-6 py-4">Responsable</th>
                 <th className="px-6 py-4">Quartier / Adresse</th>
-                <th className="px-6 py-4">Position Carte</th>
+                <th className="px-6 py-4">Coordonnées</th>
                 <th className="px-6 py-4">Statut</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -263,7 +263,13 @@ export function HomeGroupsManager({
                     </div>
                   </td>
                   <td className="px-6 py-4 text-xs font-mono text-faint">
-                    Top: {group.coordinates?.top ?? "50%"} · Left: {group.coordinates?.left ?? "50%"}
+                    {group.latitude != null && group.longitude != null ? (
+                      <span title={group.zone_name ?? undefined}>
+                        {group.latitude.toFixed(4)}, {group.longitude.toFixed(4)}
+                      </span>
+                    ) : (
+                      <span className="italic">Non localisé</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     {group.is_active ? (
@@ -354,17 +360,15 @@ export function HomeGroupsManager({
                 />
               </div>
 
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Adresse complète (Quartier...) *</span>
-                <input
-                  type="text"
-                  required
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="ex: Yopougon, Cité Ficgayo, Rue des Bananiers"
-                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-                />
-              </label>
+              <LocationPicker
+                value={{ address, latitude, longitude, zone: zoneName }}
+                onChange={(next) => {
+                  setAddress(next.address);
+                  setLatitude(next.latitude);
+                  setLongitude(next.longitude);
+                  setZoneName(next.zone ?? null);
+                }}
+              />
 
               <label className="flex flex-col gap-2">
                 <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Programme des réunions</span>
@@ -376,29 +380,6 @@ export function HomeGroupsManager({
                   className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                 />
               </label>
-
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide whitespace-nowrap">Position Carte (Top %)</span>
-                  <input
-                    type="text"
-                    value={topPercent}
-                    onChange={(e) => setTopPercent(e.target.value)}
-                    placeholder="45%"
-                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold font-mono"
-                  />
-                </label>
-                <label className="flex flex-col gap-2">
-                  <span className="text-xs font-bold text-body-strong uppercase tracking-wide whitespace-nowrap">Position Carte (Left %)</span>
-                  <input
-                    type="text"
-                    value={leftPercent}
-                    onChange={(e) => setLeftPercent(e.target.value)}
-                    placeholder="28%"
-                    className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold font-mono"
-                  />
-                </label>
-              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-2">

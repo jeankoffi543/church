@@ -52,6 +52,9 @@ export type AdminHomeGroup = {
   leader: string | null;
   leader_id: number | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
+  zone_name: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
@@ -353,7 +356,11 @@ export async function getAdminHomeGroups(): Promise<AdminHomeGroup[]> {
 export async function createHomeGroup(data: {
   name: string;
   leader: string | null;
+  leader_id?: number | null;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  zone_name?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
@@ -371,7 +378,11 @@ export async function createHomeGroup(data: {
 export async function updateHomeGroup(id: number, data: {
   name?: string;
   leader?: string | null;
+  leader_id?: number | null;
   address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  zone_name?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
