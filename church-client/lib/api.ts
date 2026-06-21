@@ -247,7 +247,7 @@ export async function getContactInfo(): Promise<ContactInfo> {
         { label: "YouTube", url: "#" },
         { label: "Instagram", url: "#" },
       ],
-    subjects: CONTACT_SUBJECTS,
+    subjects: (contact?.contact_subjects as string[] | undefined) ?? CONTACT_SUBJECTS,
   };
 }
 

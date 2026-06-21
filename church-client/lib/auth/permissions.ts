@@ -19,6 +19,8 @@ export const PERMISSIONS = {
   manageAccess: "manage_access",
   manageMinistries: "manage_ministries",
   validateMinistryApplications: "validate_ministry_applications",
+  viewContacts: "view_contacts",
+  manageContacts: "manage_contacts",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

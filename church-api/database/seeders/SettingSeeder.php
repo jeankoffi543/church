@@ -48,6 +48,7 @@ class SettingSeeder extends Seeder
             ['key' => 'emails', 'group' => 'contact', 'value' => ['bonjour@mfm-ficgayo.ci']],
             ['key' => 'map_hint', 'group' => 'contact', 'value' => 'Abidjan · Yopougon & environs'],
             ['key' => 'legal_mentions', 'group' => 'contact', 'value' => '© 2026 Église MFM Ficgayo. Tous droits réservés.'],
+            ['key' => 'contact_subjects', 'group' => 'contact', 'value' => ['Question générale', 'Sujet de prière', 'Témoignage', 'Autre']],
 
                         // ── Phase 6 · Live / streaming ─────────────────────────────
             ['key' => 'live_embed_url', 'group' => 'live', 'value' => 'https://www.youtube.com/embed/live_stream?channel=MFM'],

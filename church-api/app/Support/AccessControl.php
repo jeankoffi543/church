@@ -85,6 +85,10 @@ final class AccessControl
                 ['name' => 'moderate_comments', 'label' => 'Modérer les commentaires du live'],
                 ['name' => 'manage_testimonies', 'label' => 'Publier et gérer les témoignages'],
             ],
+            'Contacts' => [
+                ['name' => 'view_contacts', 'label' => 'Consulter les messages de contact et retours'],
+                ['name' => 'manage_contacts', 'label' => 'Traiter, archiver ou répondre aux messages de contact'],
+            ],
         ];
     }
 
@@ -117,32 +121,63 @@ final class AccessControl
     {
         return [
             self::PASTEUR => [
-                'manage_settings', 'manage_sermons', 'manage_events',
-                'view_prayers', 'process_prayers', 'manage_prayer_settings',
-                'view_cells', 'process_cells', 'validate_home_group_applications', 'manage_live',
-                'view_dashboard', 'view_statistics',
-                'view_offerings', 'manage_offerings',
-                'send_notifications', 'manage_announcements',
-                'moderate_comments', 'manage_testimonies', 'manage_ministries',
+                'manage_settings',
+                'manage_sermons',
+                'manage_events',
+                'view_prayers',
+                'process_prayers',
+                'manage_prayer_settings',
+                'view_cells',
+                'process_cells',
+                'validate_home_group_applications',
+                'manage_live',
+                'view_dashboard',
+                'view_statistics',
+                'view_offerings',
+                'manage_offerings',
+                'send_notifications',
+                'manage_announcements',
+                'moderate_comments',
+                'manage_testimonies',
+                'manage_ministries',
                 'validate_ministry_applications',
+                'view_contacts',
+                'manage_contacts',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
             // controller, since a single permission cannot scope to a row).
             self::MINISTRY_CHIEF => [
-                'view_dashboard', 'validate_ministry_applications',
+                'view_dashboard',
+                'validate_ministry_applications',
             ],
             'Intercesseur' => [
-                'view_prayers', 'process_prayers', 'view_dashboard', 'manage_testimonies',
+                'view_prayers',
+                'process_prayers',
+                'view_dashboard',
+                'manage_testimonies',
             ],
             'Média/Régie' => [
-                'manage_live', 'manage_sermons', 'moderate_comments', 'send_notifications', 'view_dashboard',
+                'manage_live',
+                'manage_sermons',
+                'moderate_comments',
+                'send_notifications',
+                'view_dashboard',
             ],
             'Huissier' => [
-                'view_cells', 'view_dashboard',
+                'view_cells',
+                'view_dashboard',
             ],
             'Responsables de cellule' => [
-                'view_cells', 'process_cells', 'validate_home_group_applications', 'view_dashboard',
+                'view_cells',
+                'process_cells',
+                'validate_home_group_applications',
+                'view_dashboard',
+            ],
+            'Secrétariat' => [
+                'view_contacts',
+                'manage_contacts',
+                'view_dashboard',
             ],
         ];
     }

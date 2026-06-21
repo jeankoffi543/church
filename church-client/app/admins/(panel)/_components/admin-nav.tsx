@@ -35,6 +35,7 @@ const NAV: NavItem[] = [
   { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, required: [PERMISSIONS.manageEvents] },
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },
   { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, required: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers] },
+  { href: "/admins/contacts", label: "Messages de contact", icon: Inbox, required: [PERMISSIONS.viewContacts] },
   { href: "/admins/settings", label: "Paramètres", icon: Settings, required: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings] },
 ];
 

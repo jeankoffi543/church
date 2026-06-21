@@ -43,6 +43,9 @@ Route::prefix('v1')->group(function (): void {
 
         // Prayer requests (public submission)
         Route::post('prayer-requests', [Public\PrayerRequestController::class, 'store'])->name('prayer-requests.store');
+
+        // Contact messages (public submission)
+        Route::post('contact', [Public\ContactController::class, 'store'])->name('contact.store');
     });
 
     // ── Admin authentication ──────────────────────────────────────────
@@ -117,6 +120,16 @@ Route::prefix('v1')->group(function (): void {
             Route::patch('prayers/{prayer}/assign', [Admin\PrayerRequestController::class, 'assign'])
                 ->middleware('permission:process_prayers')
                 ->name('prayers.assign');
+
+            // ── Contact messages management ─────────────────────────────
+            Route::middleware('permission:view_contacts')->group(function (): void {
+                Route::get('contacts', [Admin\ContactController::class, 'index'])->name('contacts.index');
+            });
+            Route::middleware('permission:manage_contacts')->group(function (): void {
+                Route::match(['put', 'patch'], 'contacts/{contact}', [Admin\ContactController::class, 'update'])->name('contacts.update');
+                Route::post('contacts/{contact}/archive', [Admin\ContactController::class, 'archive'])->name('contacts.archive');
+                Route::post('contacts/{contact}/reply', [Admin\ContactController::class, 'reply'])->name('contacts.reply');
+            });
 
             // ── Access management (Groups, Users, Permissions) ─────────
             Route::middleware('permission:manage_access')->group(function (): void {
