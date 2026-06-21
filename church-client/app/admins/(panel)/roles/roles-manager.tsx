@@ -12,6 +12,7 @@ import {
   Trash2,
   Users,
   Lock,
+  ArrowLeftRight,
 } from "lucide-react";
 
 import type { AdminRole, AdminPermissionCategory } from "@/lib/admin-api";
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { groupStyle } from "../_components/group-style";
+import { Pagination } from "../_components/pagination";
 
 const SUPER_ADMIN = "Super Admin";
 
@@ -33,12 +35,20 @@ const SHORT_LABELS: Record<string, string> = {
   manage_sermons: "Messages",
   manage_events: "Agenda",
   manage_access: "Accès",
+  view_dashboard: "Vue",
+  view_statistics: "Stats",
   manage_live: "Live",
   view_prayers: "Voir",
   process_prayers: "Traiter",
   manage_prayer_settings: "Config",
   view_cells: "Voir",
   process_cells: "Traiter",
+  view_offerings: "Voir",
+  manage_offerings: "Gérer",
+  send_notifications: "Envoyer",
+  manage_announcements: "Annonces",
+  moderate_comments: "Modérer",
+  manage_testimonies: "Témoignages",
 };
 
 type Feedback = { type: "success" | "error"; message: string } | null;
@@ -63,6 +73,19 @@ export function RolesManager({
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<AdminRole | null>(null);
   const [roleName, setRoleName] = useState("");
+
+  // Pagination for the groups summary (the matrix below shows every group).
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  const sortedRoles = useMemo(
+    () => [...roles].sort((a, b) => a.name.localeCompare(b.name)),
+    [roles]
+  );
+  const pageCount = Math.max(1, Math.ceil(sortedRoles.length / perPage));
+  // Clamp during render so the page stays valid when groups are removed.
+  const currentPage = Math.min(page, pageCount);
+  const pagedRoles = sortedRoles.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const flatPermissions = useMemo(
     () => catalog.flatMap((c) => c.permissions.map((p) => p.name)),
@@ -261,8 +284,8 @@ export function RolesManager({
       )}
 
       {/* Groups summary */}
-      <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {roles.map((role) => {
+      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {pagedRoles.map((role) => {
           const style = groupStyle(role.name);
           const count = (matrix[role.id] ?? new Set()).size;
           return (
@@ -316,6 +339,24 @@ export function RolesManager({
         })}
       </div>
 
+      {/* Groups pagination — drives both the cards above and the matrix below */}
+      {sortedRoles.length > 0 && (
+        <div className="mb-8 overflow-hidden rounded-[14px] border border-[rgba(40,25,80,0.08)] bg-white">
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={sortedRoles.length}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="groupes"
+          />
+        </div>
+      )}
+
       {/* ── Security matrix ───────────────────────────────────────── */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
@@ -326,6 +367,10 @@ export function RolesManager({
             <p className="text-xs text-body">
               Cochez les privilèges accordés à chaque groupe, puis enregistrez.
             </p>
+            <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-bold text-gold-dark">
+              <ArrowLeftRight className="size-3" />
+              Défilez horizontalement pour voir toutes les catégories
+            </span>
           </div>
           <button
             onClick={handleSaveMatrix}
@@ -341,34 +386,34 @@ export function RolesManager({
           </button>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="relative max-h-[68vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[rgba(40,25,80,0.22)] hover:[&::-webkit-scrollbar-thumb]:bg-[rgba(40,25,80,0.35)] [&::-webkit-scrollbar-track]:bg-cream/40 [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5">
           <table className="w-full border-collapse text-sm">
             <thead>
               {/* Category band */}
-              <tr className="border-b border-[rgba(40,25,80,0.08)] bg-cream">
-                <th className="sticky left-0 z-10 bg-cream px-6 py-3 text-left text-[11px] font-bold tracking-wider text-body uppercase">
+              <tr className="bg-cream">
+                <th className="sticky top-0 left-0 z-30 h-11 border-b border-[rgba(40,25,80,0.08)] bg-cream px-6 text-left text-[11px] font-bold tracking-wider text-body uppercase shadow-[6px_0_8px_-6px_rgba(22,15,51,0.12)]">
                   Groupe
                 </th>
                 {catalog.map((cat) => (
                   <th
                     key={cat.category}
                     colSpan={cat.permissions.length}
-                    className="border-l border-[rgba(40,25,80,0.08)] px-3 py-3 text-center text-[11px] font-bold tracking-wider text-gold-dark uppercase"
+                    className="sticky top-0 z-20 h-11 border-b border-l border-[rgba(40,25,80,0.08)] bg-cream px-3 text-center text-[11px] font-bold tracking-wider text-gold-dark uppercase"
                   >
                     {cat.category}
                   </th>
                 ))}
               </tr>
               {/* Permission labels */}
-              <tr className="border-b border-[rgba(40,25,80,0.08)] bg-cream/50">
-                <th className="sticky left-0 z-10 bg-cream/50 px-6 py-2" />
+              <tr className="bg-cream/50">
+                <th className="sticky top-11 left-0 z-30 h-9 border-b border-[rgba(40,25,80,0.08)] bg-[#f6f2ea] px-6 shadow-[6px_0_8px_-6px_rgba(22,15,51,0.12)]" />
                 {catalog.map((cat) =>
                   cat.permissions.map((perm, idx) => (
                     <th
                       key={perm.name}
                       title={perm.label}
                       className={cn(
-                        "px-3 py-2 text-center text-[11px] font-semibold text-body",
+                        "sticky top-11 z-20 h-9 border-b border-[rgba(40,25,80,0.08)] bg-[#f6f2ea] px-3 text-center text-[11px] font-semibold text-body",
                         idx === 0 && "border-l border-[rgba(40,25,80,0.08)]"
                       )}
                     >
@@ -379,14 +424,14 @@ export function RolesManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {roles.map((role) => {
+              {pagedRoles.map((role) => {
                 const style = groupStyle(role.name);
                 const superAdmin = isSuperAdmin(role.name);
                 const set = matrix[role.id] ?? new Set<string>();
                 const allOn = flatPermissions.every((p) => set.has(p));
                 return (
-                  <tr key={role.id} className="hover:bg-cream/30">
-                    <td className="sticky left-0 z-10 bg-white px-6 py-3">
+                  <tr key={role.id} className="group/row hover:bg-cream/30">
+                    <td className="sticky left-0 z-10 bg-white px-6 py-3 shadow-[6px_0_8px_-6px_rgba(22,15,51,0.12)] group-hover/row:bg-cream/40">
                       <div className="flex items-center gap-2">
                         <span className={cn("size-2 rounded-full", style.dot)} />
                         <span className="font-semibold text-indigo">{role.name}</span>

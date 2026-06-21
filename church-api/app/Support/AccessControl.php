@@ -34,6 +34,10 @@ final class AccessControl
                 ['name' => 'manage_events', 'label' => "Gérer l'agenda et les événements"],
                 ['name' => 'manage_access', 'label' => 'Gérer les accès, groupes et permissions'],
             ],
+            'Tableau de bord' => [
+                ['name' => 'view_dashboard', 'label' => 'Accéder au tableau de bord'],
+                ['name' => 'view_statistics', 'label' => 'Consulter les statistiques et rapports'],
+            ],
             'Live' => [
                 ['name' => 'manage_live', 'label' => 'Activer/configurer le live et le serveur RTMP'],
             ],
@@ -45,6 +49,18 @@ final class AccessControl
             'Cellules' => [
                 ['name' => 'view_cells', 'label' => 'Consulter les groupes de maison / cellules'],
                 ['name' => 'process_cells', 'label' => 'Traiter et gérer les groupes de maison / cellules'],
+            ],
+            'Finances' => [
+                ['name' => 'view_offerings', 'label' => 'Consulter les dons et offrandes'],
+                ['name' => 'manage_offerings', 'label' => 'Gérer les dons, dîmes et reçus'],
+            ],
+            'Communication' => [
+                ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
+                ['name' => 'manage_announcements', 'label' => 'Gérer les annonces et le bulletin'],
+            ],
+            'Modération' => [
+                ['name' => 'moderate_comments', 'label' => 'Modérer les commentaires du live'],
+                ['name' => 'manage_testimonies', 'label' => 'Publier et gérer les témoignages'],
             ],
         ];
     }
@@ -81,18 +97,22 @@ final class AccessControl
                 'manage_settings', 'manage_sermons', 'manage_events',
                 'view_prayers', 'process_prayers', 'manage_prayer_settings',
                 'view_cells', 'process_cells', 'manage_live',
+                'view_dashboard', 'view_statistics',
+                'view_offerings', 'manage_offerings',
+                'send_notifications', 'manage_announcements',
+                'moderate_comments', 'manage_testimonies',
             ],
             'Intercesseurs' => [
-                'view_prayers', 'process_prayers',
+                'view_prayers', 'process_prayers', 'view_dashboard', 'manage_testimonies',
             ],
             'Média/Régie' => [
-                'manage_live', 'manage_sermons',
+                'manage_live', 'manage_sermons', 'moderate_comments', 'send_notifications', 'view_dashboard',
             ],
             'Huissiers' => [
-                'view_cells',
+                'view_cells', 'view_dashboard',
             ],
             'Responsables de cellule' => [
-                'view_cells', 'process_cells',
+                'view_cells', 'process_cells', 'view_dashboard',
             ],
         ];
     }
