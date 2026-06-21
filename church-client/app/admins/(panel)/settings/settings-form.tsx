@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import { LocationPicker } from "../_components/location-picker";
 
 type TabType = "general" | "schedule" | "offerings" | "contact" | "live";
 
@@ -76,6 +77,12 @@ export function SettingsForm({
   );
   const [mapHint, setMapHint] = useState((initialSettings.contact?.map_hint as string) ?? "");
   const [legalMentions, setLegalMentions] = useState((initialSettings.contact?.legal_mentions as string) ?? "");
+  const [latitude, setLatitude] = useState<number | null>(
+    initialSettings.contact?.latitude ? Number(initialSettings.contact.latitude) : null
+  );
+  const [longitude, setLongitude] = useState<number | null>(
+    initialSettings.contact?.longitude ? Number(initialSettings.contact.longitude) : null
+  );
 
   // Live state
   const [liveEmbedUrl, setLiveEmbedUrl] = useState((initialSettings.live?.live_embed_url as string) ?? "");
@@ -246,6 +253,8 @@ export function SettingsForm({
           { key: "emails", value: emails.filter(Boolean), group: "contact" },
           { key: "map_hint", value: mapHint, group: "contact" },
           { key: "legal_mentions", value: legalMentions, group: "contact" },
+          { key: "latitude", value: latitude, group: "contact" },
+          { key: "longitude", value: longitude, group: "contact" },
           
           // Live
           { key: "live_embed_url", value: liveEmbedUrl, group: "live" },
@@ -693,16 +702,18 @@ export function SettingsForm({
                 ))}
               </div>
 
-              {/* Map Hint */}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Indication géographique</span>
-                <input
-                  value={mapHint}
-                  onChange={(e) => setMapHint(e.target.value)}
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2 text-[14px] text-indigo outline-none focus:border-gold"
-                  placeholder="ex: Abidjan · Yopougon & environs"
+              {/* Map location picker */}
+              <div className="md:col-span-2 border-t border-[rgba(40,25,80,0.06)] pt-5">
+                <span className="block text-[12px] font-bold tracking-wide text-body-strong uppercase mb-3">Indication géographique & Carte</span>
+                <LocationPicker
+                  value={{ address: mapHint, latitude, longitude, zone: null }}
+                  onChange={(next) => {
+                    setMapHint(next.address);
+                    setLatitude(next.latitude);
+                    setLongitude(next.longitude);
+                  }}
                 />
-              </label>
+              </div>
             </div>
 
             {/* Social Networks */}
