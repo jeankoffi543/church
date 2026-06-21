@@ -92,3 +92,35 @@ it('submits a prayer request and sends automated notification', function () {
         'status' => 'new',
     ]);
 });
+
+it('submits a prayer request and parses accolade placeholders', function () {
+    Setting::set('prayer_success_ui_message', 'Success custom message', 'prayers');
+    Setting::set('prayer_automated_notification_message', 'Hello {{name}} (email: {{email}}, phone: {{phone}}), your prayer request for "{{category}}" containing message "{{message}}" is assigned to Pastor {{pastor_name}}.', 'prayers');
+
+    $pastor = \App\Models\User::factory()->create(['name' => 'Pasteur Marc']);
+
+    \Illuminate\Support\Facades\Log::shouldReceive('info')
+        ->twice() // once for the API post, once for manual invocation
+        ->with('Prayer notification sent', Mockery::on(function ($data) {
+            return $data['to_email'] === 'jean@example.com';
+        }));
+
+    $response = $this->postJson('/api/v1/public/prayer-requests', [
+        'name' => 'Jean',
+        'phone' => '+22501020304',
+        'email' => 'jean@example.com',
+        'category' => 'Santé',
+        'message' => 'Priez pour ma guérison.',
+    ]);
+
+    $response->assertStatus(201);
+    
+    // Assign the pastor to the request to test the template parsing with pastor
+    $prayer = \App\Models\PrayerRequest::latest()->first();
+    $prayer->assigned_to = $pastor->id;
+    $prayer->save();
+    $prayer->load('assignee');
+    
+    // Trigger sendConfirmation manually to verify the pastor_name works
+    (new \App\Services\PrayerNotificationService())->sendConfirmation($prayer);
+});

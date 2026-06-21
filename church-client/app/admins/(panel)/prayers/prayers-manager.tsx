@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useTransition, useCallback, useEffect } from "react";
 import {
   Loader2,
   CheckCircle,
@@ -68,6 +68,15 @@ const STATUS_CONFIG: Record<
   },
 };
 
+const PLACEHOLDERS = [
+  { tag: "{{name}}", label: "Nom du demandeur" },
+  { tag: "{{email}}", label: "Email" },
+  { tag: "{{message}}", label: "Nom du message" },
+  { tag: "{{category}}", label: "Catégorie de prière" },
+  { tag: "{{phone}}", label: "Téléphone du demandeur" },
+  { tag: "{{pastor_name}}", label: "Nom du pasteur assigné" },
+];
+
 /* ── Component ───────────────────────────────────────────────────── */
 
 export function PrayersManager({
@@ -110,10 +119,247 @@ export function PrayersManager({
   const [editingCategoryIndex, setEditingCategoryIndex] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
+  const isDuplicate = newCategoryName.trim() !== "" && categories.some(
+    (c) => c.toLowerCase() === newCategoryName.trim().toLowerCase()
+  );
+
+  const isEditingDuplicate = editingCategoryIndex !== null && editingCategoryName.trim() !== "" && categories.some(
+    (c, idx) => idx !== editingCategoryIndex && c.toLowerCase() === editingCategoryName.trim().toLowerCase()
+  );
+
   const handleTabChange = (tab: "list" | "config") => {
     setActiveTab(tab);
     setStatus(null);
+    setMentionSearch(null);
   };
+
+  // Mentions / Placeholders Autocomplete state
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null);
+  const [mentionTriggerIndex, setMentionTriggerIndex] = useState<number | null>(null);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState<number>(0);
+  const [cursorPos, setCursorPos] = useState<number>(0);
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setNotificationMessage(value);
+    setStatus(null);
+
+    const selectionStart = e.target.selectionStart;
+    const textBeforeCursor = value.substring(0, selectionStart);
+    
+    // Find the last "@" before the cursor that is either at start or after a space/newline
+    const lastAtIdx = textBeforeCursor.lastIndexOf("@");
+    if (lastAtIdx !== -1 && (lastAtIdx === 0 || textBeforeCursor[lastAtIdx - 1] === " " || textBeforeCursor[lastAtIdx - 1] === "\n")) {
+      const typedAfterAt = textBeforeCursor.substring(lastAtIdx + 1);
+      // Ensure no spaces or newlines in the typed text after "@"
+      if (!typedAfterAt.includes(" ") && !typedAfterAt.includes("\n")) {
+        setMentionSearch(typedAfterAt.toLowerCase());
+        setMentionTriggerIndex(lastAtIdx);
+        setMentionSelectedIndex(0);
+        return;
+      }
+    }
+    
+    setMentionSearch(null);
+  };
+
+  const handleCaretPosition = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    let start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    
+    if (start === end) {
+      // Find if the caret is inside any placeholder
+      const parts = text.split(/(\{\{name\}\}|\{\{email\}\}|\{\{message\}\}|\{\{category\}\}|\{\{phone\}\}|\{\{pastor_name\}\})/g);
+      let currentIdx = 0;
+      
+      for (const part of parts) {
+        const startIdx = currentIdx;
+        currentIdx += part.length;
+        const endIdx = currentIdx;
+        
+        const isPlaceholder = PLACEHOLDERS.some(p => p.tag === part);
+        if (isPlaceholder) {
+          if (start > startIdx && start < endIdx) {
+            const snapPos = (start - startIdx < endIdx - start) ? startIdx : endIdx;
+            textarea.setSelectionRange(snapPos, snapPos);
+            start = snapPos;
+            break;
+          }
+        }
+      }
+    }
+    setCursorPos(start);
+  };
+
+  const selectSuggestion = (
+    placeholder: typeof PLACEHOLDERS[number]
+  ) => {
+    if (mentionTriggerIndex === null) return;
+    const textareaEl = document.getElementById("prayer-notification-template") as HTMLTextAreaElement | null;
+    if (!textareaEl) return;
+    
+    const cursorPosition = textareaEl.selectionStart;
+    
+    // Select the "@" and any typed search letters
+    textareaEl.focus();
+    textareaEl.setSelectionRange(mentionTriggerIndex, cursorPosition);
+    
+    // Natively replace selection to preserve Undo/Redo (Ctrl+Z)
+    document.execCommand('insertText', false, placeholder.tag);
+    
+    setMentionSearch(null);
+    setStatus(null);
+  };
+
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 1. Mentions autocomplete navigation
+    if (mentionSearch !== null) {
+      const filtered = PLACEHOLDERS.filter(p => 
+        p.label.toLowerCase().includes(mentionSearch) || 
+        p.tag.toLowerCase().includes(mentionSearch)
+      );
+
+      if (filtered.length > 0) {
+        const currentIndex = mentionSelectedIndex >= filtered.length ? 0 : mentionSelectedIndex;
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setMentionSelectedIndex((currentIndex + 1) % filtered.length);
+          return;
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setMentionSelectedIndex((currentIndex - 1 + filtered.length) % filtered.length);
+          return;
+        } else if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          selectSuggestion(filtered[currentIndex]);
+          return;
+        }
+      }
+      
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionSearch(null);
+        return;
+      }
+    }
+
+    // 2. Atomic tag deletion and caret jumping
+    const textarea = e.currentTarget;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+
+    if (start === end) {
+      if (e.key === "Backspace") {
+        // Check if cursor is immediately after a tag
+        const beforeCursor = text.substring(0, start);
+        for (const p of PLACEHOLDERS) {
+          if (beforeCursor.endsWith(p.tag)) {
+            e.preventDefault();
+            const tagLength = p.tag.length;
+            // Select the tag range
+            textarea.setSelectionRange(start - tagLength, start);
+            // Natively delete to preserve Undo/Redo (Ctrl+Z)
+            document.execCommand('delete', false);
+            return;
+          }
+        }
+      } else if (e.key === "Delete") {
+        // Check if cursor is immediately before a tag
+        const afterCursor = text.substring(end);
+        for (const p of PLACEHOLDERS) {
+          if (afterCursor.startsWith(p.tag)) {
+            e.preventDefault();
+            const tagLength = p.tag.length;
+            // Select the tag range
+            textarea.setSelectionRange(start, start + tagLength);
+            // Natively delete to preserve Undo/Redo (Ctrl+Z)
+            document.execCommand('delete', false);
+            return;
+          }
+        }
+      } else if (e.key === "ArrowLeft") {
+        // Jump over tag if moving left into one
+        const beforeCursor = text.substring(0, start);
+        for (const p of PLACEHOLDERS) {
+          if (beforeCursor.endsWith(p.tag)) {
+            e.preventDefault();
+            const newPos = start - p.tag.length;
+            textarea.setSelectionRange(newPos, newPos);
+            return;
+          }
+        }
+      } else if (e.key === "ArrowRight") {
+        // Jump over tag if moving right into one
+        const afterCursor = text.substring(end);
+        for (const p of PLACEHOLDERS) {
+          if (afterCursor.startsWith(p.tag)) {
+            e.preventDefault();
+            const newPos = end + p.tag.length;
+            textarea.setSelectionRange(newPos, newPos);
+            return;
+          }
+        }
+      }
+    }
+  };
+
+  const insertPlaceholder = (tag: string, textareaEl: HTMLTextAreaElement) => {
+    textareaEl.focus();
+    // Natively insert text to preserve Undo/Redo (Ctrl+Z)
+    document.execCommand('insertText', false, tag);
+    setStatus(null);
+  };
+
+  const renderHighlightedText = (text: string) => {
+    if (!text) return "";
+    const parts = text.split(/(\{\{name\}\}|\{\{email\}\}|\{\{message\}\}|\{\{category\}\}|\{\{phone\}\}|\{\{pastor_name\}\})/g);
+    let currentIdx = 0;
+    
+    return parts.map((part, idx) => {
+      const startIdx = currentIdx;
+      currentIdx += part.length;
+      const endIdx = currentIdx;
+      
+      const isPlaceholder = PLACEHOLDERS.some(p => p.tag === part);
+      if (isPlaceholder) {
+        // Check if cursor is touching the placeholder (either at start or end of it)
+        const isCursorTouching = cursorPos >= startIdx && cursorPos <= endIdx;
+        
+        return (
+          <span
+            key={idx}
+            className={cn(
+              "inline rounded-[3px] select-none transition-all duration-150",
+              isCursorTouching
+                ? "bg-[#e2b85f]/35 outline outline-1 outline-[#e2b85f] shadow-[0_1px_3px_rgba(226,184,95,0.2)]"
+                : "bg-[#e2b85f]/15 outline outline-1 outline-[#e2b85f]/25"
+            )}
+            style={{
+              color: 'transparent',
+              padding: '0',
+              margin: '0',
+              outlineOffset: '-1px',
+            }}
+          >
+            {part}
+          </span>
+        );
+      }
+      return <span key={idx} style={{ color: 'transparent' }}>{part}</span>;
+    });
+  };
+
+  useEffect(() => {
+    const textarea = document.getElementById("prayer-notification-template") as HTMLTextAreaElement | null;
+    const mirror = document.getElementById("prayer-template-mirror");
+    if (textarea && mirror) {
+      mirror.scrollTop = textarea.scrollTop;
+    }
+  }, [notificationMessage]);
 
   const selected = prayers.find((p) => p.id === selectedId) ?? null;
 
@@ -279,12 +525,12 @@ export function PrayersManager({
   };
 
   const handleAddCategory = () => {
-    if (!newCategoryName.trim()) return;
-    if (categories.includes(newCategoryName.trim())) {
-      alert("Cette catégorie existe déjà.");
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    if (categories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
       return;
     }
-    setCategories((prev) => [...prev, newCategoryName.trim()]);
+    setCategories((prev) => [...prev, trimmed]);
     setNewCategoryName("");
     setStatus(null);
   };
@@ -295,10 +541,10 @@ export function PrayersManager({
   };
 
   const handleSaveEditCategory = () => {
-    if (!editingCategoryName.trim() || editingCategoryIndex === null) return;
+    if (editingCategoryIndex === null) return;
     const trimmed = editingCategoryName.trim();
-    if (categories.some((c, idx) => c === trimmed && idx !== editingCategoryIndex)) {
-      alert("Cette catégorie existe déjà.");
+    if (!trimmed) return;
+    if (categories.some((c, idx) => idx !== editingCategoryIndex && c.toLowerCase() === trimmed.toLowerCase())) {
       return;
     }
     setCategories((prev) =>
@@ -605,24 +851,124 @@ export function PrayersManager({
             </label>
 
             {/* notification template */}
-            <label className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
                 Modèle de notification automatique (SMS/Email/WhatsApp)
               </span>
               <span className="text-xs text-faint">
-                Modèle utilisé pour envoyer une confirmation. Variables disponibles : <code className="rounded bg-cream px-1 font-mono text-[11px] text-gold-dark">[Nom]</code>, <code className="rounded bg-cream px-1 font-mono text-[11px] text-gold-dark">[Catégorie]</code>, <code className="rounded bg-cream px-1 font-mono text-[11px] text-gold-dark">[Message]</code>.
+                Modèle utilisé pour envoyer une confirmation. Tapez <code className="rounded bg-cream px-1.5 py-0.5 font-mono text-[11px] font-bold text-gold-dark">@</code> pour insérer des variables dynamiques ou cliquez sur les badges ci-dessous.
               </span>
-              <textarea
-                value={notificationMessage}
-                onChange={(e) => {
-                  setNotificationMessage(e.target.value);
-                  setStatus(null);
-                }}
-                rows={4}
-                placeholder="Bonjour [Nom], l'équipe d'intercession a bien reçu..."
-                className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold resize-none leading-relaxed"
-              />
-            </label>
+
+              {/* Suggestions cliquables (Boutons de suggestions rapides) */}
+              <div className="flex flex-wrap gap-1.5 py-1">
+                {PLACEHOLDERS.map((p) => (
+                  <button
+                    key={p.tag}
+                    type="button"
+                    onClick={() => {
+                      const textareaEl = document.getElementById("prayer-notification-template") as HTMLTextAreaElement | null;
+                      if (textareaEl) {
+                        insertPlaceholder(p.tag, textareaEl);
+                      }
+                    }}
+                    className="cursor-pointer rounded-lg border border-[rgba(40,25,80,0.08)] bg-cream px-2.5 py-1 text-xs font-semibold text-indigo transition hover:bg-gold/10 hover:text-gold-dark hover:border-gold/30"
+                  >
+                    + {p.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Textarea container avec menu flottant et surbrillance */}
+              <div className="relative">
+                <div className="relative rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] focus-within:border-gold transition-all overflow-hidden">
+                  {/* Div miroir en dessous pour la surbrillance des tags */}
+                  <div
+                    id="prayer-template-mirror"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-transparent select-none"
+                    style={{
+                      fontFamily: 'inherit',
+                      height: '135px',
+                      width: '100%',
+                      border: '0',
+                      margin: '0',
+                      padding: '12px 16px',
+                    }}
+                  >
+                    {renderHighlightedText(notificationMessage)}
+                  </div>
+
+                  {/* Textarea au-dessus avec fond transparent */}
+                  <textarea
+                    id="prayer-notification-template"
+                    value={notificationMessage}
+                    onChange={(e) => {
+                      handleTextareaChange(e);
+                      handleCaretPosition(e);
+                    }}
+                    onKeyDown={handleTextareaKeyDown}
+                    onKeyUp={handleCaretPosition}
+                    onMouseUp={handleCaretPosition}
+                    onFocus={handleCaretPosition}
+                    onClick={handleCaretPosition}
+                    onScroll={(e) => {
+                      const mirror = document.getElementById("prayer-template-mirror");
+                      if (mirror) {
+                        mirror.scrollTop = e.currentTarget.scrollTop;
+                      }
+                    }}
+                    rows={5}
+                    placeholder="Bonjour {{name}}, votre demande..."
+                    className="w-full bg-transparent text-sm text-indigo outline-none resize-none leading-relaxed block relative z-10 border-0 focus:ring-0"
+                    style={{
+                      height: '135px',
+                      margin: '0',
+                      padding: '12px 16px',
+                    }}
+                  />
+                </div>
+
+                {/* Pop-over de mentions flottante */}
+                {mentionSearch !== null && (
+                  (() => {
+                    const filtered = PLACEHOLDERS.filter(p => 
+                      p.label.toLowerCase().includes(mentionSearch) || 
+                      p.tag.toLowerCase().includes(mentionSearch)
+                    );
+                    if (filtered.length === 0) return null;
+                    const activeIndex = mentionSelectedIndex >= filtered.length ? 0 : mentionSelectedIndex;
+                    return (
+                      <div className="absolute left-0 top-full z-50 mt-1.5 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-xl border border-[#e2b85f]/30 bg-gradient-to-b from-[#1c1830] to-[#120e24] p-1.5 shadow-2xl animate-fade-up backdrop-blur-md flex flex-col gap-0.5">
+                        <div className="px-2.5 py-1.5 text-[10px] font-bold text-faint/60 uppercase tracking-wider border-b border-white/5 mb-1 flex items-center justify-between">
+                          <span>Suggestions</span>
+                          <span className="font-normal text-[9px] lowercase italic text-faint/40">↑↓ naviguer, ↵ valider</span>
+                        </div>
+                        {filtered.map((p, idx) => (
+                          <button
+                            key={p.tag}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault(); // évite de perdre le focus sur le textarea
+                            }}
+                            onClick={() => selectSuggestion(p)}
+                            onMouseEnter={() => setMentionSelectedIndex(idx)}
+                            className={cn(
+                              "m-0 flex w-full box-border cursor-pointer items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold transition-all duration-150 border-0 outline-none select-none",
+                              activeIndex === idx
+                                ? "bg-[#e2b85f]/15 text-[#e2b85f]"
+                                : "text-white/70 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            <span>{p.label}</span>
+                            <span className="font-mono text-[10px] text-gold/60">{p.tag}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            </div>
 
             {/* categories management */}
             <div className="border-t border-[rgba(40,25,80,0.08)] pt-6">
@@ -648,9 +994,19 @@ export function PrayersManager({
                           setEditingCategoryName(e.target.value);
                           setStatus(null);
                         }}
-                        className="bg-white border border-[rgba(40,25,80,0.15)] rounded px-1.5 py-0.5 text-xs text-indigo outline-none focus:border-gold w-[100px]"
+                        className={cn(
+                          "bg-white border rounded px-1.5 py-0.5 text-xs text-indigo outline-none w-[120px] transition-all",
+                          isEditingDuplicate
+                            ? "border-live focus:border-live"
+                            : "border-[rgba(40,25,80,0.15)] focus:border-gold"
+                        )}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleSaveEditCategory();
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            if (!isEditingDuplicate) {
+                              handleSaveEditCategory();
+                            }
+                          }
                           if (e.key === "Escape") handleCancelEditCategory();
                         }}
                         autoFocus
@@ -665,7 +1021,8 @@ export function PrayersManager({
                           <button
                             type="button"
                             onClick={handleSaveEditCategory}
-                            className="cursor-pointer text-online hover:opacity-85 font-black p-0.5"
+                            disabled={isEditingDuplicate || !editingCategoryName.trim()}
+                            className="cursor-pointer text-online hover:opacity-85 font-black p-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             ✓
                           </button>
@@ -703,30 +1060,45 @@ export function PrayersManager({
               </div>
 
               {/* add category input */}
-              <div className="flex gap-2 max-w-sm">
-                <input
-                  type="text"
-                  placeholder="Nouvelle catégorie (ex: Professionnel)"
-                  value={newCategoryName}
-                  onChange={(e) => {
-                    setNewCategoryName(e.target.value);
-                    setStatus(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleAddCategory();
-                    }
-                  }}
-                  className="flex-1 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2 text-xs text-indigo outline-none focus:border-gold"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddCategory}
-                  className="cursor-pointer rounded-xl bg-indigo px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-mid"
-                >
-                  Ajouter
-                </button>
+              <div className="flex flex-col gap-1.5 max-w-sm">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Nouvelle catégorie (ex: Professionnel)"
+                    value={newCategoryName}
+                    onChange={(e) => {
+                      setNewCategoryName(e.target.value);
+                      setStatus(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (!isDuplicate) {
+                          handleAddCategory();
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "flex-1 rounded-xl border bg-[#faf8f4] px-3.5 py-2 text-xs text-indigo outline-none transition-all",
+                      isDuplicate
+                        ? "border-live focus:border-live"
+                        : "border-[rgba(40,25,80,0.12)] focus:border-gold"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={isDuplicate || !newCategoryName.trim()}
+                    className="cursor-pointer rounded-xl bg-indigo px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-mid disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Ajouter
+                  </button>
+                </div>
+                {isDuplicate && (
+                  <span className="text-[11px] font-semibold text-live pl-1">
+                    Cette catégorie existe déjà.
+                  </span>
+                )}
               </div>
             </div>
 
