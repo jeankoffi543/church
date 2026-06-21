@@ -1,4 +1,4 @@
-import { getAdminMe, getAdminHomeGroups } from "@/lib/admin-api";
+import { getAdminMe, getAdminHomeGroups, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
 import { HomeGroupsManager } from "./home-groups-manager";
@@ -12,7 +12,10 @@ export default async function AdminHomeGroupsPage() {
     return <AccessRestricted />;
   }
 
-  const homeGroups = await getAdminHomeGroups();
+  const [homeGroups, users] = await Promise.all([
+    getAdminHomeGroups(),
+    getAdminUsers(),
+  ]);
 
-  return <HomeGroupsManager initialHomeGroups={homeGroups} />;
+  return <HomeGroupsManager initialHomeGroups={homeGroups} users={users} />;
 }

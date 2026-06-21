@@ -25,6 +25,7 @@ class HomeGroupResource extends JsonResource
             'coordinates' => $this->coordinates,
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
+            'leader_id' => $this->leader_id,
         ];
     }
 }

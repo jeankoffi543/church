@@ -21,7 +21,7 @@ class HomeGroupRequest extends FormRequest
 
         return [
             'name' => [$required, 'string', 'max:255'],
-            'leader' => [$required, 'string', 'max:255'],
+            'leader' => ['nullable', 'string', 'max:255'],
             'address' => [$required, 'string', 'max:255'],
             'schedule' => ['nullable', 'string', 'max:255'],
             'coordinates' => ['nullable', 'array'],
@@ -32,6 +32,7 @@ class HomeGroupRequest extends FormRequest
             'coordinates.lng' => ['nullable', 'numeric'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active' => ['boolean'],
+            'leader_id' => ['nullable', 'integer', 'exists:users,id'],
         ];
     }
 }

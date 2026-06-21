@@ -19,6 +19,7 @@ import type { AdminMinistry, AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import Link from "next/link";
 import { SearchableSelect } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
 
@@ -189,12 +190,20 @@ export function MinistriesManager({
           </p>
         </div>
 
-        <button
-          onClick={openCreateModal}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-        >
-          <Plus className="size-4" /> Nouveau Ministère
-        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/admins/ministries/applications"
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-indigo/20 bg-white px-5 py-3 text-sm font-bold text-indigo transition hover:bg-cream"
+          >
+            Voir les Candidatures
+          </Link>
+          <button
+            onClick={openCreateModal}
+            className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
+          >
+            <Plus className="size-4" /> Nouveau Ministère
+          </button>
+        </div>
       </header>
 
       {status && (

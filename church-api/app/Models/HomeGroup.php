@@ -29,7 +29,16 @@ class HomeGroup extends Model
         'coordinates',
         'sort_order',
         'is_active',
+        'leader_id',
     ];
+
+    /**
+     * Get the user who leads this home group.
+     */
+    public function leaderUser(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'leader_id');
+    }
 
     /**
      * @return array<string, string>
