@@ -701,3 +701,53 @@ export async function rejectMinistryApplication(
     body: JSON.stringify(decision),
   });
 }
+
+/* ── Contact Messages CRUD ────────────────────────────────────────── */
+
+export type AdminContactMessage = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  subject: string;
+  message: string;
+  status: "pending" | "read" | "archived";
+  replied_at: string | null;
+  replied_by: number | null;
+  replied_by_user?: { id: number; name: string; email: string } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getAdminContacts(): Promise<AdminContactMessage[]> {
+  const response = await adminFetch<{ data: AdminContactMessage[] }>("/contacts");
+  return response.data;
+}
+
+export async function updateContactStatus(
+  id: number,
+  status: "pending" | "read" | "archived"
+): Promise<{ data: AdminContactMessage }> {
+  const result = await adminFetch<{ data: AdminContactMessage }>(`/contacts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  revalidatePath("/admins/contacts");
+  return result;
+}
+
+export async function archiveContact(id: number): Promise<{ data: AdminContactMessage }> {
+  const result = await adminFetch<{ data: AdminContactMessage }>(`/contacts/${id}/archive`, {
+    method: "POST",
+  });
+  revalidatePath("/admins/contacts");
+  return result;
+}
+
+export async function replyContact(id: number): Promise<{ data: AdminContactMessage }> {
+  const result = await adminFetch<{ data: AdminContactMessage }>(`/contacts/${id}/reply`, {
+    method: "POST",
+  });
+  revalidatePath("/admins/contacts");
+  return result;
+}

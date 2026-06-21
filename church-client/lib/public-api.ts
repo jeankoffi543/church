@@ -91,3 +91,26 @@ export async function checkMinistryApplicationStatus(
   const body = (await res.json()) as { data: ApplicationStatusItem[] };
   return body.data;
 }
+
+export type ContactMessagePayload = {
+  name: string;
+  email: string;
+  phone?: string;
+  subject: string;
+  message: string;
+};
+
+export async function submitContactMessage(
+  payload: ContactMessagePayload
+): Promise<{ message: string }> {
+  const res = await fetch(`${API_URL}/public/contact`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) return readError(res);
+
+  const body = (await res.json()) as { message: string };
+  return body;
+}
