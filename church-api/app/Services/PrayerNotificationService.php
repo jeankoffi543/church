@@ -29,8 +29,24 @@ class PrayerNotificationService
         $template = (string) $template;
 
         $message = str_replace(
-            ['[Nom]', '[Catégorie]', '[Message]'],
             [
+                '{{name}}',
+                '{{email}}',
+                '{{message}}',
+                '{{category}}',
+                '{{phone}}',
+                '{{pastor_name}}',
+                '[Nom]',
+                '[Catégorie]',
+                '[Message]',
+            ],
+            [
+                $prayer->name ?? '',
+                $prayer->email ?? '',
+                $prayer->message ?? '',
+                $prayer->category ?? '',
+                $prayer->phone ?? '',
+                $prayer->assignee ? $prayer->assignee->name : '',
                 $prayer->name ?? 'frère/sœur',
                 $prayer->category ?? '',
                 $prayer->message ?? '',

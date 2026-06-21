@@ -67,7 +67,7 @@ class SettingSeeder extends Seeder
 
             // ── Phase 8 · Prayers ─────────────────────────────
             ['key' => 'prayer_success_ui_message', 'group' => 'prayers', 'value' => 'Merci ! Votre requête est entrée dans la chaîne d\'intercession de MFM Ficgayo. Notre équipe prie pour vous et vous contactera bientôt.'],
-            ['key' => 'prayer_automated_notification_message', 'group' => 'prayers', 'value' => 'Bonjour [Nom], l\'équipe d\'intercession de MFM Ficgayo a bien reçu votre demande de prière concernant « [Catégorie] ». Soyez assuré(e) que nous prions avec ferveur pour vous. — MFM Ficgayo'],
+            ['key' => 'prayer_automated_notification_message', 'group' => 'prayers', 'value' => 'Bonjour {{name}}, l\'équipe d\'intercession de MFM Ficgayo a bien reçu votre demande de prière concernant « {{category}} ». Soyez assuré(e) que nous prions avec ferveur pour vous. — MFM Ficgayo'],
             ['key' => 'prayer_categories', 'group' => 'prayers', 'value' => ['Délivrance', 'Santé', 'Finances', 'Famille', 'Destinée', 'Autre']],
         ];
 
