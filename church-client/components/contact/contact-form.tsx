@@ -114,7 +114,7 @@ export function ContactForm({ subjects }: { subjects: string[] }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex-1 rounded-[26px] border border-[rgba(40,25,80,0.08)] bg-white p-[clamp(24px,4vw,40px)] shadow-[0_24px_60px_rgba(22,15,51,0.1)]"
+      className="flex-[1_1_380px] rounded-[26px] border border-[rgba(40,25,80,0.08)] bg-white p-[clamp(24px,4vw,40px)] shadow-[0_24px_60px_rgba(22,15,51,0.1)]"
     >
       <h2 className="font-display text-[26px] font-semibold text-indigo italic">
         Écris-nous

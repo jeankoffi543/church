@@ -531,3 +531,71 @@ export async function checkHomeGroupApplicationStatus(
   return body.data;
 }
 
+/* ── Ministry Applications Public Actions ─────────────────────────── */
+
+export async function submitMinistryApplication(data: {
+  name: string;
+  email: string;
+  phone: string;
+  ministry_id: number;
+  motivation: string;
+}): Promise<{
+  success: boolean;
+  errors?: Record<string, string>;
+  message?: string;
+}> {
+  try {
+    const res = await fetch(`${API_URL}/public/ministries/applications`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      return {
+        success: false,
+        errors: json.errors || {},
+        message: json.message || "Erreur de validation.",
+      };
+    }
+    return {
+      success: true,
+      message: json.message || "Votre candidature a été soumise avec succès !",
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: "Impossible de se connecter au serveur.",
+    };
+  }
+}
+
+export type MinistryApplicationStatusItem = {
+  id: number;
+  name: string;
+  status: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  ministry_name: string;
+  created_at: string;
+};
+
+export async function checkMinistryApplicationStatus(
+  contact: string
+): Promise<MinistryApplicationStatusItem[]> {
+  try {
+    const res = await fetch(`${API_URL}/public/ministries/applications/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ contact }),
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { data: MinistryApplicationStatusItem[] };
+    return body.data || [];
+  } catch {
+    return [];
+  }
+}
+

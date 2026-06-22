@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Play, Pause, Video, Headphones, BookOpen, FileText } from "lucide-react";
-
 import type { Sermon } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { useAudioPlayer, type AudioTrack } from "@/components/audio/audio-player";
@@ -169,3 +168,4 @@ export function SermonCard({ sermon, audioQueue }: { sermon: Sermon; audioQueue?
     </article>
   );
 }
+
