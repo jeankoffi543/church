@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $description
  * @property string $speaker
  * @property string|null $book
+ * @property array<int, string>|null $books_category
  * @property Carbon $preached_at
  * @property string|null $duration
  * @property SermonMediaType $media_type
@@ -37,6 +38,7 @@ class Sermon extends Model
         'description',
         'speaker',
         'book',
+        'books_category',
         'preached_at',
         'duration',
         'media_type',
@@ -57,6 +59,7 @@ class Sermon extends Model
             'preached_at' => 'date',
             'is_published' => 'boolean',
             'media_type' => SermonMediaType::class,
+            'books_category' => 'array',
         ];
     }
 

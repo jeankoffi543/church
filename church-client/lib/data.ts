@@ -276,6 +276,8 @@ export type Sermon = {
   serie: string;
   book: string;
   date: string;
+  /** ISO date (YYYY-MM-DD) for chronological sorting of the date filter. */
+  dateISO?: string;
   duration: string;
   desc?: string;
   mediaType?: SermonMediaType;
@@ -285,6 +287,8 @@ export type Sermon = {
   /** Custom cover image (absolute URL) for the hero, or null. */
   background?: string | null;
   scriptures?: string[];
+  /** Canonical Bible books this sermon is categorised under. */
+  books?: string[];
 };
 
 export const SERMONS: Sermon[] = [

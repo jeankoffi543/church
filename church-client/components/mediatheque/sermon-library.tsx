@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, SlidersHorizontal, X, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, SlidersHorizontal, X, Check, ChevronLeft, ChevronRight, BookOpen, ArrowLeft, CalendarDays } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { type Sermon } from "@/lib/data";
+import { BIBLE_BOOKS, normalizeBook } from "@/lib/constants/bible";
 import { SermonCard } from "@/components/cards/sermon-card";
 import type { AudioTrack } from "@/components/audio/audio-player";
 import {
@@ -15,27 +16,46 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-const PAGE_SIZE = 9;
-const FACET_STEP = 8;
+const PAGE_SIZE = 8;
+const DETAIL_STEP = 12;
 
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 const yearOf = (s: Sermon) => s.date.match(/\d{4}/)?.[0] ?? "—";
 
-type Facet = "speaker" | "series" | "year";
+type Facet = "speaker" | "series" | "year" | "date" | "book";
 
 export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
   const [search, setSearch] = useState("");
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [seriesSel, setSeriesSel] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);
+  const [dates, setDates] = useState<string[]>([]);
+  const [books, setBooks] = useState<string[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Which facet's dedicated search/pagination sub-sheet is open (if any), plus
+  // its search/pagination state (lifted here so it resets cleanly on open).
+  const [detailKey, setDetailKey] = useState<Facet | null>(null);
+  const [detailQuery, setDetailQuery] = useState("");
+  const [detailLimit, setDetailLimit] = useState(DETAIL_STEP);
   const [page, setPage] = useState(1);
-  // How many options of each facet are visible inside the sheet.
-  const [shown, setShown] = useState<Record<Facet, number>>({ speaker: FACET_STEP, series: FACET_STEP, year: FACET_STEP });
+
+  const openDetail = (key: Facet) => {
+    setDetailKey(key);
+    setDetailQuery("");
+    setDetailLimit(DETAIL_STEP);
+  };
 
   const allSpeakers = useMemo(() => uniq(sermons.map((s) => s.speaker)), [sermons]);
   const allSeries = useMemo(() => uniq(sermons.map((s) => s.serie)), [sermons]);
   const allYears = useMemo(() => uniq(sermons.map(yearOf)).sort((a, b) => b.localeCompare(a)), [sermons]);
+  // Distinct full dates (label), ordered newest-first via the ISO date.
+  const allDates = useMemo(() => {
+    const byLabel = new Map<string, string>();
+    sermons.forEach((s) => {
+      if (s.date && !byLabel.has(s.date)) byLabel.set(s.date, s.dateISO ?? "");
+    });
+    return [...byLabel.entries()].sort((a, b) => b[1].localeCompare(a[1])).map(([label]) => label);
+  }, [sermons]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -45,9 +65,11 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
       const matchesSpeaker = speakers.length === 0 || speakers.includes(s.speaker);
       const matchesSeries = seriesSel.length === 0 || seriesSel.includes(s.serie);
       const matchesYear = years.length === 0 || years.includes(yearOf(s));
-      return matchesSearch && matchesSpeaker && matchesSeries && matchesYear;
+      const matchesDate = dates.length === 0 || dates.includes(s.date);
+      const matchesBooks = books.length === 0 || (s.books ?? []).some((b) => books.includes(b));
+      return matchesSearch && matchesSpeaker && matchesSeries && matchesYear && matchesDate && matchesBooks;
     });
-  }, [sermons, search, speakers, seriesSel, years]);
+  }, [sermons, search, speakers, seriesSel, years, dates, books]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -68,17 +90,30 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
     [filtered]
   );
 
-  const activeCount = speakers.length + seriesSel.length + years.length;
+  const activeCount = speakers.length + seriesSel.length + years.length + dates.length + books.length;
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
     setPage(1);
     setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   };
 
+  // One config per facet — drives both the compact previews and the dedicated
+  // search/pagination sub-sheet.
+  const facets: FacetConfig[] = [
+    { key: "speaker", title: "Orateurs", options: allSpeakers, selected: speakers, onToggle: (v) => toggle(setSpeakers, v) },
+    { key: "series", title: "Catégories", options: allSeries, selected: seriesSel, onToggle: (v) => toggle(setSeriesSel, v) },
+    { key: "year", title: "Années", options: allYears, selected: years, onToggle: (v) => toggle(setYears, v) },
+    { key: "date", title: "Dates", options: allDates, selected: dates, onToggle: (v) => toggle(setDates, v), icon: CalendarDays },
+    { key: "book", title: "Livres bibliques", options: BIBLE_BOOKS, selected: books, onToggle: (v) => toggle(setBooks, v), icon: BookOpen },
+  ];
+  const detailConfig = facets.find((f) => f.key === detailKey) ?? null;
+
   const resetFilters = () => {
     setSpeakers([]);
     setSeriesSel([]);
     setYears([]);
+    setDates([]);
+    setBooks([]);
     setPage(1);
   };
 
@@ -87,6 +122,8 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
     ...speakers.map((v) => ({ facet: "speaker" as const, value: v, remove: () => toggle(setSpeakers, v) })),
     ...seriesSel.map((v) => ({ facet: "series" as const, value: v, remove: () => toggle(setSeriesSel, v) })),
     ...years.map((v) => ({ facet: "year" as const, value: v, remove: () => toggle(setYears, v) })),
+    ...dates.map((v) => ({ facet: "date" as const, value: v, remove: () => toggle(setDates, v) })),
+    ...books.map((v) => ({ facet: "book" as const, value: v, remove: () => toggle(setBooks, v) })),
   ];
 
   return (
@@ -198,30 +235,9 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
           </SheetHeader>
 
           <div className="flex-1 space-y-6 overflow-y-auto p-5">
-            <FacetSection
-              title="Orateurs"
-              options={allSpeakers}
-              selected={speakers}
-              onToggle={(v) => toggle(setSpeakers, v)}
-              shown={shown.speaker}
-              onMore={() => setShown((s) => ({ ...s, speaker: s.speaker + FACET_STEP }))}
-            />
-            <FacetSection
-              title="Catégories"
-              options={allSeries}
-              selected={seriesSel}
-              onToggle={(v) => toggle(setSeriesSel, v)}
-              shown={shown.series}
-              onMore={() => setShown((s) => ({ ...s, series: s.series + FACET_STEP }))}
-            />
-            <FacetSection
-              title="Années"
-              options={allYears}
-              selected={years}
-              onToggle={(v) => toggle(setYears, v)}
-              shown={shown.year}
-              onMore={() => setShown((s) => ({ ...s, year: s.year + FACET_STEP }))}
-            />
+            {facets.map((f) => (
+              <FacetPreview key={f.key} config={f} onSeeMore={() => openDetail(f.key)} />
+            ))}
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-[rgba(40,25,80,0.08)] p-4">
@@ -235,6 +251,22 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
               Voir les {filtered.length} résultat(s)
             </button>
           </div>
+
+          {/* Per-facet search & pagination — an in-sheet sliding panel (same
+              dialog, so closing it never dismisses the main sheet). */}
+          {detailConfig && (
+            <FacetDetailPanel
+              config={detailConfig}
+              query={detailQuery}
+              limit={detailLimit}
+              onSearch={(v) => {
+                setDetailQuery(v);
+                setDetailLimit(DETAIL_STEP);
+              }}
+              onMore={() => setDetailLimit((n) => n + DETAIL_STEP)}
+              onBack={() => setDetailKey(null)}
+            />
+          )}
         </SheetContent>
       </Sheet>
     </>
@@ -252,58 +284,182 @@ function PagerButton({ children, ...props }: React.ButtonHTMLAttributes<HTMLButt
   );
 }
 
-function FacetSection({
-  title,
-  options,
-  selected,
-  onToggle,
-  shown,
-  onMore,
-}: {
+type FacetConfig = {
+  key: Facet;
   title: string;
-  options: string[];
+  options: readonly string[];
   selected: string[];
   onToggle: (value: string) => void;
-  shown: number;
-  onMore: () => void;
+  icon?: React.ComponentType<{ className?: string }>;
+};
+
+/** Checkbox row shared by the compact preview and the detail sub-sheet. */
+function FacetRow({
+  label,
+  active,
+  onToggle,
+  icon: Icon,
+}: {
+  label: string;
+  active: boolean;
+  onToggle: () => void;
+  icon?: React.ComponentType<{ className?: string }>;
 }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={cn(
+        "flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition",
+        active ? "bg-gold/10 font-bold text-gold-dark" : "text-indigo hover:bg-cream"
+      )}
+    >
+      <span className="flex items-center gap-2 truncate">
+        {Icon && <Icon className="size-3.5 shrink-0 opacity-60" />}
+        {label}
+      </span>
+      <span
+        className={cn(
+          "flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition",
+          active ? "border-gold bg-gradient-to-br from-gold to-gold-dark text-white" : "border-[rgba(40,25,80,0.2)]"
+        )}
+      >
+        {active && <Check className="size-3" strokeWidth={3} />}
+      </span>
+    </button>
+  );
+}
+
+const PREVIEW_COUNT = 5;
+
+/** Compact preview inside the main filters sheet; "Voir plus" opens the sub-sheet. */
+function FacetPreview({ config, onSeeMore }: { config: FacetConfig; onSeeMore: () => void }) {
+  const { title, options, selected, onToggle, icon } = config;
   if (options.length === 0) return null;
-  const visible = options.slice(0, shown);
+
+  // Selected first, then the rest — so active choices stay visible in the preview.
+  const ordered = [
+    ...selected.filter((o) => options.includes(o)),
+    ...options.filter((o) => !selected.includes(o)),
+  ];
+  const visible = ordered.slice(0, PREVIEW_COUNT);
 
   return (
     <div>
-      <p className="mb-2.5 text-[11px] font-bold tracking-wider text-faint uppercase">{title}</p>
-      <div className="flex flex-col gap-1">
-        {visible.map((opt) => {
-          const active = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => onToggle(opt)}
-              className={cn(
-                "flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition",
-                active ? "bg-gold/10 font-bold text-gold-dark" : "text-indigo hover:bg-cream"
-              )}
-            >
-              <span className="truncate">{opt}</span>
-              <span
-                className={cn(
-                  "flex size-4 shrink-0 items-center justify-center rounded-[5px] border transition",
-                  active ? "border-gold bg-gradient-to-br from-gold to-gold-dark text-white" : "border-[rgba(40,25,80,0.2)]"
-                )}
-              >
-                {active && <Check className="size-3" strokeWidth={3} />}
-              </span>
-            </button>
-          );
-        })}
+      <div className="mb-2.5 flex items-center gap-2">
+        <p className="text-[11px] font-bold tracking-wider text-faint uppercase">{title}</p>
+        {selected.length > 0 && (
+          <span className="flex size-4 items-center justify-center rounded-full bg-gold text-[10px] font-black text-indigo">
+            {selected.length}
+          </span>
+        )}
       </div>
-      {options.length > shown && (
-        <button onClick={onMore} className="mt-2 cursor-pointer text-[12px] font-bold text-gold-dark transition hover:brightness-110">
-          Voir plus ({options.length - shown})
+      <div className="flex flex-col gap-1">
+        {visible.map((opt) => (
+          <FacetRow key={opt} label={opt} active={selected.includes(opt)} onToggle={() => onToggle(opt)} icon={icon} />
+        ))}
+      </div>
+      {options.length > PREVIEW_COUNT && (
+        <button
+          onClick={onSeeMore}
+          className="mt-2 flex cursor-pointer items-center gap-1 text-[12px] font-bold text-gold-dark transition hover:brightness-110"
+        >
+          Voir plus ({options.length}) <ChevronRight className="size-3.5" />
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * In-sheet sliding panel: full search + pagination for one facet. Rendered
+ * inside the main SheetContent (not a second dialog), so dismissing it can never
+ * close the main filters sheet.
+ */
+function FacetDetailPanel({
+  config,
+  query,
+  limit,
+  onSearch,
+  onMore,
+  onBack,
+}: {
+  config: FacetConfig;
+  query: string;
+  limit: number;
+  onSearch: (value: string) => void;
+  onMore: () => void;
+  onBack: () => void;
+}) {
+  const matches = useMemo(() => {
+    const q = normalizeBook(query);
+    return q ? config.options.filter((o) => normalizeBook(o).includes(q)) : config.options;
+  }, [config, query]);
+
+  const visible = matches.slice(0, limit);
+
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col bg-white duration-200 animate-in slide-in-from-right-8">
+      <div className="border-b border-[rgba(40,25,80,0.08)] p-5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-1.5 -ml-1 inline-flex w-fit cursor-pointer items-center gap-1.5 text-xs font-bold text-faint transition hover:text-indigo"
+        >
+          <ArrowLeft className="size-4" /> Retour aux filtres
+        </button>
+        <h3 className="font-display text-lg font-bold text-indigo italic">{config.title}</h3>
+        <p className="text-xs text-body">
+          {config.selected.length > 0 ? `${config.selected.length} sélectionné(s) · ` : ""}
+          Recherchez puis cochez.
+        </p>
+      </div>
+
+      <div className="border-b border-[rgba(40,25,80,0.08)] p-4">
+        <div className="flex items-center gap-2 rounded-lg border border-[rgba(40,25,80,0.12)] bg-cream px-3 py-2 focus-within:border-gold">
+          <Search className="size-4 shrink-0 text-faint" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Rechercher…"
+            className="w-full bg-transparent text-sm text-indigo outline-none placeholder:text-faint"
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-1 overflow-y-auto p-4">
+        {visible.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-faint italic">Aucun résultat.</p>
+        ) : (
+          visible.map((opt) => (
+            <FacetRow
+              key={opt}
+              label={opt}
+              active={config.selected.includes(opt)}
+              onToggle={() => config.onToggle(opt)}
+              icon={config.icon}
+            />
+          ))
+        )}
+        {matches.length > limit && (
+          <button
+            onClick={onMore}
+            className="mt-2 w-full cursor-pointer rounded-lg border border-[rgba(40,25,80,0.12)] py-2 text-[12px] font-bold text-gold-dark transition hover:bg-cream"
+          >
+            Voir plus ({matches.length - limit})
+          </button>
+        )}
+      </div>
+
+      <div className="border-t border-[rgba(40,25,80,0.08)] p-4">
+        <button
+          onClick={onBack}
+          className="w-full cursor-pointer rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo shadow-md transition hover:brightness-105"
+        >
+          Terminé
+        </button>
+      </div>
     </div>
   );
 }

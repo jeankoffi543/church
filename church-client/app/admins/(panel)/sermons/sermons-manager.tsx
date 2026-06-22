@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SermonReaderDialog, type ReaderSermon } from "@/components/media/sermon-reader";
+import { BookMultiSelect } from "@/components/admin/book-multi-select";
+import { BIBLE_BOOKS } from "@/lib/constants/bible";
 
 /** Form-only choice: the 4 real media types + "none" (notes-only sermon). */
 type MediaChoice = SermonMediaType | "none";
@@ -59,10 +61,10 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
   const [editingSermon, setEditingSermon] = useState<AdminSermon | null>(null);
   const [previewSermon, setPreviewSermon] = useState<AdminSermon | null>(null);
 
-  // Auto-dismiss the status banner so it never lingers across actions.
+  // Auto-dismiss the status banner after 4s so it never lingers across actions.
   useEffect(() => {
     if (!status) return;
-    const t = setTimeout(() => setStatus(null), 4500);
+    const t = setTimeout(() => setStatus(null), 4000);
     return () => clearTimeout(t);
   }, [status]);
 
@@ -70,7 +72,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
   const [title, setTitle] = useState("");
   const [series, setSeries] = useState("");
   const [speaker, setSpeaker] = useState("");
-  const [book, setBook] = useState("");
+  const [books, setBooks] = useState<string[]>([]);
   const [preachedAt, setPreachedAt] = useState("");
   const [duration, setDuration] = useState("");
   const [description, setDescription] = useState("");
@@ -98,7 +100,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
     setTitle("");
     setSeries("");
     setSpeaker("");
-    setBook("");
+    setBooks([]);
     setPreachedAt(new Date().toISOString().split("T")[0]);
     setDuration("");
     setDescription("");
@@ -129,7 +131,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
     setTitle(s.title);
     setSeries(s.series ?? "");
     setSpeaker(s.speaker);
-    setBook(s.book ?? "");
+    setBooks(s.books_category ?? []);
     setPreachedAt(s.date ?? new Date().toISOString().split("T")[0]);
     setDuration(s.duration ?? "");
     setDescription(s.description ?? "");
@@ -219,6 +221,8 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Clear any lingering feedback the moment the admin re-submits.
+    setStatus(null);
     if (!title.trim() || !speaker.trim() || !preachedAt) return;
 
     const notesOnly = mediaType === "none";
@@ -241,13 +245,13 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
           title,
           series: series || null,
           speaker,
-          book: book || null,
           preached_at: preachedAt,
           duration: duration || null,
           description: description || null,
           media_type: mediaType === "none" ? null : mediaType,
           media_url: notesOnly || isFileType(mediaType) ? null : mediaUrl || null,
           scriptures,
+          books_category: books,
           is_published: isPublished,
         };
         const files = {
@@ -438,7 +442,11 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
             </h3>
           </div>
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 px-6 py-6 sm:grid-cols-2">
+          <form
+            onSubmit={handleSubmit}
+            onChange={() => setStatus((s) => (s ? null : s))}
+            className="grid grid-cols-1 gap-4 px-6 py-6 sm:grid-cols-2"
+          >
             <Field className="sm:col-span-2" label="Titre de la prédication *">
               <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ex: La grâce qui transforme" className={INPUT} />
             </Field>
@@ -452,8 +460,8 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
             <Field label="Série d’enseignements">
               <input value={series} onChange={(e) => setSeries(e.target.value)} placeholder="ex: Vivre par la foi" className={INPUT} />
             </Field>
-            <Field label="Livre (catégorie)">
-              <input value={book} onChange={(e) => setBook(e.target.value)} placeholder="ex: Romains" className={INPUT} />
+            <Field className="sm:col-span-2" label="Livres bibliques (catégories)">
+              <BookMultiSelect value={books} onChange={setBooks} options={BIBLE_BOOKS} />
             </Field>
             <Field label="Durée">
               <input value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="ex: 48 min" className={INPUT} />
@@ -474,7 +482,10 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
                   <button
                     key={value}
                     type="button"
-                    onClick={() => setMediaType(value)}
+                    onClick={() => {
+                      setMediaType(value);
+                      setStatus((s) => (s ? null : s));
+                    }}
                     className={cn(
                       "flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-[11px] font-bold transition",
                       mediaType === value

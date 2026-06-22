@@ -64,6 +64,11 @@ class SermonController extends Controller
             ->except(['media', 'background_image', 'remove_background_image', 'scriptures'])
             ->all();
 
+        // Keep the legacy single `book` in sync with the first selected category.
+        if (array_key_exists('books_category', $data)) {
+            $data['book'] = $data['books_category'][0] ?? null;
+        }
+
         // An explicitly-sent media_type wins (including null for notes-only);
         // otherwise keep the sermon's current type (partial update).
         $type = $request->has('media_type')
