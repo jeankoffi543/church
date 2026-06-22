@@ -155,16 +155,32 @@ export async function updateAdminSettings(
 }
 
 export type AdminPastorWord = {
-  user_id: number;
-  custom_title: string | null;
-  word: string;
-  photo_path: string | null;
-  social_links: {
-    facebook: string | null;
-    instagram: string | null;
-    youtube: string | null;
-  };
-  user_name?: string | null;
+  pastor_word: {
+    user_id: number;
+    custom_title: string | null;
+    word: string;
+    photo_path: string | null;
+    social_links: {
+      facebook: string | null;
+      instagram: string | null;
+      youtube: string | null;
+    };
+    user_name?: string | null;
+  } | null;
+  church_presentation_banner: {
+    eyebrow: string;
+    quote: string;
+    short_description: string;
+    button_text: string;
+  } | null;
+  pastor_long_message: {
+    preacher_id: number;
+    custom_eyebrow: string;
+    custom_title: string;
+    guarantees_title: string;
+    guarantees_list: string[];
+    html_content: string;
+  } | null;
 };
 
 export type AdminUserOption = {
@@ -175,30 +191,39 @@ export type AdminUserOption = {
 };
 
 export async function getAdminPastorWord(): Promise<{
-  pastor_word: AdminPastorWord | null;
+  pastor_word: AdminPastorWord["pastor_word"];
+  church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+  pastor_long_message: AdminPastorWord["pastor_long_message"];
   users: AdminUserOption[];
 }> {
   return adminFetch<{
-    pastor_word: AdminPastorWord | null;
+    pastor_word: AdminPastorWord["pastor_word"];
+    church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+    pastor_long_message: AdminPastorWord["pastor_long_message"];
     users: AdminUserOption[];
   }>("/settings/pastor-word");
 }
 
 export async function updateAdminPastorWord(formData: FormData): Promise<{
   message: string;
-  data: AdminPastorWord;
+  pastor_word: AdminPastorWord["pastor_word"];
+  church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+  pastor_long_message: AdminPastorWord["pastor_long_message"];
 }> {
   const result = await adminFetch<{
     message: string;
-    data: AdminPastorWord;
+    pastor_word: AdminPastorWord["pastor_word"];
+    church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+    pastor_long_message: AdminPastorWord["pastor_long_message"];
   }>("/settings/pastor-word", {
-    method: "POST", // Use POST for multipart uploads
+    method: "POST", // Multipart photo upload support
     body: formData,
   });
 
   revalidateTag("settings", { expire: 0 });
   revalidatePath("/");
   revalidatePath("/eglise");
+  revalidatePath("/eglise/presentation");
   return result;
 }
 

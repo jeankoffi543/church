@@ -12,7 +12,14 @@ export default async function AdminPastorWordPage() {
     return <AccessRestricted />;
   }
 
-  const { pastor_word, users } = await getAdminPastorWord();
+  const { pastor_word, church_presentation_banner, pastor_long_message, users } = await getAdminPastorWord();
 
-  return <PastorWordForm initialData={pastor_word} users={users} />;
+  return (
+    <PastorWordForm
+      pastorWord={pastor_word}
+      churchPresentationBanner={church_presentation_banner}
+      pastorLongMessage={pastor_long_message}
+      users={users}
+    />
+  );
 }

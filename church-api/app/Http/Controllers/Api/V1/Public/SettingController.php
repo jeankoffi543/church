@@ -40,6 +40,25 @@ class SettingController extends Controller
             $value['user_name'] = $user ? $user->name : null;
         }
 
+        if ($key === 'pastor_long_message' && is_array($value) && isset($value['preacher_id'])) {
+            $user = \App\Models\User::with('roles')->find($value['preacher_id']);
+            if ($user) {
+                $value['preacher_name'] = $user->name;
+                $value['preacher_role'] = $user->roles->first()?->name ?? 'Surintendant Régional MFM Ficgayo';
+                
+                // Initials
+                $words = array_filter(explode(' ', $user->name));
+                $initials = '';
+                if (count($words) >= 2) {
+                    $initials = mb_strtoupper(mb_substr(reset($words), 0, 1) . mb_substr(end($words), 0, 1));
+                } else {
+                    $initials = mb_strtoupper(mb_substr($user->name, 0, 2));
+                }
+                $value['preacher_initials'] = $initials;
+                $value['preacher_photo_path'] = null; // Associated profile image (null fallback as users table doesn't have it)
+            }
+        }
+
         return response()->json(['data' => $value]);
     }
 }
