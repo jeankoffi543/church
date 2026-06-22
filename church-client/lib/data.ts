@@ -160,6 +160,7 @@ export const HOME_GROUPS: HomeGroup[] = [
 ];
 
 export type ChurchEvent = {
+  id?: number;
   slug: string;
   day: string;
   month: string;
@@ -172,6 +173,7 @@ export type ChurchEvent = {
   description: string;
   highlights: string[];
   image: string;
+  is_featured?: boolean;
 };
 
 export const EVENTS: ChurchEvent[] = [

@@ -76,6 +76,8 @@ Route::prefix('v1')->group(function (): void {
                 ->middleware('permission:manage_sermons');
 
             // Agenda / événements
+            Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
+                ->middleware('permission:manage_events');
             Route::apiResource('events', Admin\EventController::class)
                 ->middleware('permission:manage_events');
 

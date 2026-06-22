@@ -14,6 +14,7 @@ import {
 import { getEvent, getEvents } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { BrandButton } from "@/components/ui/brand-button";
+import { IMG } from "@/lib/data";
 
 export async function generateStaticParams() {
   const events = await getEvents();
@@ -54,45 +55,47 @@ export default async function EventDetailPage({
   return (
     <article className="bg-cream pb-[clamp(72px,9vw,108px)]">
       {/* ── Hero banner ─────────────────────────────────────── */}
-      <header
-        className={cn(
-          "relative flex min-h-[clamp(360px,46vw,520px)] items-end bg-cover bg-center px-6 pt-[110px] pb-10",
-          !hasMedia && "min-h-[clamp(280px,32vw,380px)] bg-gradient-to-br from-indigo-mid to-ink"
-        )}
-        style={
-          hasMedia
-            ? {
-                backgroundImage: `linear-gradient(180deg,rgba(22,15,51,.35),rgba(22,15,51,.9)),url('${event.image}')`,
-              }
-            : undefined
-        }
-      >
-        <div className="mx-auto w-full max-w-[1000px] text-white">
-          <Link
-            href="/agenda"
-            className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white/70 transition hover:text-white"
+      {(() => {
+        const hasCustomImage = !!event.image;
+        const bannerImage = event.image || IMG.agendaFeature;
+        const gradientFilter = hasCustomImage
+          ? "linear-gradient(180deg,rgba(22,15,51,.35),rgba(22,15,51,.9))"
+          : "linear-gradient(180deg,rgba(22,15,51,.6),rgba(22,15,51,.95))";
+        return (
+          <header
+            className="relative flex min-h-[clamp(360px,46vw,520px)] items-end bg-cover bg-center px-6 pt-[110px] pb-10"
+            style={{
+              backgroundImage: `${gradientFilter},url('${bannerImage}')`,
+            }}
           >
-            <ArrowLeft className="size-4" /> Retour à l&apos;agenda
-          </Link>
-          <span className="mb-3 inline-block rounded-md bg-gold px-3 py-1 text-[11px] font-extrabold tracking-wider text-indigo uppercase">
-            {event.type}
-          </span>
-          <h1 className="max-w-[760px] font-display text-[clamp(34px,5.2vw,64px)] leading-[1.04] font-semibold italic">
-            {event.title}
-          </h1>
-          <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-white/80">
-            <span className="flex items-center gap-2">
-              <CalendarDays className="size-4 text-gold" /> {event.fullDate}
-            </span>
-            <span className="flex items-center gap-2">
-              <Clock className="size-4 text-gold" /> {event.time}
-            </span>
-            <span className="flex items-center gap-2">
-              <MapPin className="size-4 text-gold" /> {event.location}
-            </span>
-          </div>
-        </div>
-      </header>
+            <div className="mx-auto w-full max-w-[1000px] text-white">
+              <Link
+                href="/agenda"
+                className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-semibold text-white/70 transition hover:text-white"
+              >
+                <ArrowLeft className="size-4" /> Retour à l&apos;agenda
+              </Link>
+              <span className="mb-3 inline-block rounded-md bg-gold px-3 py-1 text-[11px] font-extrabold tracking-wider text-indigo uppercase">
+                {event.type}
+              </span>
+              <h1 className="max-w-[760px] font-display text-[clamp(34px,5.2vw,64px)] leading-[1.04] font-semibold italic">
+                {event.title}
+              </h1>
+              <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-white/80">
+                <span className="flex items-center gap-2">
+                  <CalendarDays className="size-4 text-gold" /> {event.fullDate}
+                </span>
+                <span className="flex items-center gap-2">
+                  <Clock className="size-4 text-gold" /> {event.time}
+                </span>
+                <span className="flex items-center gap-2">
+                  <MapPin className="size-4 text-gold" /> {event.location}
+                </span>
+              </div>
+            </div>
+          </header>
+        );
+      })()}
 
       {/* ── Body ────────────────────────────────────────────── */}
       <div

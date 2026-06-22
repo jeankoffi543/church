@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getEvents } from "@/lib/api";
 import { PageHeader } from "@/components/sections/page-header";
-import { EventRow } from "@/components/cards/event-card";
+import { AgendaAsymmetricList } from "@/components/agenda/agenda-asymmetric-list";
 import { BrandButton } from "@/components/ui/brand-button";
 import { IMG } from "@/lib/data";
 
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function AgendaPage() {
   const events = await getEvents();
-  const featured = events.find((e) => e.slug === "maison-de-feu-2026") ?? events[0];
+  const featured = events.find((e) => e.is_featured) ?? events[0];
 
   return (
     <section className="min-h-screen bg-cream px-6 pt-[clamp(96px,11vw,120px)] pb-[90px]">
@@ -23,7 +24,7 @@ export default async function AgendaPage() {
           intro="Conférences, veillées, séminaires : ne manque aucun rendez-vous de la Maison."
         />
 
-        {/* Featured event */}
+        {/* Featured event - premium asymmetric block */}
         {featured && (
           <div className="mb-10 flex flex-wrap overflow-hidden rounded-[24px] bg-gradient-to-br from-indigo-mid to-ink shadow-[0_24px_60px_rgba(22,15,51,0.16)]">
             <div
@@ -43,23 +44,19 @@ export default async function AgendaPage() {
                 {featured.description}
               </p>
               <div className="flex flex-wrap gap-3">
-                <BrandButton variant="gold" size="sm" className="px-6">
-                  S&apos;inscrire
+                <BrandButton asChild variant="gold" size="sm" className="px-6">
+                  <Link href="/contact">S&apos;inscrire</Link>
                 </BrandButton>
-                <BrandButton variant="ghostLight" size="sm" className="px-6">
-                  En savoir plus
+                <BrandButton asChild variant="ghostLight" size="sm" className="px-6">
+                  <Link href={`/agenda/${featured.slug}`}>En savoir plus</Link>
                 </BrandButton>
               </div>
             </div>
           </div>
         )}
 
-        {/* Event list */}
-        <div className="flex flex-col gap-3.5">
-          {events.map((e) => (
-            <EventRow key={e.title} event={e} />
-          ))}
-        </div>
+        {/* Event list (Asymmetric row style list with integrated pagination) */}
+        <AgendaAsymmetricList events={events} />
       </div>
     </section>
   );

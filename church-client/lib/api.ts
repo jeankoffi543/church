@@ -98,6 +98,7 @@ type ApiEvent = {
   full_date: string | null;
   highlights: string[] | null;
   image: string | null;
+  is_featured: boolean;
 };
 
 type ApiHomeGroup = {
@@ -154,7 +155,8 @@ const mapEvent = (e: ApiEvent): ChurchEvent => ({
   host: e.host ?? "",
   description: e.description ?? "",
   highlights: e.highlights ?? [],
-  image: e.image ?? "",
+  image: assetUrl(e.image) ?? "",
+  is_featured: !!e.is_featured,
 });
 
 const mapHomeGroup = (g: ApiHomeGroup): HomeGroup => ({
