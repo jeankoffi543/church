@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { getEvent, getEvents } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { BrandButton } from "@/components/ui/brand-button";
 
 export async function generateStaticParams() {
@@ -45,14 +46,26 @@ export default async function EventDetailPage({
   const event = await getEvent(slug);
   if (!event) notFound();
 
+  // The hero image is the event's only rich media. Without it, we skip the
+  // image-backed banner (no broken/empty visual) and render a clean, full-width
+  // text reader instead.
+  const hasMedia = Boolean(event.image);
+
   return (
     <article className="bg-cream pb-[clamp(72px,9vw,108px)]">
       {/* ── Hero banner ─────────────────────────────────────── */}
       <header
-        className="relative flex min-h-[clamp(360px,46vw,520px)] items-end bg-cover bg-center px-6 pt-[110px] pb-10"
-        style={{
-          backgroundImage: `linear-gradient(180deg,rgba(22,15,51,.35),rgba(22,15,51,.9)),url('${event.image}')`,
-        }}
+        className={cn(
+          "relative flex min-h-[clamp(360px,46vw,520px)] items-end bg-cover bg-center px-6 pt-[110px] pb-10",
+          !hasMedia && "min-h-[clamp(280px,32vw,380px)] bg-gradient-to-br from-indigo-mid to-ink"
+        )}
+        style={
+          hasMedia
+            ? {
+                backgroundImage: `linear-gradient(180deg,rgba(22,15,51,.35),rgba(22,15,51,.9)),url('${event.image}')`,
+              }
+            : undefined
+        }
       >
         <div className="mx-auto w-full max-w-[1000px] text-white">
           <Link
@@ -82,15 +95,24 @@ export default async function EventDetailPage({
       </header>
 
       {/* ── Body ────────────────────────────────────────────── */}
-      <div className="mx-auto grid max-w-[1000px] grid-cols-1 gap-10 px-6 pt-[clamp(40px,6vw,72px)] lg:grid-cols-[1fr_340px]">
+      <div
+        className={cn(
+          "mx-auto grid max-w-[1000px] grid-cols-1 gap-10 px-6 pt-[clamp(40px,6vw,72px)]",
+          hasMedia && "lg:grid-cols-[1fr_340px]"
+        )}
+      >
         {/* Main */}
         <div>
           <h2 className="font-display text-[26px] font-semibold text-indigo italic">
             À propos de ce programme
           </h2>
-          <p className="mt-4 text-[16px] leading-[1.75] text-body">
-            {event.description}
-          </p>
+          {/* Bounded reader: a long description scrolls inside its block instead
+              of stretching the page. */}
+          <div className="mt-4 max-h-[250px] overflow-y-auto rounded-xl border border-muted/50 bg-muted/30 p-6 pr-4 leading-relaxed text-muted-foreground shadow-inner [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted">
+            <p className="text-[16px] leading-[1.75] text-body">
+              {event.description}
+            </p>
+          </div>
 
           <h3 className="mt-10 mb-4 text-[15px] font-bold tracking-wide text-indigo uppercase">
             Au programme

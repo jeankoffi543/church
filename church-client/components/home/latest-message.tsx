@@ -1,32 +1,40 @@
 import Link from "next/link";
-import { Play } from "lucide-react";
+import { BookOpen } from "lucide-react";
 
 import { IMG } from "@/lib/data";
 import { getLatestSermon } from "@/lib/api";
 import { BrandButton } from "@/components/ui/brand-button";
+import { SermonPlayOverlay, SermonListenButton } from "@/components/home/sermon-cta";
+import { SermonDescription } from "@/components/media/sermon-reader";
 
 export async function LatestMessage() {
   const featured = await getLatestSermon();
+  const cover = featured.background ?? IMG.latestMessage;
+  const info = {
+    id: featured.id,
+    title: featured.title,
+    speaker: featured.speaker,
+    isAudio: featured.isAudio,
+    mediaSrc: featured.mediaSrc,
+    mediaType: featured.mediaType,
+    background: featured.background,
+  };
+
   return (
     <section className="pb-[clamp(72px,9vw,108px)]">
       <div className="mx-auto max-w-[1200px] px-6">
         <div className="flex flex-wrap overflow-hidden rounded-[26px] border border-[rgba(40,25,80,0.06)] bg-white shadow-[0_24px_70px_rgba(22,15,51,0.1)]">
-          {/* Media */}
+          {/* Media — adaptive background (custom cover or default fallback) */}
           <div
             className="relative flex min-h-[320px] flex-[1_1_380px] items-center justify-center bg-cover bg-center"
             style={{
-              backgroundImage: `linear-gradient(140deg,rgba(58,42,110,.35),rgba(22,15,51,.7)),url('${IMG.latestMessage}')`,
+              backgroundImage: `linear-gradient(140deg,rgba(58,42,110,.35),rgba(22,15,51,.7)),url('${cover}')`,
             }}
           >
             <span className="absolute top-[18px] left-[18px] rounded-[7px] bg-live/95 px-[11px] py-1.5 text-[11px] font-extrabold tracking-wide text-white">
               DERNIER MESSAGE
             </span>
-            <button
-              aria-label="Lire le message"
-              className="flex size-[74px] items-center justify-center rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm transition hover:bg-white/30"
-            >
-              <Play className="ml-1 size-6 fill-white text-white" />
-            </button>
+            <SermonPlayOverlay sermon={info} />
           </div>
 
           {/* Content */}
@@ -37,9 +45,38 @@ export async function LatestMessage() {
             <h3 className="mb-3.5 font-display text-[clamp(28px,3.4vw,42px)] leading-tight font-semibold text-indigo italic">
               {featured.title}
             </h3>
-            <p className="mb-[22px] max-w-[440px] text-[15px] leading-relaxed text-body">
-              {featured.desc}
-            </p>
+            <SermonDescription
+              className="mb-[18px] max-w-[440px]"
+              sermon={{
+                id: featured.id,
+                title: featured.title,
+                speaker: featured.speaker,
+                serie: featured.serie,
+                date: featured.date,
+                duration: featured.duration,
+                description: featured.desc,
+                mediaType: featured.mediaType,
+                mediaSrc: featured.mediaSrc,
+                background: featured.background,
+                scriptures: featured.scriptures,
+              }}
+            />
+
+            {/* Scripture badges */}
+            {featured.scriptures.length > 0 && (
+              <div className="mb-[22px] flex flex-wrap gap-2">
+                {featured.scriptures.map((ref) => (
+                  <span
+                    key={ref}
+                    className="inline-flex items-center gap-1 rounded-md border border-gold/20 bg-gold/10 px-2.5 py-1 text-[11.5px] font-bold text-gold-dark"
+                  >
+                    <BookOpen className="size-3" />
+                    {ref}
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="mb-[26px] flex items-center gap-3.5 text-[13px] font-semibold text-faint">
               <span>{featured.speaker}</span>
               <Dot />
@@ -48,9 +85,7 @@ export async function LatestMessage() {
               <span>{featured.duration}</span>
             </div>
             <div className="flex flex-wrap gap-3">
-              <BrandButton asChild variant="dark" size="sm" className="px-6">
-                <Link href="/mediatheque">Écouter le message</Link>
-              </BrandButton>
+              <SermonListenButton sermon={info} />
               <BrandButton asChild variant="outline" size="sm" className="px-6">
                 <Link href="/mediatheque">Voir la médiathèque</Link>
               </BrandButton>

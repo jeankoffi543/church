@@ -30,6 +30,8 @@ Route::prefix('v1')->group(function (): void {
         // Sermons (Phase 1) — `latest` before `{sermon}` to avoid clashing.
         Route::get('sermons/latest', [Public\SermonController::class, 'latest'])->name('sermons.latest');
         Route::get('sermons', [Public\SermonController::class, 'index'])->name('sermons.index');
+        // Range-capable media stream (HTTP 206) so browsers can play/seek uploaded files.
+        Route::get('sermons/{sermon}/stream', [Public\SermonController::class, 'stream'])->name('sermons.stream');
         Route::get('sermons/{sermon}', [Public\SermonController::class, 'show'])->name('sermons.show');
 
         // Events (Phase 3)
