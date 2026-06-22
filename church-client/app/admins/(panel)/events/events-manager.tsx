@@ -1,19 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { 
   Plus, 
   Search, 
   Edit, 
   Trash2, 
   Loader2, 
-  X, 
   Star, 
   CheckCircle, 
   AlertCircle 
 } from "lucide-react";
-import { createEvent, updateEvent, deleteEvent } from "@/lib/admin-api";
+import { createEvent, updateEvent, deleteEvent, checkEventSlug } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { assetUrl } from "@/lib/asset-url";
+import { Pagination } from "../_components/pagination";
 
 type Event = {
   id: number;
@@ -53,9 +55,69 @@ export function EventsManager({
   const [host, setHost] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
-  const [image, setImage] = useState("");
   const [highlightsInput, setHighlightsInput] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
+
+  // Image upload states
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [removeImage, setRemoveImage] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  // Validation & helper states
+  const [slugError, setSlugError] = useState<string | null>(null);
+  const [isCheckingSlug, setIsCheckingSlug] = useState(false);
+
+  const slugify = (text: string) => {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove accent marks
+      .replace(/[^a-z0-9]+/g, "-") // replace non-alphanumeric with hyphens
+      .replace(/(^-|-$)+/g, ""); // remove leading/trailing hyphens
+  };
+
+  const slugifyForInput = (text: string) => {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove accent marks
+      .replace(/[^a-z0-9-]+/g, "-"); // replace non-alphanumeric (except hyphen) with hyphens, allow trailing hyphens
+  };
+
+  useEffect(() => {
+    if (!slug.trim()) {
+      setSlugError(null);
+      return;
+    }
+
+    const cleanedSlug = slug.trim().replace(/(^-|-$)+/g, "");
+    if (!cleanedSlug) {
+      setSlugError(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsCheckingSlug(true);
+      try {
+        const res = await checkEventSlug(cleanedSlug, editingEvent?.id);
+        if (res.exists) {
+          setSlugError("Ce slug est déjà utilisé par un autre événement.");
+        } else {
+          setSlugError(null);
+        }
+      } catch (err) {
+        console.error("Error checking slug uniqueness:", err);
+      } finally {
+        setIsCheckingSlug(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [slug, editingEvent]);
 
   const openCreateModal = () => {
     setEditingEvent(null);
@@ -65,17 +127,28 @@ export function EventsManager({
     setDescription("");
     setLocation("");
     setHost("MFM Ficgayo");
+    
     const now = new Date();
     // Default starts_at to next Sunday 09:00 local time
     const nextSunday = new Date(now.setDate(now.getDate() + (7 - now.getDay()) % 7));
     nextSunday.setHours(9, 0, 0, 0);
-    const tzoffset = nextSunday.getTimezoneOffset() * 60000; //offset in milliseconds
+    const tzoffset = nextSunday.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(nextSunday.getTime() - tzoffset)).toISOString().slice(0, 16);
+    
     setStartsAt(localISOTime);
     setEndsAt("");
-    setImage("");
     setHighlightsInput("");
     setIsFeatured(false);
+    
+    // Clear image upload states
+    setImageFile(null);
+    setImagePreview("");
+    setRemoveImage(false);
+    
+    setSlugError(null);
+    setIsCheckingSlug(false);
+    setStatus(null);
+    
     setIsModalOpen(true);
   };
 
@@ -99,15 +172,26 @@ export function EventsManager({
 
     setStartsAt(formatDateTime(event.starts_at));
     setEndsAt(formatDateTime(event.ends_at));
-    setImage(event.image ?? "");
     setHighlightsInput(event.highlights ? event.highlights.join("\n") : "");
     setIsFeatured(event.is_featured);
+    
+    // Initialize image upload states
+    setImageFile(null);
+    setImagePreview(event.image ? (assetUrl(event.image) ?? "") : "");
+    setRemoveImage(false);
+    
+    setSlugError(null);
+    setIsCheckingSlug(false);
+    setStatus(null);
+    
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingEvent(null);
+    setSlugError(null);
+    setIsCheckingSlug(false);
   };
 
   const handleDelete = async (id: number, title: string) => {
@@ -128,7 +212,7 @@ export function EventsManager({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !startsAt) return;
+    if (!title.trim() || !startsAt || !description.trim() || !location.trim()) return;
 
     setStatus(null);
     startTransition(async () => {
@@ -138,27 +222,37 @@ export function EventsManager({
           .map((line) => line.trim())
           .filter(Boolean);
 
-        const payload = {
-          title,
-          slug: slug.trim() || undefined,
-          type: type || null,
-          description: description || null,
-          location: location || null,
-          host: host || null,
-          starts_at: startsAt,
-          ends_at: endsAt || null,
-          image: image || null,
-          highlights,
-          is_featured: isFeatured,
-        };
+        const fd = new FormData();
+        fd.append("title", title.trim());
+        fd.append("slug", slug.trim());
+        fd.append("type", type || "");
+        fd.append("description", description.trim());
+        fd.append("location", location.trim());
+        fd.append("host", host || "");
+        fd.append("start_date", startsAt);
+        if (endsAt) {
+          fd.append("end_date", endsAt);
+        }
+        fd.append("is_featured", isFeatured ? "1" : "0");
+        
+        highlights.forEach((h, idx) => {
+          fd.append(`highlights[${idx}]`, h);
+        });
+
+        if (imageFile) {
+          fd.append("image", imageFile);
+        }
+        if (removeImage) {
+          fd.append("remove_image", "1");
+        }
 
         if (editingEvent) {
-          const res = await updateEvent(editingEvent.id, payload);
+          const res = await updateEvent(editingEvent.id, fd);
           const updated = res.data as Event;
           setEvents(events.map((e) => (e.id === updated.id ? updated : e)));
           setStatus({ type: "success", message: `L'événement "${title}" a été mis à jour.` });
         } else {
-          const res = await createEvent(payload);
+          const res = await createEvent(fd);
           const created = res.data as Event;
           setEvents([...events, created]);
           setStatus({ type: "success", message: `L'événement "${title}" a été créé.` });
@@ -171,11 +265,21 @@ export function EventsManager({
     });
   };
 
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+    setCurrentPage(1);
+    setStatus(null);
+  };
+
   const filtered = events.filter((e) =>
     e.title.toLowerCase().includes(search.toLowerCase()) ||
     (e.type && e.type.toLowerCase().includes(search.toLowerCase())) ||
     (e.location && e.location.toLowerCase().includes(search.toLowerCase()))
   );
+
+  const total = filtered.length;
+  const pageCount = Math.ceil(total / perPage) || 1;
+  const paginatedEvents = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -226,8 +330,8 @@ export function EventsManager({
           type="text"
           placeholder="Rechercher un événement..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
+          onChange={handleSearchChange}
+          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
         />
       </div>
 
@@ -245,7 +349,7 @@ export function EventsManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {filtered.map((event) => (
+              {paginatedEvents.map((event) => (
                 <tr key={event.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4">
                     {event.is_featured ? (
@@ -294,7 +398,7 @@ export function EventsManager({
                 </tr>
               ))}
 
-              {filtered.length === 0 && (
+              {paginatedEvents.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-10 text-center text-xs text-body">
                     Aucun événement trouvé.
@@ -304,175 +408,227 @@ export function EventsManager({
             </tbody>
           </table>
         </div>
+
+        {/* Reusable Pagination Component */}
+        <Pagination
+          page={currentPage}
+          pageCount={pageCount}
+          total={total}
+          perPage={perPage}
+          onPageChange={(page) => {
+            setCurrentPage(page);
+            setStatus(null);
+          }}
+          onPerPageChange={(newPerPage) => {
+            setPerPage(newPerPage);
+            setCurrentPage(1);
+            setStatus(null);
+          }}
+          itemLabel="événements"
+        />
       </div>
 
-      {/* Modal Dialog */}
-      {isModalOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-xs" onClick={closeModal} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[620px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[22px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-2xl animate-fade-up">
-            <div className="contents">
-              <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-display text-xl font-bold text-indigo italic">
-                {editingEvent ? "Modifier l’événement" : "Créer un événement"}
-              </h3>
-              <button onClick={closeModal} className="text-faint hover:text-indigo">
-                <X className="size-5" />
-              </button>
+      {/* Replaced raw backdrop and centered wrappers with native Radix Dialog */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="w-[95vw] md:max-w-2xl max-h-[85vh] overflow-y-auto p-6 bg-white border-0 outline-none">
+          <div className="mb-1">
+            <DialogTitle className="font-display text-xl font-bold text-indigo italic">
+              {editingEvent ? "Modifier l’événement" : "Créer un événement"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-body mt-0.5">
+              Remplissez le formulaire ci-dessous pour configurer l’événement.
+            </DialogDescription>
+          </div>
+
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+            <label className="sm:col-span-2 flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Titre de l’événement *</span>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setSlug(slugifyForInput(e.target.value));
+                }}
+                placeholder="ex: Veillée de combat spirituel"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Slug unique (URL)</span>
+              <input
+                type="text"
+                required
+                value={slug}
+                onChange={(e) => setSlug(slugifyForInput(e.target.value))}
+                placeholder="ex: veillee-combat-2026"
+                className={cn(
+                  "rounded-xl border bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold",
+                  slugError ? "border-live focus:border-live" : "border-[rgba(40,25,80,0.12)]"
+                )}
+              />
+              {slugError && (
+                <span className="text-xs text-live font-semibold flex items-center gap-1 mt-0.5">
+                  <AlertCircle className="size-3.5" />
+                  {slugError}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Type d’événement</span>
+              <input
+                type="text"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                placeholder="ex: Conférence, Veillée, Séminaire"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de début *</span>
+              <input
+                type="datetime-local"
+                required
+                value={startsAt}
+                onChange={(e) => setStartsAt(e.target.value)}
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de fin</span>
+              <input
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Lieu / Emplacement *</span>
+              <input
+                type="text"
+                required
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="ex: Temple principal MFM Ficgayo"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Hôte / Invité</span>
+              <input
+                type="text"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="ex: Pasteur David Okonkwo"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
+
+            <div className="flex flex-col gap-2.5 justify-center">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Mise en avant</span>
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={isFeatured}
+                  onChange={(e) => setIsFeatured(e.target.checked)}
+                  className="size-4 accent-gold cursor-pointer"
+                />
+                <span className="text-[13px] font-semibold text-indigo">Événement majeur (Hero Agenda)</span>
+              </label>
             </div>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="sm:col-span-2 flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Titre de l’événement *</span>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (!editingEvent) {
-                      setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""));
-                    }
-                  }}
-                  placeholder="ex: Veillée de combat spirituel"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Slug unique (URL)</span>
-                <input
-                  type="text"
-                  required
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
-                  placeholder="ex: veillee-combat-2026"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Type d’événement</span>
-                <input
-                  type="text"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  placeholder="ex: Conférence, Veillée, Séminaire"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de début *</span>
-                <input
-                  type="datetime-local"
-                  required
-                  value={startsAt}
-                  onChange={(e) => setStartsAt(e.target.value)}
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de fin</span>
-                <input
-                  type="datetime-local"
-                  value={endsAt}
-                  onChange={(e) => setEndsAt(e.target.value)}
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Lieu / Emplacement</span>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="ex: Temple principal MFM Ficgayo"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Hôte / Invité</span>
-                <input
-                  type="text"
-                  value={host}
-                  onChange={(e) => setHost(e.target.value)}
-                  placeholder="ex: Pasteur David Okonkwo"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
-
-              <div className="flex flex-col gap-2.5 justify-center">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Mise en avant</span>
-                <label className="flex cursor-pointer items-center gap-2">
+            {/* Affiche/Flyer Image Upload Field with preview & delete */}
+            <div className="sm:col-span-2 flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Affiche / Flyer de l'événement</span>
+              {imagePreview ? (
+                <div className="relative group max-w-[200px] rounded-xl overflow-hidden border border-[rgba(40,25,80,0.12)] bg-cream">
+                  <img src={imagePreview} alt="Affiche" className="w-full h-auto object-cover max-h-36" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageFile(null);
+                      setImagePreview("");
+                      setRemoveImage(true);
+                    }}
+                    className="absolute top-2 right-2 bg-live text-white p-2 rounded-full shadow-md transition-transform hover:scale-110"
+                    title="Supprimer l'affiche"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-[rgba(40,25,80,0.15)] rounded-xl p-5 bg-[#faf8f4] hover:bg-cream/45 cursor-pointer transition">
+                  <Plus className="size-5 text-faint mb-1" />
+                  <span className="text-xs font-semibold text-indigo">Téléverser une image d'affiche</span>
+                  <span className="text-[9px] text-faint mt-0.5">JPEG, PNG, WebP (max. 2 Mo)</span>
                   <input
-                    type="checkbox"
-                    checked={isFeatured}
-                    onChange={(e) => setIsFeatured(e.target.checked)}
-                    className="size-4 accent-gold cursor-pointer"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setImageFile(file);
+                        setImagePreview(URL.createObjectURL(file));
+                        setRemoveImage(false);
+                      }
+                    }}
+                    className="hidden"
                   />
-                  <span className="text-[13px] font-semibold text-indigo">Événement majeur (Hero Agenda)</span>
                 </label>
-              </div>
+              )}
+            </div>
 
-              <label className="sm:col-span-2 flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Lien URL Image d’illustration</span>
-                <input
-                  type="url"
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="https://..."
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
+            <label className="sm:col-span-2 flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Points clés / Highlights (Un par ligne)</span>
+              <textarea
+                value={highlightsInput}
+                onChange={(e) => setHighlightsInput(e.target.value)}
+                rows={2}
+                placeholder="ex: Temps fort d’intercession&#10;Entrée libre et gratuite"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
+              />
+            </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Points clés / Highlights (Un par ligne)</span>
-                <textarea
-                  value={highlightsInput}
-                  onChange={(e) => setHighlightsInput(e.target.value)}
-                  rows={2}
-                  placeholder="ex: Temps fort d’intercession&#10;Entrée libre et gratuite"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
-                />
-              </label>
+            <label className="sm:col-span-2 flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Description exhaustive *</span>
+              <textarea
+                required
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                placeholder="Objectif et descriptif complet de la rencontre..."
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
+              />
+            </label>
 
-              <label className="sm:col-span-2 flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Description exhaustive</span>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Objectif et descriptif complet de la rencontre..."
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
-                />
-              </label>
-
-              <div className="sm:col-span-2 mt-2 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                  Enregistrer
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </>
-      )}
+            <div className="sm:col-span-2 mt-2 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isPending || !!slugError || isCheckingSlug}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
+              >
+                {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

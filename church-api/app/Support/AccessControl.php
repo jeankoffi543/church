@@ -49,7 +49,6 @@ final class AccessControl
             'Général' => [
                 ['name' => 'manage_settings', 'label' => 'Gérer les paramètres (nom, footer, contact)'],
                 ['name' => 'manage_sermons', 'label' => 'Gérer les messages et la médiathèque'],
-                ['name' => 'manage_events', 'label' => "Gérer l'agenda et les événements"],
                 ['name' => 'manage_access', 'label' => 'Gérer les accès, groupes et permissions'],
                 ['name' => 'manage_ministries', 'label' => 'Créer et configurer les ministères et assigner les chefs'],
             ],
@@ -88,6 +87,10 @@ final class AccessControl
             'Contacts' => [
                 ['name' => 'view_contacts', 'label' => 'Consulter les messages de contact et retours'],
                 ['name' => 'manage_contacts', 'label' => 'Traiter, archiver ou répondre aux messages de contact'],
+            ],
+            'Événements' => [
+                ['name' => 'view_events', 'label' => "Consulter l'agenda et la liste des événements"],
+                ['name' => 'manage_events', 'label' => 'Créer, modifier, planifier et supprimer des événements'],
             ],
         ];
     }
@@ -143,6 +146,7 @@ final class AccessControl
                 'validate_ministry_applications',
                 'view_contacts',
                 'manage_contacts',
+                'view_events',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

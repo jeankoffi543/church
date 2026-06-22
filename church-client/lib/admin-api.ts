@@ -291,22 +291,21 @@ export async function getAdminEvents(): Promise<AdminEvent[]> {
   return response.data;
 }
 
-export async function createEvent(data: {
-  title: string;
-  slug?: string;
-  type?: string | null;
-  description?: string | null;
-  location?: string | null;
-  host?: string | null;
-  starts_at: string;
-  ends_at?: string | null;
-  image?: string | null;
-  highlights?: string[];
-  is_featured?: boolean;
-}): Promise<{ data: AdminEvent }> {
+export async function checkEventSlug(slug: string, ignoreId?: number): Promise<{ exists: boolean }> {
+  const query = new URLSearchParams();
+  query.set("slug", slug);
+  if (ignoreId !== undefined) {
+    query.set("ignore_id", ignoreId.toString());
+  }
+  return adminFetch<{ exists: boolean }>(`/events/check-slug?${query.toString()}`);
+}
+
+export async function createEvent(
+  formData: FormData
+): Promise<{ data: AdminEvent }> {
   const result = await adminFetch<{ data: AdminEvent }>("/events", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: formData,
   });
   revalidateTag("events", { expire: 0 });
   revalidatePath("/");
@@ -314,22 +313,14 @@ export async function createEvent(data: {
   return result;
 }
 
-export async function updateEvent(id: number, data: {
-  title?: string;
-  slug?: string;
-  type?: string | null;
-  description?: string | null;
-  location?: string | null;
-  host?: string | null;
-  starts_at?: string;
-  ends_at?: string | null;
-  image?: string | null;
-  highlights?: string[];
-  is_featured?: boolean;
-}): Promise<{ data: AdminEvent }> {
+export async function updateEvent(
+  id: number,
+  formData: FormData
+): Promise<{ data: AdminEvent }> {
+  formData.append("_method", "PUT");
   const result = await adminFetch<{ data: AdminEvent }>(`/events/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
+    method: "POST",
+    body: formData,
   });
   revalidateTag("events", { expire: 0 });
   revalidatePath("/");

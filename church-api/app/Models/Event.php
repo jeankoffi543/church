@@ -15,9 +15,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $description
  * @property string|null $location
  * @property string|null $host
- * @property Carbon $starts_at
- * @property Carbon|null $ends_at
- * @property string|null $image
+ * @property Carbon $start_date
+ * @property Carbon|null $end_date
+ * @property string|null $image_path
  * @property array<int, string>|null $highlights
  * @property bool $is_featured
  */
@@ -33,9 +33,9 @@ class Event extends Model
         'description',
         'location',
         'host',
-        'starts_at',
-        'ends_at',
-        'image',
+        'start_date',
+        'end_date',
+        'image_path',
         'highlights',
         'is_featured',
     ];
@@ -46,8 +46,8 @@ class Event extends Model
     protected function casts(): array
     {
         return [
-            'starts_at' => 'datetime',
-            'ends_at' => 'datetime',
+            'start_date' => 'datetime',
+            'end_date' => 'datetime',
             'highlights' => 'array',
             'is_featured' => 'boolean',
         ];
@@ -66,9 +66,9 @@ class Event extends Model
     public function scopeUpcoming(Builder $query): void
     {
         $query->where(function (Builder $q): void {
-            $q->where('ends_at', '>=', now())
+            $q->where('end_date', '>=', now())
                 ->orWhere(function (Builder $q2): void {
-                    $q2->whereNull('ends_at')->where('starts_at', '>=', now());
+                    $q2->whereNull('end_date')->where('start_date', '>=', now());
                 });
         });
     }
@@ -78,6 +78,6 @@ class Event extends Model
      */
     public function scopeChronological(Builder $query): void
     {
-        $query->orderBy('starts_at');
+        $query->orderBy('start_date');
     }
 }
