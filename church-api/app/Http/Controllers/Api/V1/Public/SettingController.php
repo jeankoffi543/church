@@ -33,6 +33,13 @@ class SettingController extends Controller
      */
     public function show(string $key): JsonResponse
     {
-        return response()->json(['data' => Setting::get($key)]);
+        $value = Setting::get($key);
+
+        if ($key === 'pastor_word_showcase' && is_array($value) && isset($value['user_id'])) {
+            $user = \App\Models\User::find($value['user_id']);
+            $value['user_name'] = $user ? $user->name : null;
+        }
+
+        return response()->json(['data' => $value]);
     }
 }

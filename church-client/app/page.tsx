@@ -1,5 +1,6 @@
 import { getHeroContent } from "@/lib/api";
 import { Hero } from "@/components/home/hero";
+import { PastorWord } from "@/components/eglise/pastor-word";
 import { MinistriesPreview } from "@/components/home/ministries-preview";
 import { LatestMessage } from "@/components/home/latest-message";
 import { EventsTeaser } from "@/components/home/events-teaser";
@@ -11,6 +12,7 @@ export default async function HomePage() {
   return (
     <>
       <Hero content={heroContent} />
+      <PastorWord />
       <MinistriesPreview />
       <LatestMessage />
       <EventsTeaser />

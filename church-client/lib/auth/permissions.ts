@@ -21,6 +21,7 @@ export const PERMISSIONS = {
   validateMinistryApplications: "validate_ministry_applications",
   viewContacts: "view_contacts",
   manageContacts: "manage_contacts",
+  managePastorWord: "manage_pastor_word",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

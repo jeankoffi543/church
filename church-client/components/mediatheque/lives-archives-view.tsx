@@ -9,17 +9,19 @@ import { BrandButton } from "@/components/ui/brand-button";
 export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
   const { playVideo } = usePlayback();
 
-  // Find the latest sermon that has a video URL (or fallback to the first one)
+  // Find the latest sermon that has a video source
   const videoSermons = useMemo(() => {
-    return sermons.filter((s) => s.videoUrl);
+    return sermons.filter((s) => s.mediaType?.startsWith("video") && s.mediaSrc);
   }, [sermons]);
 
-  // If no sermons have videoUrl in the backend data, use all sermons and supply a fallback video
-  const displaySermons = videoSermons.length > 0 ? videoSermons : sermons.map(s => ({
-    ...s,
-    // Add a high-quality church/nature video background fallback for testing if no URL
-    videoUrl: s.videoUrl || "https://www.w3schools.com/html/mov_bbb.mp4"
-  }));
+  // If no sermons have video in the backend data, use all sermons and supply a fallback video
+  const displaySermons = useMemo(() => {
+    const list = videoSermons.length > 0 ? videoSermons : sermons;
+    return list.map(s => ({
+      ...s,
+      mediaSrc: s.mediaSrc || "https://www.w3schools.com/html/mov_bbb.mp4"
+    }));
+  }, [videoSermons, sermons]);
 
   const featuredSermon = displaySermons[0];
 
@@ -37,8 +39,8 @@ export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
   }, [displaySermons]);
 
   const handlePlayFeatured = () => {
-    if (featuredSermon && featuredSermon.videoUrl) {
-      playVideo({ title: featuredSermon.title, url: featuredSermon.videoUrl });
+    if (featuredSermon && featuredSermon.mediaSrc) {
+      playVideo({ title: featuredSermon.title, url: featuredSermon.mediaSrc });
     }
   };
 
@@ -66,7 +68,7 @@ export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
                 {featuredSermon.title}
               </h1>
               <p className="mt-4 text-base leading-relaxed text-faint max-w-xl">
-                {featuredSermon.description || "Un message puissant et inspiré apporté par le corps pastoral de notre église. Laissez-vous transformer par la Parole de Dieu et sa vérité éternelle."}
+                {featuredSermon.desc || "Un message puissant et inspiré apporté par le corps pastoral de notre église. Laissez-vous transformer par la Parole de Dieu et sa vérité éternelle."}
               </p>
 
               {/* Meta stats */}
@@ -119,7 +121,7 @@ export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
             {displaySermons.map((s, index) => (
               <div
                 key={s.title + index}
-                onClick={() => s.videoUrl && playVideo({ title: s.title, url: s.videoUrl })}
+                onClick={() => s.mediaSrc && playVideo({ title: s.title, url: s.mediaSrc })}
                 className="group relative flex-[0_0_280px] cursor-pointer overflow-hidden rounded-xl border border-white/5 bg-ink-light transition-all duration-300 hover:-translate-y-1.5 hover:border-gold/30 hover:shadow-[0_15px_30px_rgba(0,0,0,0.5)] md:flex-[0_0_320px]"
               >
                 {/* Thumbnail image representation */}
@@ -174,7 +176,7 @@ export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
               {seriesSermons.map((s, index) => (
                 <div
                   key={s.title + "-series-" + index}
-                  onClick={() => s.videoUrl && playVideo({ title: s.title, url: s.videoUrl })}
+                  onClick={() => s.mediaSrc && playVideo({ title: s.title, url: s.mediaSrc })}
                   className="group relative flex-[0_0_280px] cursor-pointer overflow-hidden rounded-xl border border-white/5 bg-ink-light transition-all duration-300 hover:-translate-y-1.5 hover:border-gold/30 hover:shadow-[0_15px_30px_rgba(0,0,0,0.5)] md:flex-[0_0_320px]"
                 >
                   <div 

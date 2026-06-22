@@ -63,6 +63,12 @@ Route::prefix('v1')->group(function (): void {
 
             // Settings: readable by any authenticated admin (most pages need the
             // config to render); writes are gated by the relevant privileges.
+            Route::get('settings/pastor-word', [Admin\SettingController::class, 'getPastorWord'])
+                ->middleware('permission:manage_pastor_word')
+                ->name('settings.pastor-word.get');
+            Route::match(['put', 'post'], 'settings/pastor-word', [Admin\SettingController::class, 'updatePastorWord'])
+                ->middleware('permission:manage_pastor_word')
+                ->name('settings.pastor-word.update');
             Route::get('settings', [Admin\SettingController::class, 'index'])->name('settings.index');
             Route::match(['put', 'patch'], 'settings', [Admin\SettingController::class, 'update'])
                 ->middleware('permission:manage_settings|manage_live|manage_prayer_settings')
