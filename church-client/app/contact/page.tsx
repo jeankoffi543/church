@@ -41,7 +41,7 @@ export default async function ContactPage() {
 
         <div className="flex flex-wrap items-stretch gap-8">
           {/* Info panel */}
-          <div className="relative flex flex-[1_1_340px] flex-col overflow-hidden rounded-[26px] bg-gradient-to-br from-indigo-mid to-ink p-[clamp(28px,4vw,44px)] text-white">
+          <div className="relative flex flex-[1.2_1_420px] flex-col overflow-hidden rounded-[26px] bg-gradient-to-br from-indigo-mid to-ink p-[clamp(28px,4vw,44px)] text-white">
             <div className="absolute -top-12 -right-12 size-[200px] rounded-full bg-[radial-gradient(circle,rgba(226,184,95,0.25),transparent_70%)]" />
             <Eyebrow className="text-gold">Nous trouver</Eyebrow>
             <h2 className="mt-3 mb-7 font-display text-[clamp(26px,3vw,36px)] leading-tight font-semibold italic">

@@ -25,7 +25,7 @@ export async function EventsTeaser() {
           </Link>
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-[18px]">
-          {events.map((e) => (
+          {events.slice(0, 4).map((e) => (
             <EventTeaserCard key={e.title} event={e} />
           ))}
         </div>

@@ -274,6 +274,9 @@ export type Sermon = {
   book: string;
   date: string;
   duration: string;
+  videoUrl?: string | null;
+  audioUrl?: string | null;
+  description?: string | null;
 };
 
 export const SERMONS: Sermon[] = [

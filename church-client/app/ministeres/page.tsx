@@ -32,7 +32,7 @@ export default async function MinisteresPage() {
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3.5">
             <BrandButton asChild variant="gold">
-              <Link href="/eglise">Trouver une cellule</Link>
+              <Link href="/groupes-de-maison">Trouver une cellule</Link>
             </BrandButton>
             <BrandButton asChild variant="outline">
               <Link href="/agenda">Voir l&apos;agenda</Link>
@@ -71,7 +71,7 @@ export default async function MinisteresPage() {
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3.5">
               <BrandButton asChild variant="gold">
-                <Link href="/eglise">
+                <Link href="/groupes-de-maison">
                   Rejoindre la Maison
                   <ArrowRight className="size-4" />
                 </Link>

@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Play } from "lucide-react";
-
 import { IMG } from "@/lib/data";
 import { getLatestSermon } from "@/lib/api";
 import { BrandButton } from "@/components/ui/brand-button";
+import { LatestMessagePlayButton } from "./latest-message-play-button";
+
 
 export async function LatestMessage() {
   const featured = await getLatestSermon();
@@ -21,12 +21,12 @@ export async function LatestMessage() {
             <span className="absolute top-[18px] left-[18px] rounded-[7px] bg-live/95 px-[11px] py-1.5 text-[11px] font-extrabold tracking-wide text-white">
               DERNIER MESSAGE
             </span>
-            <button
-              aria-label="Lire le message"
-              className="flex size-[74px] items-center justify-center rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm transition hover:bg-white/30"
-            >
-              <Play className="ml-1 size-6 fill-white text-white" />
-            </button>
+            <LatestMessagePlayButton
+              title={featured.title}
+              speaker={featured.speaker}
+              videoUrl={(featured as any).videoUrl}
+              audioUrl={(featured as any).audioUrl}
+            />
           </div>
 
           {/* Content */}

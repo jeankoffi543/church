@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 
 import { ADMIN_PREFIX } from "@/lib/auth/config";
+import { PlaybackProvider } from "./playback-context";
 
 /**
  * Wraps the public church site with its Navbar + Footer.
@@ -30,10 +31,13 @@ export function SiteFrame({
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-cream">
-      {navbar}
-      <main className="flex-1">{children}</main>
-      {footer}
-    </div>
+    <PlaybackProvider>
+      <div className="flex min-h-full flex-col bg-cream">
+        {navbar}
+        <main className="flex-1">{children}</main>
+        {footer}
+      </div>
+    </PlaybackProvider>
   );
 }
+
