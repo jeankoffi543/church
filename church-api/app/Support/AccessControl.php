@@ -92,6 +92,9 @@ final class AccessControl
                 ['name' => 'view_events', 'label' => "Consulter l'agenda et la liste des événements"],
                 ['name' => 'manage_events', 'label' => 'Créer, modifier, planifier et supprimer des événements'],
             ],
+            'Configuration & Vision' => [
+                ['name' => 'manage_pastor_word', 'label' => 'Gérer le mot du pasteur (Le Mot du Pasteur)'],
+            ],
         ];
     }
 
@@ -147,6 +150,7 @@ final class AccessControl
                 'view_contacts',
                 'manage_contacts',
                 'view_events',
+                'manage_pastor_word',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

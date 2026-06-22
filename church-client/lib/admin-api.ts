@@ -154,6 +154,54 @@ export async function updateAdminSettings(
   return result;
 }
 
+export type AdminPastorWord = {
+  user_id: number;
+  custom_title: string | null;
+  word: string;
+  photo_path: string | null;
+  social_links: {
+    facebook: string | null;
+    instagram: string | null;
+    youtube: string | null;
+  };
+  user_name?: string | null;
+};
+
+export type AdminUserOption = {
+  id: number;
+  name: string;
+  email: string;
+  is_active: boolean;
+};
+
+export async function getAdminPastorWord(): Promise<{
+  pastor_word: AdminPastorWord | null;
+  users: AdminUserOption[];
+}> {
+  return adminFetch<{
+    pastor_word: AdminPastorWord | null;
+    users: AdminUserOption[];
+  }>("/settings/pastor-word");
+}
+
+export async function updateAdminPastorWord(formData: FormData): Promise<{
+  message: string;
+  data: AdminPastorWord;
+}> {
+  const result = await adminFetch<{
+    message: string;
+    data: AdminPastorWord;
+  }>("/settings/pastor-word", {
+    method: "POST", // Use POST for multipart uploads
+    body: formData,
+  });
+
+  revalidateTag("settings", { expire: 0 });
+  revalidatePath("/");
+  revalidatePath("/eglise");
+  return result;
+}
+
 /* ── Ministries CRUD ─────────────────────────────────────────────── */
 
 export async function getAdminMinistries(): Promise<AdminMinistry[]> {

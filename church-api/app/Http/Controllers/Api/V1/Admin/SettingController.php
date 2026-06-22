@@ -7,6 +7,8 @@ use App\Http\Requests\V1\Admin\SettingsUpdateRequest;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use App\Models\User;
+use App\Http\Resources\V1\UserResource;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Support\Facades\DB;
 
@@ -54,7 +56,68 @@ class SettingController extends Controller
         });
     }
 
+    /**
+     * GET current pastor word configuration and list of active users.
+     */
+    public function getPastorWord(Request $request): JsonResponse
+    {
+        $setting = Setting::get('pastor_word_showcase');
+        $users = User::where('is_active', true)->orderBy('name')->get();
 
+        return response()->json([
+            'pastor_word' => $setting,
+            'users' => UserResource::collection($users),
+        ]);
+    }
+
+    /**
+     * PUT/POST update pastor word configuration (including profile image upload).
+     */
+    public function updatePastorWord(Request $request): JsonResponse
+    {
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'custom_title' => 'nullable|string|max:255',
+            'word' => 'required|string',
+            'photo' => 'nullable|image|max:5120', // max 5MB
+            'social_links' => 'nullable',
+        ]);
+
+        $existing = Setting::get('pastor_word_showcase') ?? [];
+        $photoPath = $existing['photo_path'] ?? null;
+
+        if ($request->hasFile('photo')) {
+            if ($photoPath) {
+                $this->deleteStoredFile($photoPath);
+            }
+            $file = $request->file('photo');
+            $photoPath = $this->uploadSingleFile($file, 'pastor');
+        }
+
+        $socialLinks = $request->input('social_links', []);
+        if (is_string($socialLinks)) {
+            $socialLinks = json_decode($socialLinks, true) ?? [];
+        }
+
+        $value = [
+            'user_id' => (int) $request->input('user_id'),
+            'custom_title' => $request->input('custom_title'),
+            'word' => $request->input('word'),
+            'photo_path' => $photoPath,
+            'social_links' => [
+                'facebook' => $socialLinks['facebook'] ?? null,
+                'instagram' => $socialLinks['instagram'] ?? null,
+                'youtube' => $socialLinks['youtube'] ?? null,
+            ],
+        ];
+
+        Setting::set('pastor_word_showcase', $value, 'pastor');
+
+        return response()->json([
+            'message' => 'Mot du Pasteur mis à jour avec succès.',
+            'data' => $value,
+        ]);
+    }
 
     /**
      * Delete a single setting by key.

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Home } from "lucide-react";
+import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Home, Quote } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
@@ -112,6 +112,13 @@ export function Navbar() {
                       icon={<Flame className="size-4" />}
                     >
                       Découvrez notre confession de foi, notre vision spirituelle et l&apos;équipe pastoral.
+                    </ListItem>
+                    <ListItem
+                      href="/eglise#mot-du-pasteur"
+                      title="Le Mot du Pasteur"
+                      icon={<Quote className="size-4" />}
+                    >
+                      Découvrez le message d&apos;accueil, d&apos;exhortation et la vision spirituelle du Pasteur.
                     </ListItem>
                     <ListItem
                       href="/branches"
@@ -264,6 +271,9 @@ export function Navbar() {
                   <div className="flex flex-col gap-2.5 pl-2">
                     <SheetClose asChild>
                       <Link href="/eglise" className={cn("text-[15px] font-bold", pathname === "/eglise" ? "text-gold-dark underline decoration-2 underline-offset-4" : "text-indigo")}>Notre Vision & Équipe</Link>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Link href="/eglise#mot-du-pasteur" className={cn("text-[15px] font-bold", pathname === "/eglise" && typeof window !== "undefined" && window.location.hash === "#mot-du-pasteur" ? "text-gold-dark underline decoration-2 underline-offset-4" : "text-indigo")}>Le Mot du Pasteur</Link>
                     </SheetClose>
                     <SheetClose asChild>
                       <Link href="/branches" className={cn("text-[15px] font-bold", pathname === "/branches" ? "text-gold-dark underline decoration-2 underline-offset-4" : "text-indigo")}>Nos branches</Link>

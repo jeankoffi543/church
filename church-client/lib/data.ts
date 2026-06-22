@@ -432,6 +432,8 @@ export const IMG = {
     "https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=1400&q=80&auto=format&fit=crop",
   agendaFeature:
     "https://images.unsplash.com/photo-1519491050282-cf00c82424b4?w=1100&q=80&auto=format&fit=crop",
+  pastorFallback:
+    "https://images.unsplash.com/photo-1447069387593-a5de0862481e?w=1100&q=80&auto=format&fit=crop",
 };
 
 export function formatFcfa(n: number): string {

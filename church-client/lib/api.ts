@@ -401,6 +401,30 @@ export async function getLiveConfig(): Promise<LiveConfig> {
   };
 }
 
+export type PastorWordShowcase = {
+  user_id: number;
+  custom_title: string;
+  word: string;
+  photo_path: string | null;
+  social_links: {
+    facebook?: string;
+    instagram?: string;
+    youtube?: string;
+  };
+  user_name: string | null;
+};
+
+export async function getPastorWordShowcase(): Promise<PastorWordShowcase | null> {
+  const json = await apiGet<{ data: PastorWordShowcase }>("/public/settings/pastor_word_showcase", ["settings", "settings-pastor_word_showcase"]);
+  if (!json?.data) return null;
+
+  const data = json.data;
+  return {
+    ...data,
+    photo_path: data.photo_path ? assetUrl(data.photo_path) : null,
+  };
+}
+
 // Re-export the settings response type for consumers that need it.
 export type { SettingsResponse };
 

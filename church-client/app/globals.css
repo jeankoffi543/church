@@ -151,3 +151,45 @@
 .mfm-popup .mapboxgl-popup-close-button {
   display: none;
 }
+
+/* ── Custom Scrollbar Utility ── */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(226, 184, 95, 0.4) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(226, 184, 95, 0.4);
+  border-radius: 4px;
+}
+
+/* ── Lightbox Animations ── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+.animate-scale-in {
+  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
