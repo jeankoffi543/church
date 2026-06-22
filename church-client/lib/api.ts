@@ -425,6 +425,42 @@ export async function getPastorWordShowcase(): Promise<PastorWordShowcase | null
   };
 }
 
+export type ChurchPresentationBanner = {
+  eyebrow: string;
+  quote: string;
+  short_description: string;
+  button_text: string;
+};
+
+export type PastorLongMessage = {
+  preacher_id: number;
+  custom_eyebrow: string;
+  custom_title: string;
+  guarantees_title: string;
+  guarantees_list: string[];
+  html_content: string;
+  preacher_name?: string | null;
+  preacher_role?: string | null;
+  preacher_initials?: string | null;
+  preacher_photo_path?: string | null;
+};
+
+export async function getChurchPresentationBanner(): Promise<ChurchPresentationBanner | null> {
+  const json = await apiGet<{ data: ChurchPresentationBanner }>("/public/settings/church_presentation_banner", ["settings", "settings-church_presentation_banner"]);
+  return json?.data || null;
+}
+
+export async function getPastorLongMessage(): Promise<PastorLongMessage | null> {
+  const json = await apiGet<{ data: PastorLongMessage }>("/public/settings/pastor_long_message", ["settings", "settings-pastor_long_message"]);
+  if (!json?.data) return null;
+
+  const data = json.data;
+  return {
+    ...data,
+    preacher_photo_path: data.preacher_photo_path ? assetUrl(data.preacher_photo_path) : null,
+  };
+}
+
 // Re-export the settings response type for consumers that need it.
 export type { SettingsResponse };
 

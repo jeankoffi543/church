@@ -61,28 +61,48 @@ class SettingController extends Controller
      */
     public function getPastorWord(Request $request): JsonResponse
     {
-        $setting = Setting::get('pastor_word_showcase');
-        $users = User::where('is_active', true)->orderBy('name')->get();
+        $pastorWord = Setting::get('pastor_word_showcase');
+        $banner = Setting::get('church_presentation_banner');
+        $longMessage = Setting::get('pastor_long_message');
+        $users = User::with('roles')->where('is_active', true)->orderBy('name')->get();
 
         return response()->json([
-            'pastor_word' => $setting,
+            'pastor_word' => $pastorWord,
+            'church_presentation_banner' => $banner,
+            'pastor_long_message' => $longMessage,
             'users' => UserResource::collection($users),
         ]);
     }
 
     /**
-     * PUT/POST update pastor word configuration (including profile image upload).
+     * PUT/POST update pastor word configuration.
      */
     public function updatePastorWord(Request $request): JsonResponse
     {
         $request->validate([
+            // pastor_word_showcase
             'user_id' => 'required|exists:users,id',
             'custom_title' => 'nullable|string|max:255',
             'word' => 'required|string',
             'photo' => 'nullable|image|max:5120', // max 5MB
             'social_links' => 'nullable',
+
+            // church_presentation_banner
+            'banner_eyebrow' => 'required|string|max:255',
+            'banner_quote' => 'required|string',
+            'banner_short_description' => 'required|string',
+            'banner_button_text' => 'required|string|max:255',
+
+            // pastor_long_message
+            'preacher_id' => 'required|exists:users,id',
+            'long_custom_eyebrow' => 'required|string|max:255',
+            'long_custom_title' => 'required|string|max:255',
+            'long_guarantees_title' => 'required|string',
+            'long_guarantees_list' => 'required|string', // JSON list
+            'long_html_content' => 'required|string',
         ]);
 
+        // 1. Process pastor_word_showcase photo & links
         $existing = Setting::get('pastor_word_showcase') ?? [];
         $photoPath = $existing['photo_path'] ?? null;
 
@@ -99,7 +119,7 @@ class SettingController extends Controller
             $socialLinks = json_decode($socialLinks, true) ?? [];
         }
 
-        $value = [
+        $pastorWordValue = [
             'user_id' => (int) $request->input('user_id'),
             'custom_title' => $request->input('custom_title'),
             'word' => $request->input('word'),
@@ -111,11 +131,35 @@ class SettingController extends Controller
             ],
         ];
 
-        Setting::set('pastor_word_showcase', $value, 'pastor');
+        // 2. Process church_presentation_banner
+        $bannerValue = [
+            'eyebrow' => $request->input('banner_eyebrow'),
+            'quote' => $request->input('banner_quote'),
+            'short_description' => $request->input('banner_short_description'),
+            'button_text' => $request->input('banner_button_text'),
+        ];
+
+        // 3. Process pastor_long_message
+        $guarantees = json_decode($request->input('long_guarantees_list', '[]'), true) ?? [];
+
+        $longMessageValue = [
+            'preacher_id' => (int) $request->input('preacher_id'),
+            'custom_eyebrow' => $request->input('long_custom_eyebrow'),
+            'custom_title' => $request->input('long_custom_title'),
+            'guarantees_title' => $request->input('long_guarantees_title'),
+            'guarantees_list' => $guarantees,
+            'html_content' => $request->input('long_html_content'),
+        ];
+
+        Setting::set('pastor_word_showcase', $pastorWordValue, 'pastor');
+        Setting::set('church_presentation_banner', $bannerValue, 'eglise');
+        Setting::set('pastor_long_message', $longMessageValue, 'eglise');
 
         return response()->json([
-            'message' => 'Mot du Pasteur mis à jour avec succès.',
-            'data' => $value,
+            'message' => 'Configuration du Pasteur et Présentation mise à jour avec succès.',
+            'pastor_word' => $pastorWordValue,
+            'church_presentation_banner' => $bannerValue,
+            'pastor_long_message' => $longMessageValue,
         ]);
     }
 

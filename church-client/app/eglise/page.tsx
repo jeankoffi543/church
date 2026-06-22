@@ -4,6 +4,7 @@ import { Flame, ArrowRight, ShieldCheck, HeartHandshake } from "lucide-react";
 import { PageHeader } from "@/components/sections/page-header";
 import { BrandButton } from "@/components/ui/brand-button";
 import { PastorWord } from "@/components/eglise/pastor-word";
+import { getChurchPresentationBanner } from "@/lib/api";
 
 export const metadata: Metadata = {
   title: "L'Église & Vision · MFM Ficgayo",
@@ -49,7 +50,15 @@ const PASTORS = [
   },
 ];
 
-export default function EglisePage() {
+export default async function EglisePage() {
+  const banner = await getChurchPresentationBanner();
+  const bannerData = banner || {
+    eyebrow: "Présentation MFM Ficgayo",
+    quote: "« Soyez les bienvenus sur cette page Prophétique... »",
+    short_description: "Découvrez l'exhortation prophétique du Pasteur David Odion Victor sur la puissance...",
+    button_text: "Lire le message"
+  };
+
   return (
     <>
       <section className="bg-cream px-6 pt-[clamp(96px,11vw,120px)] pb-10">
@@ -67,18 +76,18 @@ export default function EglisePage() {
             </div>
             <div className="flex-1 text-left space-y-1.5">
               <span className="text-[10px] font-bold tracking-wider text-gold-dark uppercase">
-                Présentation MFM Ficgayo
+                {bannerData.eyebrow}
               </span>
               <h3 className="font-display text-lg md:text-xl font-bold text-indigo leading-snug italic">
-                « Soyez les bienvenus sur cette page Prophétique... »
+                {bannerData.quote}
               </h3>
               <p className="text-xs md:text-sm text-body leading-relaxed max-w-2xl">
-                Découvrez l&apos;exhortation prophétique du Pasteur David Odion Victor sur la puissance de la vie de prière et les 3 garanties au nom de JÉSUS.
+                {bannerData.short_description}
               </p>
             </div>
             <BrandButton asChild variant="gold" className="w-full md:w-auto shrink-0 shadow-md">
-              <Link href="/eglise/mot-du-pasteur">
-                Lire le message <ArrowRight className="size-4" />
+              <Link href="/eglise/presentation">
+                {bannerData.button_text} <ArrowRight className="size-4" />
               </Link>
             </BrandButton>
           </div>
