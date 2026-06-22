@@ -18,6 +18,11 @@ export async function LatestMessage() {
     mediaSrc: featured.mediaSrc,
     mediaType: featured.mediaType,
     background: featured.background,
+    serie: featured.serie,
+    date: featured.date,
+    duration: featured.duration,
+    description: featured.desc,
+    scriptures: featured.scriptures,
   };
 
   return (

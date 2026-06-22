@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Play, Pause, Headphones, Video, FileText } from "lucide-react";
 
 import type { SermonMediaType } from "@/lib/data";
 import { useAudioPlayer } from "@/components/audio/audio-player";
 import { BrandButton } from "@/components/ui/brand-button";
 import { SermonVideoDialog } from "@/components/media/sermon-video-dialog";
+import { SermonReaderDialog, type ReaderSermon } from "@/components/media/sermon-reader";
 
 export type SermonMediaInfo = {
   id?: number | null;
@@ -17,6 +17,12 @@ export type SermonMediaInfo = {
   mediaSrc: string | null;
   mediaType: SermonMediaType | null;
   background?: string | null;
+  // Carried so a notes-only message can be read in place (no redirect).
+  serie?: string | null;
+  date?: string | null;
+  duration?: string | null;
+  description?: string | null;
+  scriptures?: string[];
 };
 
 const trackOf = (s: SermonMediaInfo) => ({
@@ -27,23 +33,42 @@ const trackOf = (s: SermonMediaInfo) => ({
   cover: s.background ?? null,
 });
 
+const readerOf = (s: SermonMediaInfo): ReaderSermon => ({
+  id: s.id,
+  title: s.title,
+  speaker: s.speaker ?? null,
+  serie: s.serie ?? null,
+  date: s.date ?? null,
+  duration: s.duration ?? null,
+  description: s.description ?? null,
+  mediaType: s.mediaType,
+  mediaSrc: s.mediaSrc,
+  background: s.background ?? null,
+  scriptures: s.scriptures ?? [],
+});
+
 /** Round overlay play button on the "Dernier message" cover. */
 export function SermonPlayOverlay({ sermon }: { sermon: SermonMediaInfo }) {
   const { play, toggle, isCurrent, isPlaying } = useAudioPlayer();
   const [videoOpen, setVideoOpen] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
   const isVideo = !sermon.isAudio && Boolean(sermon.mediaType);
   const active = isCurrent(sermon.id ?? undefined);
 
-  // No media → a quiet "notes" affordance.
+  // No media → open the in-place reader (notes / summary), no redirect.
   if (!sermon.mediaType) {
     return (
-      <Link
-        href="/mediatheque"
-        aria-label={`Lire les notes de ${sermon.title}`}
-        className="flex size-[74px] items-center justify-center rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm transition hover:bg-white/30"
-      >
-        <FileText className="size-6 text-white" />
-      </Link>
+      <>
+        <button
+          type="button"
+          aria-label={`Lire les notes de ${sermon.title}`}
+          onClick={() => setReaderOpen(true)}
+          className="flex size-[74px] cursor-pointer items-center justify-center rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm transition hover:bg-white/30"
+        >
+          <FileText className="size-6 text-white" />
+        </button>
+        <SermonReaderDialog open={readerOpen} onOpenChange={setReaderOpen} sermon={readerOf(sermon)} />
+      </>
     );
   }
 
@@ -80,15 +105,17 @@ export function SermonPlayOverlay({ sermon }: { sermon: SermonMediaInfo }) {
 export function SermonListenButton({ sermon }: { sermon: SermonMediaInfo }) {
   const { play } = useAudioPlayer();
   const [videoOpen, setVideoOpen] = useState(false);
+  const [readerOpen, setReaderOpen] = useState(false);
 
   if (!sermon.mediaType) {
     return (
-      <BrandButton asChild variant="dark" size="sm" className="px-6">
-        <Link href="/mediatheque">
+      <>
+        <BrandButton variant="dark" size="sm" className="px-6" onClick={() => setReaderOpen(true)}>
           <FileText className="size-4" />
           Lire le résumé
-        </Link>
-      </BrandButton>
+        </BrandButton>
+        <SermonReaderDialog open={readerOpen} onOpenChange={setReaderOpen} sermon={readerOf(sermon)} />
+      </>
     );
   }
 
