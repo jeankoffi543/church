@@ -267,16 +267,28 @@ export function getEventBySlug(slug: string): ChurchEvent | undefined {
   return EVENTS.find((e) => e.slug === slug);
 }
 
+export type SermonMediaType = "video_url" | "video_file" | "audio_url" | "audio_file";
+
 export type Sermon = {
+  id?: number;
   title: string;
   speaker: string;
   serie: string;
   book: string;
   date: string;
+  /** ISO date (YYYY-MM-DD) for chronological sorting of the date filter. */
+  dateISO?: string;
   duration: string;
-  videoUrl?: string | null;
-  audioUrl?: string | null;
-  description?: string | null;
+  desc?: string;
+  mediaType?: SermonMediaType;
+  isAudio?: boolean;
+  /** Playable source (absolute URL for files, external link otherwise). */
+  mediaSrc?: string | null;
+  /** Custom cover image (absolute URL) for the hero, or null. */
+  background?: string | null;
+  scriptures?: string[];
+  /** Canonical Bible books this sermon is categorised under. */
+  books?: string[];
 };
 
 export const SERMONS: Sermon[] = [

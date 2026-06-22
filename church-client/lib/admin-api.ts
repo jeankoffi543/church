@@ -17,6 +17,8 @@ export type AdminMinistry = {
   chef: { id: number; name: string; email: string } | null;
 };
 
+export type SermonMediaType = "video_url" | "video_file" | "audio_url" | "audio_file";
+
 export type AdminSermon = {
   id: number;
   series: string | null;
@@ -24,10 +26,17 @@ export type AdminSermon = {
   description: string | null;
   speaker: string;
   book: string | null;
-  preached_at: string;
+  date: string | null;
+  preached_at?: string;
   duration: string | null;
-  video_url: string | null;
-  audio_url: string | null;
+  media_type: SermonMediaType | null;
+  is_audio: boolean;
+  is_file: boolean;
+  media_url: string | null;
+  media_path: string | null;
+  background_image: string | null;
+  scriptures: string[];
+  books_category: string[];
   is_published: boolean;
 };
 
@@ -231,29 +240,7 @@ export async function getAdminSermons(): Promise<AdminSermon[]> {
   return response.data;
 }
 
-export async function createSermon(data: {
-  series?: string | null;
-  title: string;
-  description?: string | null;
-  speaker: string;
-  book?: string | null;
-  preached_at: string;
-  duration?: string | null;
-  video_url?: string | null;
-  audio_url?: string | null;
-  is_published?: boolean;
-}): Promise<{ data: AdminSermon }> {
-  const result = await adminFetch<{ data: AdminSermon }>("/sermons", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-  revalidateTag("sermons", { expire: 0 });
-  revalidatePath("/");
-  revalidatePath("/mediatheque");
-  return result;
-}
-
-export async function updateSermon(id: number, data: {
+export type SermonInput = {
   series?: string | null;
   title?: string;
   description?: string | null;
@@ -261,17 +248,72 @@ export async function updateSermon(id: number, data: {
   book?: string | null;
   preached_at?: string;
   duration?: string | null;
-  video_url?: string | null;
-  audio_url?: string | null;
+  // `null` → notes-only sermon (no media). Sent as "" and coerced server-side.
+  media_type?: SermonMediaType | null;
+  media_url?: string | null;
+  scriptures?: string[];
+  books_category?: string[];
   is_published?: boolean;
-}): Promise<{ data: AdminSermon }> {
-  const result = await adminFetch<{ data: AdminSermon }>(`/sermons/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
+};
+
+export type SermonFiles = {
+  media?: File | null;
+  background_image?: File | null;
+  remove_background_image?: boolean;
+};
+
+/** Build multipart form data for a sermon (text fields, media + cover files). */
+function buildSermonFormData(data: SermonInput, files?: SermonFiles): FormData {
+  const fd = new FormData();
+  if (data.series !== undefined) fd.append("series", data.series ?? "");
+  if (data.title !== undefined) fd.append("title", data.title);
+  if (data.description !== undefined) fd.append("description", data.description ?? "");
+  if (data.speaker !== undefined) fd.append("speaker", data.speaker);
+  if (data.book !== undefined) fd.append("book", data.book ?? "");
+  if (data.preached_at !== undefined) fd.append("preached_at", data.preached_at);
+  if (data.duration !== undefined) fd.append("duration", data.duration ?? "");
+  if (data.media_type !== undefined) fd.append("media_type", data.media_type ?? "");
+  if (data.media_url !== undefined) fd.append("media_url", data.media_url ?? "");
+  if (data.is_published !== undefined) fd.append("is_published", data.is_published ? "1" : "0");
+  // Scriptures & book categories travel as JSON strings; the backend decodes them.
+  if (data.scriptures !== undefined) fd.append("scriptures", JSON.stringify(data.scriptures));
+  if (data.books_category !== undefined) fd.append("books_category", JSON.stringify(data.books_category));
+  if (files?.media) fd.append("media", files.media);
+  if (files?.background_image) fd.append("background_image", files.background_image);
+  if (files?.remove_background_image) fd.append("remove_background_image", "1");
+  return fd;
+}
+
+function revalidateSermons() {
   revalidateTag("sermons", { expire: 0 });
   revalidatePath("/");
   revalidatePath("/mediatheque");
+}
+
+export async function createSermon(
+  data: SermonInput & { title: string; speaker: string; preached_at: string; media_type: SermonMediaType | null },
+  files?: SermonFiles
+): Promise<{ data: AdminSermon }> {
+  const result = await adminFetch<{ data: AdminSermon }>("/sermons", {
+    method: "POST",
+    body: buildSermonFormData(data, files),
+  });
+  revalidateSermons();
+  return result;
+}
+
+export async function updateSermon(
+  id: number,
+  data: SermonInput,
+  files?: SermonFiles
+): Promise<{ data: AdminSermon }> {
+  const fd = buildSermonFormData(data, files);
+  fd.append("_method", "PUT");
+  const result = await adminFetch<{ data: AdminSermon }>(`/sermons/${id}`, {
+    method: "POST",
+    body: fd,
+  });
+  revalidateSermons();
   return result;
 }
 

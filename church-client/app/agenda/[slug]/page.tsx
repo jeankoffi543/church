@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { getEvent, getEvents } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { BrandButton } from "@/components/ui/brand-button";
 import { IMG } from "@/lib/data";
 
@@ -45,6 +46,11 @@ export default async function EventDetailPage({
   const { slug } = await params;
   const event = await getEvent(slug);
   if (!event) notFound();
+
+  // The hero image is the event's only rich media. Without it, we skip the
+  // image-backed banner (no broken/empty visual) and render a clean, full-width
+  // text reader instead.
+  const hasMedia = Boolean(event.image);
 
   return (
     <article className="bg-cream pb-[clamp(72px,9vw,108px)]">
@@ -92,15 +98,24 @@ export default async function EventDetailPage({
       })()}
 
       {/* ── Body ────────────────────────────────────────────── */}
-      <div className="mx-auto grid max-w-[1000px] grid-cols-1 gap-10 px-6 pt-[clamp(40px,6vw,72px)] lg:grid-cols-[1fr_340px]">
+      <div
+        className={cn(
+          "mx-auto grid max-w-[1000px] grid-cols-1 gap-10 px-6 pt-[clamp(40px,6vw,72px)]",
+          hasMedia && "lg:grid-cols-[1fr_340px]"
+        )}
+      >
         {/* Main */}
         <div>
           <h2 className="font-display text-[26px] font-semibold text-indigo italic">
             À propos de ce programme
           </h2>
-          <p className="mt-4 text-[16px] leading-[1.75] text-body">
-            {event.description}
-          </p>
+          {/* Bounded reader: a long description scrolls inside its block instead
+              of stretching the page. */}
+          <div className="mt-4 max-h-[250px] overflow-y-auto rounded-xl border border-muted/50 bg-muted/30 p-6 pr-4 leading-relaxed text-muted-foreground shadow-inner [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted">
+            <p className="text-[16px] leading-[1.75] text-body">
+              {event.description}
+            </p>
+          </div>
 
           <h3 className="mt-10 mb-4 text-[15px] font-bold tracking-wide text-indigo uppercase">
             Au programme
