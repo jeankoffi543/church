@@ -83,6 +83,7 @@ type ApiSermon = {
   media_path: string | null;
   background_image: string | null;
   scriptures: string[];
+  books_category: string[] | null;
 };
 
 type ApiEvent = {
@@ -133,6 +134,7 @@ const mapSermon = (s: ApiSermon): Sermon => ({
   serie: s.series ?? "",
   book: s.book ?? "",
   date: s.date_label ?? s.date ?? "",
+  dateISO: s.date ?? "",
   duration: s.duration ?? "",
   desc: s.description ?? "",
   mediaType: s.media_type ?? undefined,
@@ -141,6 +143,7 @@ const mapSermon = (s: ApiSermon): Sermon => ({
   mediaSrc: s.is_file ? assetUrl(s.media_url) : s.media_url,
   background: assetUrl(s.background_image),
   scriptures: s.scriptures ?? [],
+  books: s.books_category ?? [],
 });
 
 const mapEvent = (e: ApiEvent): ChurchEvent => ({

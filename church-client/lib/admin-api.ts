@@ -36,6 +36,7 @@ export type AdminSermon = {
   media_path: string | null;
   background_image: string | null;
   scriptures: string[];
+  books_category: string[];
   is_published: boolean;
 };
 
@@ -251,6 +252,7 @@ export type SermonInput = {
   media_type?: SermonMediaType | null;
   media_url?: string | null;
   scriptures?: string[];
+  books_category?: string[];
   is_published?: boolean;
 };
 
@@ -273,8 +275,9 @@ function buildSermonFormData(data: SermonInput, files?: SermonFiles): FormData {
   if (data.media_type !== undefined) fd.append("media_type", data.media_type ?? "");
   if (data.media_url !== undefined) fd.append("media_url", data.media_url ?? "");
   if (data.is_published !== undefined) fd.append("is_published", data.is_published ? "1" : "0");
-  // Scriptures travel as a JSON string; the backend decodes them.
+  // Scriptures & book categories travel as JSON strings; the backend decodes them.
   if (data.scriptures !== undefined) fd.append("scriptures", JSON.stringify(data.scriptures));
+  if (data.books_category !== undefined) fd.append("books_category", JSON.stringify(data.books_category));
   if (files?.media) fd.append("media", files.media);
   if (files?.background_image) fd.append("background_image", files.background_image);
   if (files?.remove_background_image) fd.append("remove_background_image", "1");

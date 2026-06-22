@@ -130,6 +130,9 @@ class SermonSeeder extends Seeder
             $scriptures = $data['scriptures'];
             unset($data['scriptures']);
 
+            // Seed the canonical book categories from the legacy single `book`.
+            $data['books_category'] = isset($data['book']) && $data['book'] !== null ? [$data['book']] : null;
+
             $sermon = Sermon::updateOrCreate(
                 ['title' => $data['title']],
                 [...$data, 'is_published' => true],

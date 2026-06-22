@@ -25,6 +25,11 @@ class SermonRequest extends FormRequest
             $this->merge(['scriptures' => is_array($decoded) ? $decoded : []]);
         }
 
+        if (is_string($this->input('books_category'))) {
+            $decoded = json_decode($this->input('books_category'), true);
+            $this->merge(['books_category' => is_array($decoded) ? $decoded : []]);
+        }
+
         if ($this->has('is_published')) {
             $this->merge(['is_published' => filter_var($this->input('is_published'), FILTER_VALIDATE_BOOLEAN)]);
         }
@@ -72,6 +77,10 @@ class SermonRequest extends FormRequest
 
             'scriptures' => ['nullable', 'array'],
             'scriptures.*' => ['string', 'max:255'],
+
+            // Canonical Bible books (multi-select categories).
+            'books_category' => ['nullable', 'array'],
+            'books_category.*' => ['string', 'max:255'],
         ];
     }
 

@@ -100,6 +100,38 @@ it('clears stored media when a sermon is switched to notes only', function () {
     expect($sermon->fresh()->media_path)->toBeNull();
 });
 
+it('stores and exposes the Bible book categories', function () {
+    actingAsSuperAdmin();
+
+    $this->postJson('/api/v1/admin/sermons', [
+        'title' => 'Catégories bibliques',
+        'speaker' => 'X',
+        'preached_at' => '2026-06-14',
+        'media_type' => 'video_url',
+        'media_url' => 'https://youtube.com/watch?v=z',
+        'books_category' => ['Romains', 'Galates'],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.books_category', ['Romains', 'Galates'])
+        // The legacy single `book` mirrors the first category.
+        ->assertJsonPath('data.book', 'Romains');
+
+    expect(Sermon::first()->books_category)->toBe(['Romains', 'Galates']);
+});
+
+it('rejects a non-array books_category', function () {
+    actingAsSuperAdmin();
+
+    $this->postJson('/api/v1/admin/sermons', [
+        'title' => 'Mauvais type',
+        'speaker' => 'X',
+        'preached_at' => '2026-06-14',
+        'media_type' => 'video_url',
+        'media_url' => 'https://youtube.com/watch?v=z',
+        'books_category' => [['nested' => true]],
+    ])->assertStatus(422)->assertJsonValidationErrors('books_category.0');
+});
+
 it('de-duplicates scriptures and replaces them on update', function () {
     actingAsSuperAdmin();
     $sermon = Sermon::factory()->create();
