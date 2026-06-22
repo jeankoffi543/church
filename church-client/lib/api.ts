@@ -22,6 +22,7 @@ import {
   type Ministry,
   type ServiceTime,
   type Sermon,
+  type SermonMediaType,
 } from "./data";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -66,6 +67,7 @@ type ApiMinistry = {
 };
 
 type ApiSermon = {
+  id: number;
   series: string | null;
   title: string;
   description: string | null;
@@ -74,6 +76,13 @@ type ApiSermon = {
   date_label: string | null;
   date: string | null;
   duration: string | null;
+  media_type: "video_url" | "video_file" | "audio_url" | "audio_file" | null;
+  is_audio: boolean;
+  is_file: boolean;
+  media_url: string | null;
+  media_path: string | null;
+  background_image: string | null;
+  scriptures: string[];
 };
 
 type ApiEvent = {
@@ -118,12 +127,20 @@ const mapMinistry = (m: ApiMinistry): Ministry => ({
 });
 
 const mapSermon = (s: ApiSermon): Sermon => ({
+  id: s.id,
   title: s.title,
   speaker: s.speaker,
   serie: s.series ?? "",
   book: s.book ?? "",
   date: s.date_label ?? s.date ?? "",
   duration: s.duration ?? "",
+  desc: s.description ?? "",
+  mediaType: s.media_type ?? undefined,
+  isAudio: s.is_audio,
+  // `media_url` already carries the file path for *_file types; resolve it.
+  mediaSrc: s.is_file ? assetUrl(s.media_url) : s.media_url,
+  background: assetUrl(s.background_image),
+  scriptures: s.scriptures ?? [],
 });
 
 const mapEvent = (e: ApiEvent): ChurchEvent => ({
@@ -165,15 +182,43 @@ export async function getMinistries(): Promise<Ministry[]> {
 }
 
 export async function getSermons(): Promise<Sermon[]> {
-  const json = await apiGet<{ data: ApiSermon[] }>("/public/sermons", ["sermons"]);
+  // Fetch a generous page so the médiathèque can paginate/filter client-side.
+  const json = await apiGet<{ data: ApiSermon[] }>("/public/sermons?per_page=100", ["sermons"]);
   return json?.data ? json.data.map(mapSermon) : SERMONS;
 }
 
-export async function getLatestSermon() {
+export type LatestSermon = {
+  id: number | null;
+  serie: string;
+  title: string;
+  speaker: string;
+  reference: string;
+  date: string;
+  duration: string;
+  desc: string;
+  mediaType: SermonMediaType | null;
+  isAudio: boolean;
+  mediaSrc: string | null;
+  background: string | null;
+  scriptures: string[];
+};
+
+export async function getLatestSermon(): Promise<LatestSermon> {
   const json = await apiGet<{ data: ApiSermon }>("/public/sermons/latest", ["sermons"]);
-  if (!json?.data) return FEATURED_SERMON;
+  if (!json?.data) {
+    return {
+      ...FEATURED_SERMON,
+      id: null,
+      mediaType: null,
+      isAudio: false,
+      mediaSrc: null,
+      background: null,
+      scriptures: [],
+    };
+  }
   const s = json.data;
   return {
+    id: s.id,
     serie: s.series ? `Série · ${s.series}` : FEATURED_SERMON.serie,
     title: s.title,
     speaker: s.speaker,
@@ -181,6 +226,11 @@ export async function getLatestSermon() {
     date: s.date_label ?? s.date ?? "",
     duration: s.duration ?? "",
     desc: s.description ?? "",
+    mediaType: s.media_type,
+    isAudio: s.is_audio,
+    mediaSrc: s.is_file ? assetUrl(s.media_url) : s.media_url,
+    background: assetUrl(s.background_image),
+    scriptures: s.scriptures ?? [],
   };
 }
 

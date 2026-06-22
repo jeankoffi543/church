@@ -26,6 +26,24 @@ class SermonResource extends JsonResource
             'date' => $this->preached_at?->toDateString(),
             'date_label' => $this->preached_at?->translatedFormat('d F Y'),
             'duration' => $this->duration,
+            'media_type' => $this->media_type?->value,
+            'is_audio' => (bool) $this->media_type?->isAudio(),
+            'is_file' => (bool) $this->media_type?->isFile(),
+            // Playable source: external URL, or a Range-capable stream route for
+            // uploaded files (so browsers can play/seek them reliably). The `?v`
+            // fingerprint changes whenever the underlying file changes, busting
+            // the browser cache for that otherwise-stable per-sermon URL.
+            'media_url' => $this->media_type?->isFile()
+                ? route('api.v1.public.sermons.stream', $this->id, absolute: false).'?v='.substr(md5((string) $this->media_path), 0, 8)
+                : $this->media_url,
+            'media_path' => $this->media_path,
+            'background_image' => $this->background_image,
+            'scriptures' => $this->whenLoaded(
+                'scriptures',
+                fn () => $this->scriptures->pluck('reference')->all(),
+                []
+            ),
+            // Legacy fields kept for backward compatibility.
             'video_url' => $this->video_url,
             'audio_url' => $this->audio_url,
             'is_published' => $this->is_published,

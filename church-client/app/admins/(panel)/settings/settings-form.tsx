@@ -463,7 +463,7 @@ export function SettingsForm({
               </p>
 
               {heroBackground ? (
-                <div className="relative aspect-video w-full max-w-[580px] overflow-hidden rounded-2xl border border-[rgba(40,25,80,0.12)] bg-[#160f33]">
+                <div className="mx-auto relative aspect-video w-full max-w-145 overflow-hidden rounded-2xl border border-[rgba(40,25,80,0.12)] bg-ink">
                   {heroBackgroundType === "video" ? (
                     <video
                       src={getPreviewUrl(heroBackground)}
@@ -504,7 +504,7 @@ export function SettingsForm({
                   </div>
                 </div>
               ) : (
-                <label className="flex aspect-video w-full max-w-[580px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
+                <label className="mx-auto flex aspect-video w-full max-w-[580px] cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
                   <span className="flex size-12 items-center justify-center rounded-full bg-indigo/5 text-indigo">
                     <ImagePlus className="size-5" />
                   </span>

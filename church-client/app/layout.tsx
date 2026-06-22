@@ -4,6 +4,7 @@ import "./globals.css";
 import { SiteFrame } from "@/components/layout/site-frame";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import { AudioPlayerProvider } from "@/components/audio/audio-player";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -35,9 +36,11 @@ export default function RootLayout({
       className={`${jakarta.variable} ${cormorant.variable} h-full`}
     >
       <body className="min-h-full">
-        <SiteFrame navbar={<Navbar />} footer={<Footer />}>
-          {children}
-        </SiteFrame>
+        <AudioPlayerProvider>
+          <SiteFrame navbar={<Navbar />} footer={<Footer />}>
+            {children}
+          </SiteFrame>
+        </AudioPlayerProvider>
       </body>
     </html>
   );
