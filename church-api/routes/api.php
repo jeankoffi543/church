@@ -75,6 +75,12 @@ Route::prefix('v1')->group(function (): void {
         Route::post('live/leave', [Public\LiveController::class, 'leave'])->name('live.leave');
         // Time-synced chat replay for an archived broadcast.
         Route::get('past-lives/{pastLive:slug}/chat', [Public\LiveController::class, 'archivedChat'])->name('past-lives.chat');
+
+        // Self-hosted RTMP→HLS: Nginx `on_publish` stream-key authorization, and
+        // `on_publish_done` end-of-stream auto-archival.
+        Route::post('rtmp/auth', [Public\RtmpController::class, 'authorizePublish'])->name('rtmp.auth');
+        Route::post('rtmp/done', [Public\RtmpController::class, 'publishDone'])->name('rtmp.done');
+        Route::post('rtmp/recorded', [Public\RtmpController::class, 'recorded'])->name('rtmp.recorded');
     });
 
     // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────

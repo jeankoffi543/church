@@ -42,11 +42,13 @@ const REVALIDATE = 60;
 /**
  * GET a JSON endpoint, returning `null` on any failure (network, non-2xx…).
  */
-async function apiGet<T>(path: string, tags?: string[]): Promise<T | null> {
+async function apiGet<T>(path: string, tags?: string[], opts?: { noStore?: boolean }): Promise<T | null> {
   try {
     const res = await fetch(`${API_URL}${path}`, {
       headers: { Accept: "application/json" },
-      next: { revalidate: REVALIDATE, tags },
+      // Some views (e.g. the lives archive, updated by the live engine outside
+      // Next's cache) must always reflect the latest server state.
+      ...(opts?.noStore ? { cache: "no-store" as const } : { next: { revalidate: REVALIDATE, tags } }),
     });
     if (!res.ok) return null;
     return (await res.json()) as T;
@@ -835,6 +837,7 @@ type ApiPastLive = {
   media_type: SermonMediaType | null;
   media_src: string | null;
   has_chat?: boolean;
+  source_type?: "live_archive" | "upload";
 };
 
 export type PastLive = {
@@ -853,6 +856,7 @@ export type PastLive = {
   mediaSrc: string | null;
   youtubeId: string | null;
   hasChat: boolean;
+  fromLive: boolean;
 };
 
 const mapPastLive = (l: ApiPastLive): PastLive => ({
@@ -872,16 +876,17 @@ const mapPastLive = (l: ApiPastLive): PastLive => ({
   mediaSrc: l.media_type === "video_file" ? assetUrl(l.media_src) : l.media_src,
   youtubeId: l.youtube_id,
   hasChat: Boolean(l.has_chat),
+  fromLive: l.source_type === "live_archive",
 });
 
 export async function getPastLives(): Promise<PastLive[]> {
   // Fetch the whole archive so the client can group by month, filter by series /
   // year and "load more" without extra round-trips.
-  const json = await apiGet<{ data: ApiPastLive[] }>("/public/past-lives?per_page=500", ["past-lives"]);
+  const json = await apiGet<{ data: ApiPastLive[] }>("/public/past-lives?per_page=500", ["past-lives"], { noStore: true });
   return json?.data ? json.data.map(mapPastLive) : [];
 }
 
 export async function getLatestPastLive(): Promise<PastLive | null> {
-  const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"]);
+  const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"], { noStore: true });
   return json?.data ? mapPastLive(json.data) : null;
 }

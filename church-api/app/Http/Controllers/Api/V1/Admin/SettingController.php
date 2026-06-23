@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Events\LiveStateChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\SettingsUpdateRequest;
 use App\Http\Resources\V1\UserResource;
@@ -55,9 +56,11 @@ class SettingController extends Controller
             // live → archive metadata + chat into past_lives.
             $isLive = (bool) Setting::get('live_status');
             if ($isLive && ! $wasLive) {
-                Setting::set('live_started_at', now()->toIso8601String(), 'live');
+                $startedAt = now()->toIso8601String();
+                Setting::set('live_started_at', $startedAt, 'live');
+                broadcast(new LiveStateChanged(true, $startedAt));
             } elseif (! $isLive && $wasLive) {
-                Artisan::call('mfm:archive-live');
+                Artisan::call('mfm:archive-live'); // broadcasts LiveStateChanged(false)
             }
 
             return response()->json([

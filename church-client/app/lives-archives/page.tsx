@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   description: "Rediffusions cinématographiques et archives vidéo de nos cultes et enseignements passés.",
 };
 
+// Always reflect the latest archive (the live engine adds entries outside Next's cache).
+export const dynamic = "force-dynamic";
+
 export default async function LivesArchivesPage() {
   const [latest, lives] = await Promise.all([getLatestPastLive(), getPastLives()]);
 

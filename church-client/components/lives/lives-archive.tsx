@@ -106,9 +106,16 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
           style={{ backgroundImage: `linear-gradient(180deg,rgba(13,9,30,.25),rgba(13,9,30,.65) 55%,#0d091e),url('${latest.thumbnail ?? IMG_FALLBACK}')` }}
         >
           <div className="mx-auto w-full max-w-[1200px] px-6 pb-[clamp(32px,5vw,64px)]">
-            {latest.series && (
-              <span className="mb-3 inline-block rounded-md bg-gold/90 px-3 py-1 text-[11px] font-extrabold tracking-wider text-indigo uppercase">{latest.series}</span>
-            )}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {latest.series && (
+                <span className="inline-block rounded-md bg-gold/90 px-3 py-1 text-[11px] font-extrabold tracking-wider text-indigo uppercase">{latest.series}</span>
+              )}
+              {latest.fromLive && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-live/90 px-3 py-1 text-[11px] font-extrabold tracking-wider text-white uppercase shadow-[0_0_12px_rgba(226,59,59,0.35)]">
+                  <span className="size-1.5 rounded-full bg-white" /> Replay du direct
+                </span>
+              )}
+            </div>
             <h1 className="max-w-[820px] font-display text-[clamp(34px,5.6vw,68px)] leading-[1.02] font-semibold text-white italic">{latest.title}</h1>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13.5px] font-semibold text-white/70">
               {latest.preacher && <span>{latest.preacher}</span>}
@@ -276,6 +283,11 @@ function LiveCard({ live, onPlay }: { live: PastLive; onPlay: () => void }) {
           className="size-full"
         />
         <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink/55 to-transparent" />
+        {live.fromLive && (
+          <span className="absolute top-2 left-2 flex items-center gap-1 rounded-md bg-live/90 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white uppercase shadow-[0_0_12px_rgba(226,59,59,0.35)]">
+            <span className="size-1.5 rounded-full bg-white" /> Replay du direct
+          </span>
+        )}
         <span className="absolute inset-0 m-auto flex size-14 items-center justify-center rounded-full bg-white/15 opacity-0 backdrop-blur-md transition group-hover:opacity-100">
           <Play className="ml-0.5 size-6 fill-white text-white" />
         </span>

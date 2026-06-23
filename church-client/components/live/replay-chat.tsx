@@ -11,7 +11,16 @@ import { LiveChat } from "./live-chat";
  * those whose `time_offset_seconds` has been reached by the player's clock —
  * recreating the live conversation in step with the rediffusion.
  */
-export function ReplayChat({ slug, currentTime }: { slug: string; currentTime: number }) {
+export function ReplayChat({
+  slug,
+  currentTime,
+  synced = true,
+}: {
+  slug: string;
+  currentTime: number;
+  /** When false (e.g. a Facebook embed with no time source), show the full chat. */
+  synced?: boolean;
+}) {
   const [all, setAll] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
@@ -24,7 +33,10 @@ export function ReplayChat({ slug, currentTime }: { slug: string; currentTime: n
     };
   }, [slug]);
 
-  const visible = useMemo(() => all.filter((m) => m.time_offset_seconds <= currentTime), [all, currentTime]);
+  const visible = useMemo(
+    () => (synced ? all.filter((m) => m.time_offset_seconds <= currentTime) : all),
+    [all, currentTime, synced],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#120d28] text-white">

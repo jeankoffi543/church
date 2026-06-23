@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { extractYouTubeId, extractVimeoId, formatTime } from "@/lib/media";
 import { MEDIA_EVENTS, emitMedia, onMedia } from "@/lib/media-bus";
 import { loadYouTubeApi, type YTPlayer } from "@/lib/youtube";
+import { HlsPlayer } from "@/components/live/hls-player";
 import type { SermonMediaType } from "@/lib/data";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const;
@@ -70,15 +71,46 @@ export function CustomVideoPlayer({
 
   const ytId = mediaType === "video_url" && src ? extractYouTubeId(src) : null;
   const vimeoId = mediaType === "video_url" && src ? extractVimeoId(src) : null;
+  const hlsSrc = mediaType === "video_url" && src && /\.m3u8(\?|$)/i.test(src) ? src : null;
+  const fbSrc =
+    mediaType === "video_url" && src && /facebook\.com|fb\.watch|fb\.me/.test(src) ? src : null;
   const fileSrc =
-    mediaType === "video_file" ? src : mediaType === "video_url" && !ytId && !vimeoId ? src : null;
+    mediaType === "video_file"
+      ? src
+      : mediaType === "video_url" && !ytId && !vimeoId && !hlsSrc && !fbSrc
+        ? src
+        : null;
 
-  if (error || (!ytId && !vimeoId && !fileSrc)) {
+  if (error || (!ytId && !vimeoId && !hlsSrc && !fbSrc && !fileSrc)) {
     return <VideoError />;
   }
 
   if (ytId) {
     return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onTime={onTime} onError={() => setError(true)} resumeKey={resumeKey} />;
+  }
+
+  if (hlsSrc) {
+    return (
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
+        <HlsPlayer src={hlsSrc} title={title} onTime={onTime} />
+      </div>
+    );
+  }
+
+  if (fbSrc) {
+    const embed = fbSrc.includes("plugins/video.php")
+      ? fbSrc
+      : `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(fbSrc)}&show_text=false`;
+    return (
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:size-full">
+        <iframe
+          src={embed}
+          title={title ?? "Vidéo"}
+          allow="autoplay; encrypted-media; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    );
   }
 
   if (vimeoId) {

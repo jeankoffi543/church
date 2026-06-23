@@ -64,10 +64,10 @@ export function AnalyticsDialog({
           <div className="flex flex-col gap-6 px-6 py-6">
             {/* KPI cards */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <MetricCard icon={<Eye className="size-4" />} label="Vues uniques" value={data.views_count.toLocaleString("fr-FR")} />
-              <MetricCard icon={<MessagesSquare className="size-4" />} label="Messages" value={data.messages_count.toLocaleString("fr-FR")} />
-              <MetricCard icon={<Sparkles className="size-4" />} label="Réactions" value={totalReactions.toLocaleString("fr-FR")} />
-              <MetricCard icon={<BarChart3 className="size-4" />} label="Engagement" value={`${engagement}%`} />
+              <MetricCard icon={<Eye className="size-4" />} label="Vues uniques" value={data.views_count.toLocaleString("fr-FR")} hint="Spectateurs uniques (anti-rafraîchissement, fenêtre de 12 h)." />
+              <MetricCard icon={<MessagesSquare className="size-4" />} label="Messages" value={data.messages_count.toLocaleString("fr-FR")} hint="Nombre total de messages de chat durant le direct." />
+              <MetricCard icon={<Sparkles className="size-4" />} label="Réactions" value={totalReactions.toLocaleString("fr-FR")} hint="Total des émojis (Feu, Adoration, Colombe, Couronne, Amour) envoyés." />
+              <MetricCard icon={<BarChart3 className="size-4" />} label="Engagement" value={`${engagement}%`} hint="Participation au chat : messages pour 100 vues uniques." />
             </div>
 
             {/* Reaction histogram */}
@@ -104,16 +104,26 @@ export function AnalyticsDialog({
               {data.chat_timeline.length === 0 ? (
                 <p className="text-xs text-faint">Aucun message pour tracer la courbe.</p>
               ) : (
-                <div className="flex h-32 items-end gap-1.5 rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/40 p-3">
-                  {data.chat_timeline.map((b) => (
-                    <div key={b.minute} className="flex flex-1 flex-col items-center gap-1.5" title={`${b.count} message(s)`}>
-                      <div
-                        className="w-full rounded-t bg-gradient-to-t from-gold-dark to-gold transition-[height] duration-500"
-                        style={{ height: `${(b.count / maxBucket) * 100}%` }}
-                      />
-                      <span className="text-[9px] font-semibold text-faint">{b.minute}′</span>
-                    </div>
-                  ))}
+                <div className="rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/40 p-3">
+                  {/* Bars: each column is full-height so the % height resolves. */}
+                  <div className="flex h-32 items-end gap-1.5">
+                    {data.chat_timeline.map((b) => (
+                      <div key={b.minute} className="flex h-full flex-1 items-end" title={`${b.minute} min · ${b.count} message(s)`}>
+                        <div
+                          className="w-full rounded-t bg-gradient-to-t from-gold-dark to-gold transition-[height] duration-500"
+                          style={{ height: `${Math.max(6, (b.count / maxBucket) * 100)}%` }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {/* Minute axis */}
+                  <div className="mt-1.5 flex gap-1.5">
+                    {data.chat_timeline.map((b) => (
+                      <span key={b.minute} className="flex-1 text-center text-[9px] font-semibold text-faint">
+                        {b.minute}′
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </section>
@@ -124,9 +134,9 @@ export function AnalyticsDialog({
   );
 }
 
-function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function MetricCard({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/50 p-3.5">
+    <div title={hint} className="flex flex-col gap-1.5 rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/50 p-3.5">
       <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-wide text-body uppercase">
         {icon} {label}
       </span>
