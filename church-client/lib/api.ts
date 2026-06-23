@@ -445,6 +445,30 @@ export type PastorLongMessage = {
   preacher_photo_path?: string | null;
 };
 
+export type ChurchPillarsVision = {
+  title: string;
+  intro: string;
+  pillars: Array<{
+    title: string;
+    desc: string;
+    icon_name: "Flame" | "ShieldCheck" | "HeartHandshake";
+  }>;
+};
+
+export type ChurchPastoralTeam = {
+  title: string;
+  intro: string;
+  member_ids: number[];
+  pastors?: Array<{
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    initials: string;
+    photo_path: string | null;
+  }>;
+};
+
 export async function getChurchPresentationBanner(): Promise<ChurchPresentationBanner | null> {
   const json = await apiGet<{ data: ChurchPresentationBanner }>("/public/settings/church_presentation_banner", ["settings", "settings-church_presentation_banner"]);
   return json?.data || null;
@@ -458,6 +482,23 @@ export async function getPastorLongMessage(): Promise<PastorLongMessage | null> 
   return {
     ...data,
     preacher_photo_path: data.preacher_photo_path ? assetUrl(data.preacher_photo_path) : null,
+  };
+}
+
+export async function getChurchPillarsVision(): Promise<ChurchPillarsVision | null> {
+  const json = await apiGet<{ data: ChurchPillarsVision }>("/public/settings/church_pillars_vision", ["settings", "settings-church_pillars_vision"]);
+  return json?.data || null;
+}
+
+export async function getChurchPastoralTeam(): Promise<ChurchPastoralTeam | null> {
+  const json = await apiGet<{ data: ChurchPastoralTeam }>("/public/settings/church_pastoral_team", ["settings", "settings-church_pastoral_team"]);
+  if (!json?.data) return null;
+  return {
+    ...json.data,
+    pastors: json.data.pastors?.map((p) => ({
+      ...p,
+      photo_path: assetUrl(p.photo_path),
+    })),
   };
 }
 

@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   viewContacts: "view_contacts",
   manageContacts: "manage_contacts",
   managePastorWord: "manage_pastor_word",
+  manageChurchVision: "manage_church_vision",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

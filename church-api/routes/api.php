@@ -69,6 +69,12 @@ Route::prefix('v1')->group(function (): void {
             Route::match(['put', 'post'], 'settings/pastor-word', [Admin\SettingController::class, 'updatePastorWord'])
                 ->middleware('permission:manage_pastor_word')
                 ->name('settings.pastor-word.update');
+            Route::get('settings/church-vision', [Admin\SettingController::class, 'getChurchVision'])
+                ->middleware('permission:manage_church_vision')
+                ->name('settings.church-vision.get');
+            Route::match(['put', 'post'], 'settings/church-vision', [Admin\SettingController::class, 'updateChurchVision'])
+                ->middleware('permission:manage_church_vision')
+                ->name('settings.church-vision.update');
             Route::get('settings', [Admin\SettingController::class, 'index'])->name('settings.index');
             Route::match(['put', 'patch'], 'settings', [Admin\SettingController::class, 'update'])
                 ->middleware('permission:manage_settings|manage_live|manage_prayer_settings')

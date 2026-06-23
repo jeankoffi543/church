@@ -164,6 +164,117 @@ class SettingController extends Controller
     }
 
     /**
+     * GET current church pillars and pastoral team.
+     */
+    public function getChurchVision(Request $request): JsonResponse
+    {
+        $pillars = Setting::get('church_pillars_vision');
+        $team = Setting::get('church_pastoral_team');
+        $users = User::with('roles')->where('is_active', true)->orderBy('name')->get();
+
+        return response()->json([
+            'church_pillars_vision' => $pillars,
+            'church_pastoral_team' => $team,
+            'users' => UserResource::collection($users),
+        ]);
+    }
+
+    public function updateChurchVision(Request $request): JsonResponse
+    {
+        // Decode JSON inputs if received as strings (multipart form-data support)
+        $pillarsInput = $request->input('church_pillars_vision');
+        if (is_string($pillarsInput)) {
+            $pillarsInput = json_decode($pillarsInput, true);
+        }
+
+        $teamInput = $request->input('church_pastoral_team');
+        if (is_string($teamInput)) {
+            $teamInput = json_decode($teamInput, true);
+        }
+
+        $request->merge([
+            'church_pillars_vision' => $pillarsInput,
+            'church_pastoral_team' => $teamInput,
+        ]);
+
+        $request->validate([
+            'church_pillars_vision' => 'required|array',
+            'church_pillars_vision.title' => 'required|string|max:255',
+            'church_pillars_vision.intro' => 'required|string',
+            'church_pillars_vision.pillars' => 'required|array',
+            'church_pillars_vision.pillars.*.title' => 'required|string|max:255',
+            'church_pillars_vision.pillars.*.desc' => 'required|string',
+            'church_pillars_vision.pillars.*.icon_name' => 'required|string|max:255', // Relaxed to allow any Lucide icon
+
+            'church_pastoral_team' => 'required|array',
+            'church_pastoral_team.title' => 'required|string|max:255',
+            'church_pastoral_team.intro' => 'required|string',
+            'church_pastoral_team.member_ids' => 'required|array',
+            'church_pastoral_team.member_ids.*' => 'required|integer|exists:users,id',
+        ]);
+
+        $pillarsValue = [
+            'title' => $request->input('church_pillars_vision.title'),
+            'intro' => $request->input('church_pillars_vision.intro'),
+            'pillars' => $request->input('church_pillars_vision.pillars'),
+        ];
+
+        // Process avatars
+        $existingTeam = Setting::get('church_pastoral_team') ?? [];
+        $avatars = $existingTeam['avatars'] ?? [];
+
+        // Handle deleted avatars
+        $deletedAvatars = $request->input('deleted_avatars', []);
+        if (is_string($deletedAvatars)) {
+            $deletedAvatars = json_decode($deletedAvatars, true) ?? [];
+        }
+        foreach ($deletedAvatars as $userId) {
+            if (isset($avatars[$userId])) {
+                $this->deleteStoredFile($avatars[$userId]);
+                unset($avatars[$userId]);
+            }
+        }
+
+        // Handle uploaded files: name format avatar_{id}
+        $memberIds = array_map('intval', $request->input('church_pastoral_team.member_ids', []));
+        foreach ($memberIds as $userId) {
+            $fileKey = 'avatar_' . $userId;
+            if ($request->hasFile($fileKey)) {
+                if (isset($avatars[$userId])) {
+                    $this->deleteStoredFile($avatars[$userId]);
+                }
+                $file = $request->file($fileKey);
+                $path = $this->uploadSingleFile($file, 'pastors');
+                $avatars[$userId] = $path;
+            }
+        }
+
+        // Keep only active member_ids avatars
+        $filteredAvatars = [];
+        foreach ($memberIds as $userId) {
+            if (isset($avatars[$userId])) {
+                $filteredAvatars[$userId] = $avatars[$userId];
+            }
+        }
+
+        $teamValue = [
+            'title' => $request->input('church_pastoral_team.title'),
+            'intro' => $request->input('church_pastoral_team.intro'),
+            'member_ids' => $memberIds,
+            'avatars' => $filteredAvatars,
+        ];
+
+        Setting::set('church_pillars_vision', $pillarsValue, 'eglise');
+        Setting::set('church_pastoral_team', $teamValue, 'eglise');
+
+        return response()->json([
+            'message' => 'Vision de l\'église et équipe pastorale mises à jour avec succès.',
+            'church_pillars_vision' => $pillarsValue,
+            'church_pastoral_team' => $teamValue,
+        ]);
+    }
+
+    /**
      * Delete a single setting by key.
      */
     public function destroy(string $key): JsonResponse

@@ -94,6 +94,8 @@ final class AccessControl
             ],
             'Configuration & Vision' => [
                 ['name' => 'manage_pastor_word', 'label' => 'Gérer le mot du pasteur (Le Mot du Pasteur)'],
+                ['name' => 'manage_church_vision', 'label' => 'Modifier la vision, les piliers de foi et la composition de l’équipe pastorale'],
+
             ],
         ];
     }
@@ -151,6 +153,7 @@ final class AccessControl
                 'manage_contacts',
                 'view_events',
                 'manage_pastor_word',
+                'manage_church_vision',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
