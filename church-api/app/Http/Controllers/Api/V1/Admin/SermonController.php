@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\SermonRequest;
 use App\Http\Resources\V1\SermonResource;
 use App\Models\Sermon;
+use App\Models\User;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -67,6 +68,15 @@ class SermonController extends Controller
         // Keep the legacy single `book` in sync with the first selected category.
         if (array_key_exists('books_category', $data)) {
             $data['book'] = $data['books_category'][0] ?? null;
+        }
+
+        // The preacher is selected as a user; mirror their name into `speaker`
+        // so the public rendering (which reads `speaker`) never regresses.
+        if ($request->filled('user_id')) {
+            $user = User::find($request->integer('user_id'));
+            if ($user !== null) {
+                $data['speaker'] = $user->name;
+            }
         }
 
         // An explicitly-sent media_type wins (including null for notes-only);

@@ -7,6 +7,7 @@ use Database\Factories\SermonFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -15,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property string|null $description
  * @property string $speaker
+ * @property int|null $user_id
  * @property string|null $book
  * @property array<int, string>|null $books_category
  * @property Carbon $preached_at
@@ -37,6 +39,7 @@ class Sermon extends Model
         'title',
         'description',
         'speaker',
+        'user_id',
         'book',
         'books_category',
         'preached_at',
@@ -71,6 +74,16 @@ class Sermon extends Model
     public function scriptures(): HasMany
     {
         return $this->hasMany(SermonScripture::class);
+    }
+
+    /**
+     * The preacher (a user) who delivered this sermon.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     /**

@@ -1,4 +1,4 @@
-import { getAdminMe, getAdminSermons } from "@/lib/admin-api";
+import { getAdminMe, getAdminSermons, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
 import { SermonsManager } from "./sermons-manager";
@@ -12,7 +12,7 @@ export default async function AdminSermonsPage() {
     return <AccessRestricted />;
   }
 
-  const sermons = await getAdminSermons();
+  const [sermons, users] = await Promise.all([getAdminSermons(), getAdminUsers()]);
 
-  return <SermonsManager initialSermons={sermons} />;
+  return <SermonsManager initialSermons={sermons} preachers={users.map((u) => ({ id: u.id, name: u.name }))} />;
 }

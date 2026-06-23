@@ -100,6 +100,23 @@ it('clears stored media when a sermon is switched to notes only', function () {
     expect($sermon->fresh()->media_path)->toBeNull();
 });
 
+it('links a sermon to a preacher user and mirrors their name into speaker', function () {
+    $preacher = \App\Models\User::factory()->create(['name' => 'Pasteur David Odion']);
+    actingAsSuperAdmin();
+
+    $this->postJson('/api/v1/admin/sermons', [
+        'title' => 'Orateur dynamique',
+        'user_id' => $preacher->id,
+        'preached_at' => '2026-06-14',
+        'media_type' => 'video_url',
+        'media_url' => 'https://youtube.com/watch?v=z',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.user_id', $preacher->id)
+        // `speaker` is derived from the selected user.
+        ->assertJsonPath('data.speaker', 'Pasteur David Odion');
+});
+
 it('stores and exposes the Bible book categories', function () {
     actingAsSuperAdmin();
 

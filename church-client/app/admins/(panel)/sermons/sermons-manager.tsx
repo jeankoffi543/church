@@ -35,6 +35,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SermonReaderDialog, type ReaderSermon } from "@/components/media/sermon-reader";
 import { BookMultiSelect } from "@/components/admin/book-multi-select";
 import { BIBLE_BOOKS } from "@/lib/constants/bible";
+import { SearchableSelect } from "../_components/searchable-select";
 
 /** Form-only choice: the 4 real media types + "none" (notes-only sermon). */
 type MediaChoice = SermonMediaType | "none";
@@ -51,8 +52,15 @@ const isFileType = (t: MediaChoice) => t.endsWith("_file");
 const isAudioType = (t: MediaChoice) => t.startsWith("audio_");
 const baseName = (p?: string | null) => (p ? p.split("/").pop() ?? "" : "");
 
-export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon[] }) {
+export function SermonsManager({
+  initialSermons,
+  preachers,
+}: {
+  initialSermons: AdminSermon[];
+  preachers: { id: number; name: string }[];
+}) {
   const [sermons, setSermons] = useState<AdminSermon[]>(initialSermons);
+  const preacherOptions = preachers.map((p) => ({ value: p.id, label: p.name }));
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -71,7 +79,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
   // Core fields
   const [title, setTitle] = useState("");
   const [series, setSeries] = useState("");
-  const [speaker, setSpeaker] = useState("");
+  const [preacherId, setPreacherId] = useState("");
   const [books, setBooks] = useState<string[]>([]);
   const [preachedAt, setPreachedAt] = useState("");
   const [duration, setDuration] = useState("");
@@ -99,7 +107,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
   const resetForm = () => {
     setTitle("");
     setSeries("");
-    setSpeaker("");
+    setPreacherId("");
     setBooks([]);
     setPreachedAt(new Date().toISOString().split("T")[0]);
     setDuration("");
@@ -130,7 +138,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
     resetForm();
     setTitle(s.title);
     setSeries(s.series ?? "");
-    setSpeaker(s.speaker);
+    setPreacherId(s.user_id ? String(s.user_id) : "");
     setBooks(s.books_category ?? []);
     setPreachedAt(s.date ?? new Date().toISOString().split("T")[0]);
     setDuration(s.duration ?? "");
@@ -223,7 +231,11 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
     e.preventDefault();
     // Clear any lingering feedback the moment the admin re-submits.
     setStatus(null);
-    if (!title.trim() || !speaker.trim() || !preachedAt) return;
+    if (!title.trim() || !preachedAt) return;
+    if (!preacherId) {
+      setStatus({ type: "error", message: "Veuillez sélectionner un orateur." });
+      return;
+    }
 
     const notesOnly = mediaType === "none";
     if (!notesOnly && !isFileType(mediaType) && !mediaUrl.trim()) {
@@ -244,7 +256,7 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
         const payload = {
           title,
           series: series || null,
-          speaker,
+          user_id: preacherId ? Number(preacherId) : null,
           preached_at: preachedAt,
           duration: duration || null,
           description: description || null,
@@ -452,7 +464,13 @@ export function SermonsManager({ initialSermons }: { initialSermons: AdminSermon
             </Field>
 
             <Field label="Orateur *">
-              <input required value={speaker} onChange={(e) => setSpeaker(e.target.value)} placeholder="ex: Pasteur David" className={INPUT} />
+              <SearchableSelect
+                options={preacherOptions}
+                value={preacherId === "" ? null : Number(preacherId)}
+                onChange={(val) => setPreacherId(val === null ? "" : String(val))}
+                placeholder="Sélectionner un orateur…"
+                clearLabel="— Aucun orateur —"
+              />
             </Field>
             <Field label="Date de prédication *">
               <input type="date" required value={preachedAt} onChange={(e) => setPreachedAt(e.target.value)} className={INPUT} />

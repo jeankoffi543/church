@@ -22,6 +22,7 @@ class SermonResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'speaker' => $this->speaker,
+            'user_id' => $this->user_id,
             'book' => $this->book,
             'books_category' => $this->books_category ?? [],
             'date' => $this->preached_at?->toDateString(),
