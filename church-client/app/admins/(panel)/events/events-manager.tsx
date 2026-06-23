@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { 
   Plus, 
   Search, 
@@ -9,13 +9,20 @@ import {
   Loader2, 
   Star, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  X
 } from "lucide-react";
 import { createEvent, updateEvent, deleteEvent, checkEventSlug } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { assetUrl } from "@/lib/asset-url";
 import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type Event = {
   id: number;
@@ -30,6 +37,32 @@ type Event = {
   image: string | null;
   highlights: string[] | null;
   is_featured: boolean;
+};
+
+const filterFields: FilterField[] = [
+  { id: "title", label: "Titre", type: "text" },
+  { id: "type", label: "Type", type: "text" },
+  { id: "location", label: "Lieu", type: "text" },
+  { id: "host", label: "Hôte", type: "text" },
+  { 
+    id: "is_featured", 
+    label: "Mise en avant", 
+    type: "select", 
+    options: [
+      { value: "featured", label: "Mis en avant" },
+      { value: "normal", label: "Normal" }
+    ] 
+  }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
 };
 
 export function EventsManager({
@@ -63,8 +96,13 @@ export function EventsManager({
   const [imagePreview, setImagePreview] = useState("");
   const [removeImage, setRemoveImage] = useState(false);
 
+  // Sorting and Filtering states
+  const [sortBy, setSortBy] = useState<"is_featured" | "title" | "location" | "starts_at" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
   // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
+  const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
   // Validation & helper states
@@ -267,19 +305,114 @@ export function EventsManager({
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setCurrentPage(1);
+    setPage(1);
     setStatus(null);
   };
 
-  const filtered = events.filter((e) =>
-    e.title.toLowerCase().includes(search.toLowerCase()) ||
-    (e.type && e.type.toLowerCase().includes(search.toLowerCase())) ||
-    (e.location && e.location.toLowerCase().includes(search.toLowerCase()))
-  );
+  const hasActiveFilters = activeFilters.length > 0;
 
-  const total = filtered.length;
-  const pageCount = Math.ceil(total / perPage) || 1;
-  const paginatedEvents = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
+
+  const handleSort = (column: "is_featured" | "title" | "location" | "starts_at") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "is_featured" | "title" | "location" | "starts_at") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Events (combined filters + sorting)
+  const processedEvents = useMemo(() => {
+    let result = events.filter((e) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const titleMatch = e.title.toLowerCase().includes(q);
+        const typeMatch = e.type ? e.type.toLowerCase().includes(q) : false;
+        const locMatch = e.location ? e.location.toLowerCase().includes(q) : false;
+        if (!titleMatch && !typeMatch && !locMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "title") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(e.title, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "type") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(e.type ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "location") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(e.location ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "host") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(e.host ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "is_featured") {
+          if (filter.value === "") continue;
+          const targetFeatured = filter.value === "featured";
+          if (e.is_featured !== targetFeatured) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "title") {
+          valA = a.title;
+          valB = b.title;
+        } else if (sortBy === "location") {
+          valA = a.location ?? "";
+          valB = b.location ?? "";
+        } else if (sortBy === "starts_at") {
+          valA = a.starts_at;
+          valB = b.starts_at;
+        } else if (sortBy === "is_featured") {
+          const numA = a.is_featured ? 1 : 0;
+          const numB = b.is_featured ? 1 : 0;
+          return sortOrder === "asc" ? numA - numB : numB - numA;
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [events, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedEvents.length / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedEvents = processedEvents.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -323,28 +456,85 @@ export function EventsManager({
         </div>
       )}
 
-      {/* Filter and search bar */}
-      <div className="mb-6 flex max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-        <Search className="size-4 text-faint" />
-        <input
-          type="text"
-          placeholder="Rechercher un événement..."
-          value={search}
-          onChange={handleSearchChange}
-          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
-        />
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher un événement..."
+              value={search}
+              onChange={handleSearchChange}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      {/* Table grid */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Featured</th>
-                <th className="px-6 py-4">Titre / Type</th>
-                <th className="px-6 py-4">Lieu / Hôte</th>
-                <th className="px-6 py-4">Date de début</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("is_featured")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Featured</span>
+                    {renderSortChevron("is_featured")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("title")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Titre / Type</span>
+                    {renderSortChevron("title")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("location")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Lieu / Hôte</span>
+                    {renderSortChevron("location")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("starts_at")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Date de début</span>
+                    {renderSortChevron("starts_at")}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -409,23 +599,24 @@ export function EventsManager({
           </table>
         </div>
 
-        {/* Reusable Pagination Component */}
-        <Pagination
-          page={currentPage}
-          pageCount={pageCount}
-          total={total}
-          perPage={perPage}
-          onPageChange={(page) => {
-            setCurrentPage(page);
-            setStatus(null);
-          }}
-          onPerPageChange={(newPerPage) => {
-            setPerPage(newPerPage);
-            setCurrentPage(1);
-            setStatus(null);
-          }}
-          itemLabel="événements"
-        />
+        {processedEvents.length > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={processedEvents.length}
+            perPage={perPage}
+            onPageChange={(page) => {
+              setPage(page);
+              setStatus(null);
+            }}
+            onPerPageChange={(newPerPage) => {
+              setPerPage(newPerPage);
+              setPage(1);
+              setStatus(null);
+            }}
+            itemLabel="événements"
+          />
+        )}
       </div>
 
       {/* Replaced raw backdrop and centered wrappers with native Radix Dialog */}

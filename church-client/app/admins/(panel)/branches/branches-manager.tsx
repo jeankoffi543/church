@@ -15,7 +15,11 @@ import {
   Phone,
   Clock,
   User,
-  X
+  X,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   createBranch,
@@ -32,6 +36,8 @@ import { BrandButton } from "@/components/ui/brand-button";
 import { SearchableSelect, type SearchableOption } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
 import { LocationPicker } from "../_components/location-picker";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 const slugify = (text: string) => {
   return text
@@ -44,6 +50,22 @@ const slugify = (text: string) => {
     .replace(/\-\-+/g, "-")
     .replace(/^-+/, "")
     .replace(/-+$/, "");
+};
+
+const filterFields: FilterField[] = [
+  { id: "title", label: "Nom du campus", type: "text" },
+  { id: "address", label: "Adresse / Ville", type: "text" },
+  { id: "pastor", label: "Pasteur", type: "async-select" }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
 };
 
 export function BranchesManager({
@@ -60,6 +82,11 @@ export function BranchesManager({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBranch, setEditingBranch] = useState<AdminBranch | null>(null);
+
+  // Sorting and Filtering states
+  const [sortBy, setSortBy] = useState<"title" | "address" | "pastor" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   // Pagination states
   const [page, setPage] = useState(1);
@@ -183,27 +210,103 @@ export function BranchesManager({
     });
   };
 
-  // Search & Filter
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return branches;
-    return branches.filter(
-      (b) =>
-        b.title.toLowerCase().includes(q) ||
-        b.address.toLowerCase().includes(q) ||
-        (b.pastor?.name.toLowerCase().includes(q) ?? false)
-    );
-  }, [branches, search]);
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
 
-  // Sorting
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
-  }, [filtered]);
+  const handleSort = (column: "title" | "address" | "pastor") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
 
-  // Client pagination
-  const pageCount = Math.max(1, Math.ceil(sorted.length / perPage));
+  const renderSortChevron = (column: "title" | "address" | "pastor") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Branches (combined filters + sorting)
+  const processedBranches = useMemo(() => {
+    let result = branches.filter((b) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const titleMatch = b.title.toLowerCase().includes(q);
+        const addrMatch = b.address.toLowerCase().includes(q);
+        const pastorMatch = b.pastor ? b.pastor.name.toLowerCase().includes(q) : false;
+        if (!titleMatch && !addrMatch && !pastorMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "title") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(b.title, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "address") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(b.address, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "pastor") {
+          if (filter.value === "") continue;
+          const pastorIdValue = Number(filter.value);
+          if (b.pastor_id !== pastorIdValue) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "title") {
+          valA = a.title;
+          valB = b.title;
+        } else if (sortBy === "address") {
+          valA = a.address;
+          valB = b.address;
+        } else if (sortBy === "pastor") {
+          valA = a.pastor?.name ?? "";
+          valB = b.pastor?.name ?? "";
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    } else {
+      // Default sort
+      result = [...result].sort((a, b) => a.title.localeCompare(b.title));
+    }
+
+    return result;
+  }, [branches, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedBranches.length / perPage));
   const currentPage = Math.min(page, pageCount);
-  const paged = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paged = processedBranches.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const sorted = processedBranches;
 
   // Searchable select options for pastors
   const userOptions = useMemo<SearchableOption[]>(() => {
@@ -260,31 +363,82 @@ export function BranchesManager({
         </div>
       )}
 
-      {/* Control bar */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint" />
-          <Input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-sm items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher par nom, adresse, pasteur..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
               setPage(1);
             }}
-            placeholder="Rechercher par nom, adresse, pasteur..."
-            className="h-10 rounded-xl border-[rgba(40,25,80,0.12)] bg-[#faf8f4] pl-10 pr-4 text-sm text-indigo focus-visible:border-gold"
+            asyncOptions={{
+              pastor: userOptions,
+            }}
           />
         </div>
+
+        {activeFilters.length > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Nom / Ville</th>
-                <th className="px-6 py-4">Adresse</th>
-                <th className="px-6 py-4">Pasteur Résident</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("title")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Nom / Ville</span>
+                    {renderSortChevron("title")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("address")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Adresse</span>
+                    {renderSortChevron("address")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("pastor")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Pasteur Résident</span>
+                    {renderSortChevron("pastor")}
+                  </div>
+                </th>
                 <th className="px-6 py-4">Horaires cultes</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -336,7 +490,7 @@ export function BranchesManager({
                   </td>
                 </tr>
               ))}
-              {paged.length === 0 && (
+              {processedBranches.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-12">
                     <div className="flex flex-col items-center justify-center text-center">
@@ -350,11 +504,11 @@ export function BranchesManager({
           </table>
         </div>
 
-        {sorted.length > 0 && (
+        {processedBranches.length > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={sorted.length}
+            total={processedBranches.length}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback, useEffect } from "react";
+import { useState, useTransition, useCallback, useEffect, useMemo } from "react";
 import {
   Loader2,
   CheckCircle,
@@ -8,6 +8,11 @@ import {
   Trash2,
   MessageCircle,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  Search,
+  X,
   Save,
   Phone,
   Mail,
@@ -24,6 +29,9 @@ import {
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 /* ── Constants ───────────────────────────────────────────────────── */
 
@@ -79,6 +87,16 @@ const PLACEHOLDERS = [
 
 /* ── Component ───────────────────────────────────────────────────── */
 
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
+};
+
 export function PrayersManager({
   initialPrayers,
   users,
@@ -95,6 +113,12 @@ export function PrayersManager({
   const [prayers, setPrayers] = useState<AdminPrayerRequest[]>(initialPrayers);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [sortBy, setSortBy] = useState<"name" | "category" | "message" | "status" | "assigned_to" | "created_at" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{
@@ -574,15 +598,138 @@ export function PrayersManager({
 
   /* ── Derived ──────────────────────────────────────────────── */
 
-  const filtered = prayers
-    .filter((p) => (statusFilter === "all" ? true : p.status === statusFilter))
-    .filter((p) =>
-      categoryFilter === "all" ? true : p.category === categoryFilter,
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
+  const filterFields: FilterField[] = useMemo(() => [
+    { id: "name", label: "Nom", type: "text" },
+    { id: "email", label: "Email", type: "text" },
+    { id: "phone", label: "Téléphone", type: "text" },
+    { id: "message", label: "Message", type: "text" },
+    { 
+      id: "category", 
+      label: "Catégorie", 
+      type: "select", 
+      options: categories.map((cat) => ({ value: cat, label: cat }))
+    }
+  ], [categories]);
+
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setStatusFilter("all");
+    setCategoryFilter("all");
+    setPage(1);
+  };
+
+  const handleSort = (column: "name" | "category" | "message" | "status" | "assigned_to" | "created_at") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "name" | "category" | "message" | "status" | "assigned_to" | "created_at") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Prayers (combined filters + sorting)
+  const processedPrayers = useMemo(() => {
+    let result = prayers.filter((p) => {
+      // Existing Status Filter Tab
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+
+      // Existing Category Filter Dropdown
+      if (categoryFilter !== "all" && p.category !== categoryFilter) return false;
+
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const nameMatch = p.name ? p.name.toLowerCase().includes(q) : false;
+        const msgMatch = p.message ? p.message.toLowerCase().includes(q) : false;
+        const emailMatch = p.email ? p.email.toLowerCase().includes(q) : false;
+        if (!nameMatch && !msgMatch && !emailMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(p.name ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "email") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(p.email ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "phone") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(p.phone ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "message") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(p.message ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "category") {
+          if (filter.value === "") continue;
+          if (p.category !== filter.value) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "name") {
+          valA = a.name ?? "";
+          valB = b.name ?? "";
+        } else if (sortBy === "category") {
+          valA = a.category ?? "";
+          valB = b.category ?? "";
+        } else if (sortBy === "message") {
+          valA = a.message ?? "";
+          valB = b.message ?? "";
+        } else if (sortBy === "status") {
+          valA = a.status ?? "";
+          valB = b.status ?? "";
+        } else if (sortBy === "assigned_to") {
+          valA = a.assignee?.name ?? "";
+          valB = b.assignee?.name ?? "";
+        } else if (sortBy === "created_at") {
+          valA = a.created_at ?? "";
+          valB = b.created_at ?? "";
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    } else {
+      // Default fallback sort: created_at desc
+      result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    return result;
+  }, [prayers, statusFilter, categoryFilter, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedPrayers.length / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const paged = processedPrayers.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const filtered = paged;
 
   const newCount = prayers.filter((p) => p.status === "new").length;
 
@@ -672,157 +819,266 @@ export function PrayersManager({
       {activeTab === "list" ? (
         <>
           {/* ── Filter bar ──────────────────────────────────────── */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        {/* Status pills */}
-        <div className="flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setStatusFilter(f.key)}
-              className={cn(
-                "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
-                statusFilter === f.key
-                  ? "bg-indigo text-white shadow-sm"
-                  : "text-body hover:bg-cream hover:text-indigo",
-              )}
-            >
-              {f.label}
-              {f.key === "new" && newCount > 0 && (
-                <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-live text-[9px] font-black text-white">
-                  {newCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+          {/* ── Filter bar ──────────────────────────────────────── */}
+          <div className="mb-6 flex flex-wrap items-center gap-3 z-20 relative">
+            {/* Status pills */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => {
+                    setStatusFilter(f.key);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
+                    statusFilter === f.key
+                      ? "bg-indigo text-white shadow-sm"
+                      : "text-body hover:bg-cream hover:text-indigo",
+                  )}
+                >
+                  {f.label}
+                  {f.key === "new" && newCount > 0 && (
+                    <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-live text-[9px] font-black text-white">
+                      {newCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
 
-        {/* Category dropdown */}
-        <div className="relative">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="cursor-pointer appearance-none rounded-xl border border-[rgba(40,25,80,0.1)] bg-white py-2.5 pr-9 pl-3.5 text-xs font-bold text-indigo shadow-[0_1px_3px_rgba(22,15,51,0.02)] outline-none transition hover:border-gold focus:border-gold"
-          >
-            <option value="all">Toutes catégories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-faint" />
-        </div>
-      </div>
+            {/* Category dropdown */}
+            <div className="relative">
+              <select
+                value={categoryFilter}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="cursor-pointer appearance-none rounded-xl border border-[rgba(40,25,80,0.1)] bg-white py-2.5 pr-9 pl-3.5 text-xs font-bold text-indigo shadow-[0_1px_3px_rgba(22,15,51,0.02)] outline-none transition hover:border-gold focus:border-gold"
+              >
+                <option value="all">Toutes catégories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-faint" />
+            </div>
 
-      {/* ── Data table ──────────────────────────────────────── */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
-              <tr>
-                <th className="px-6 py-4">Demandeur</th>
-                <th className="px-6 py-4">Catégorie</th>
-                <th className="px-6 py-4">Message</th>
-                <th className="px-6 py-4">Statut</th>
-                <th className="px-6 py-4">Assigné à</th>
-                <th className="px-6 py-4">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {filtered.map((prayer) => {
-                const cfg = STATUS_CONFIG[prayer.status];
-                return (
-                  <tr
-                    key={prayer.id}
-                    onClick={() => openPanel(prayer)}
-                    className={cn(
-                      "cursor-pointer transition-colors hover:bg-cream/40",
-                      selectedId === prayer.id && "bg-gold/5",
-                    )}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-xs font-bold text-indigo">
-                          {(prayer.name ?? "A")[0].toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold">
-                            {prayer.name ?? "Anonyme"}
-                          </p>
-                          {prayer.phone && (
-                            <p className="text-[11px] text-faint">
-                              {prayer.phone}
-                            </p>
-                          )}
-                        </div>
+            {/* Main search bar */}
+            <div className="flex flex-1 min-w-[220px] max-w-xs items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+              <Search className="size-4 text-faint" />
+              <input
+                type="text"
+                placeholder="Rechercher par nom, email..."
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+              />
+            </div>
+
+            {/* Reusable Query Builder containing inline chips & sliders filter button */}
+            <QueryBuilder
+              fields={filterFields}
+              activeFilters={activeFilters}
+              onChange={(nextFilters) => {
+                setActiveFilters(nextFilters);
+                setPage(1);
+              }}
+            />
+
+            {activeFilters.length > 0 && (
+              <button
+                onClick={clearAllFilters}
+                className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+              >
+                <X className="size-3.5" />
+                Effacer les filtres actifs
+              </button>
+            )}
+          </div>
+
+          {/* ── Data table ──────────────────────────────────────── */}
+          <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-indigo">
+                <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
+                  <tr>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("name")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Demandeur</span>
+                        {renderSortChevron("name")}
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-indigo/5 px-2.5 py-1 text-[11px] font-bold text-indigo">
-                        {prayer.category}
-                      </span>
-                    </td>
-                    <td className="max-w-[220px] px-6 py-4">
-                      <p className="truncate text-xs text-body">
-                        {prayer.message}
-                      </p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
+                    </th>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("category")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Catégorie</span>
+                        {renderSortChevron("category")}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("message")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Message</span>
+                        {renderSortChevron("message")}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("status")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Statut</span>
+                        {renderSortChevron("status")}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("assigned_to")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Assigné à</span>
+                        {renderSortChevron("assigned_to")}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                      onClick={() => handleSort("created_at")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Date</span>
+                        {renderSortChevron("created_at")}
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
+                  {filtered.map((prayer) => {
+                    const cfg = STATUS_CONFIG[prayer.status];
+                    return (
+                      <tr
+                        key={prayer.id}
+                        onClick={() => openPanel(prayer)}
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
-                          cfg.bg,
-                          cfg.text,
+                          "cursor-pointer transition-colors hover:bg-cream/40",
+                          selectedId === prayer.id && "bg-gold/5",
                         )}
                       >
-                        <span
-                          className={cn(
-                            "size-1.5 rounded-full",
-                            cfg.dot,
-                            cfg.pulse && "animate-pulse",
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-xs font-bold text-indigo">
+                              {(prayer.name ?? "A")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-semibold">
+                                {prayer.name ?? "Anonyme"}
+                              </p>
+                              {prayer.phone && (
+                                <p className="text-[11px] text-faint">
+                                  {prayer.phone}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="rounded-full bg-indigo/5 px-2.5 py-1 text-[11px] font-bold text-indigo">
+                            {prayer.category}
+                          </span>
+                        </td>
+                        <td className="max-w-[220px] px-6 py-4">
+                          <p className="truncate text-xs text-body">
+                            {prayer.message}
+                          </p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
+                              cfg.bg,
+                              cfg.text,
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "size-1.5 rounded-full",
+                                cfg.dot,
+                                cfg.pulse && "animate-pulse",
+                              )}
+                            />
+                            {cfg.label}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs font-medium text-body">
+                          {prayer.assignee?.name ?? (
+                            <span className="italic text-faint">—</span>
                           )}
-                        />
-                        {cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-xs font-medium text-body">
-                      {prayer.assignee?.name ?? (
-                        <span className="italic text-faint">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs font-semibold text-faint">
-                      {new Date(prayer.created_at).toLocaleDateString("fr-FR", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </td>
-                  </tr>
-                );
-              })}
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs font-semibold text-faint">
+                          {new Date(prayer.created_at).toLocaleDateString("fr-FR", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
 
-              {/* ── Empty state ──────────────────────────────── */}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <BookHeart className="size-10 text-gold/40" />
-                      <p className="text-sm font-semibold text-body-strong">
-                        Aucune requête trouvée
-                      </p>
-                      <p className="max-w-xs text-xs text-body">
-                        Il n&apos;y a pas de demandes de prière correspondant
-                        aux filtres sélectionnés.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </>
+                  {/* ── Empty state ──────────────────────────────── */}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <BookHeart className="size-10 text-gold/40" />
+                          <p className="text-sm font-semibold text-body-strong">
+                            Aucune requête trouvée
+                          </p>
+                          <p className="max-w-xs text-xs text-body">
+                            Il n&apos;y a pas de demandes de prière correspondant
+                            aux filtres sélectionnés.
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {processedPrayers.length > 0 && (
+              <Pagination
+                page={currentPage}
+                pageCount={pageCount}
+                total={processedPrayers.length}
+                perPage={perPage}
+                onPageChange={(page) => {
+                  setPage(page);
+                  setStatus(null);
+                }}
+                onPerPageChange={(newPerPage) => {
+                  setPerPage(newPerPage);
+                  setPage(1);
+                  setStatus(null);
+                }}
+                itemLabel="requêtes"
+              />
+            )}
+          </div>
+        </>
       ) : (
         <div className="rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white p-6 shadow-[0_1px_3px_rgba(22,15,51,0.04)] animate-fade-up">
           <h2 className="font-display text-lg font-bold text-indigo italic mb-4">

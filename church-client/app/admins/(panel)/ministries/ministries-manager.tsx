@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { 
   Plus, 
   Search, 
@@ -13,6 +13,9 @@ import {
   CheckCircle,
   AlertCircle,
   ImagePlus,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { createMinistry, updateMinistry, deleteMinistry } from "@/lib/admin-api";
 import type { AdminMinistry, AdminUser } from "@/lib/admin-api";
@@ -22,8 +25,43 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import Link from "next/link";
 import { SearchableSelect } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type Ministry = AdminMinistry;
+
+const filterFields: FilterField[] = [
+  { id: "name", label: "Nom", type: "text" },
+  { id: "chef", label: "Chef du ministère", type: "async-select" },
+  { id: "schedule", label: "Programme / Horaires", type: "text" },
+  { 
+    id: "is_active", 
+    label: "Statut", 
+    type: "select", 
+    options: [
+      { value: "active", label: "Actif" },
+      { value: "inactive", label: "Inactif" }
+    ] 
+  }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") {
+    return v.includes(t);
+  }
+  if (operator === "equals") {
+    return v === t;
+  }
+  if (operator === "starts_with") {
+    return v.startsWith(t);
+  }
+  if (operator === "ends_with") {
+    return v.endsWith(t);
+  }
+  return true;
+};
 
 export function MinistriesManager({
   initialMinistries,
@@ -47,9 +85,17 @@ export function MinistriesManager({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [schedule, setSchedule] = useState("");
-  const [sortOrder, setSortOrder] = useState(0);
+  const [formSortOrder, setFormSortOrder] = useState(0); // Display order inside modal
   const [isActive, setIsActive] = useState(true);
   const [chefId, setChefId] = useState<number | null>(null);
+  
+  // Table sorting states
+  const [sortBy, setSortBy] = useState<"name" | "chef" | "schedule" | "is_active" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+
+  // Table filtering states (Centralized Inline Chips)
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
   // Cover image: a freshly picked file, and/or removal of the existing one.
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -90,7 +136,7 @@ export function MinistriesManager({
     setName("");
     setDescription("");
     setSchedule("");
-    setSortOrder(0);
+    setFormSortOrder(0);
     setIsActive(true);
     setChefId(null);
     resetImage();
@@ -102,7 +148,7 @@ export function MinistriesManager({
     setName(ministry.name);
     setDescription(ministry.description ?? "");
     setSchedule(ministry.schedule ?? "");
-    setSortOrder(ministry.sort_order);
+    setFormSortOrder(ministry.sort_order);
     setIsActive(ministry.is_active);
     setChefId(ministry.chef_id);
     resetImage();
@@ -141,7 +187,7 @@ export function MinistriesManager({
           name,
           description: description || null,
           schedule: schedule || null,
-          sort_order: Number(sortOrder),
+          sort_order: Number(formSortOrder),
           is_active: isActive,
           chef_id: chefId,
         };
@@ -165,18 +211,122 @@ export function MinistriesManager({
     });
   };
 
-  const filtered = ministries.filter((m) =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    (m.description && m.description.toLowerCase().includes(search.toLowerCase()))
-  );
+  const hasActiveFilters = activeFilters.length > 0;
 
-  // Client-side pagination (same component as the applications screen).
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
+
+  const handleSort = (column: "name" | "chef" | "schedule" | "is_active") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  // Processed Ministries (combined filters + sorting)
+  const processedMinistries = useMemo(() => {
+    let result = ministries.filter((m) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const nameMatch = m.name.toLowerCase().includes(q);
+        const descMatch = m.description ? m.description.toLowerCase().includes(q) : false;
+        if (!nameMatch && !descMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(m.name, filter.value, filter.operator)) {
+            return false;
+          }
+        } else if (filter.fieldId === "chef") {
+          if (filter.value === "") continue;
+          const chefIdValue = Number(filter.value);
+          if (m.chef_id !== chefIdValue) {
+            return false;
+          }
+        } else if (filter.fieldId === "schedule") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          const sched = m.schedule ?? "";
+          if (!matchString(sched, filter.value, filter.operator)) {
+            return false;
+          }
+        } else if (filter.fieldId === "is_active") {
+          if (filter.value === "") continue;
+          const targetIsActive = filter.value === "active";
+          if (m.is_active !== targetIsActive) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "name") {
+          valA = a.name;
+          valB = b.name;
+        } else if (sortBy === "chef") {
+          valA = a.chef?.name ?? "";
+          valB = b.chef?.name ?? "";
+        } else if (sortBy === "schedule") {
+          valA = a.schedule ?? "";
+          valB = b.schedule ?? "";
+        } else if (sortBy === "is_active") {
+          const numA = a.is_active ? 1 : 0;
+          const numB = b.is_active ? 1 : 0;
+          return sortOrder === "asc" ? numA - numB : numB - numA;
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [ministries, search, activeFilters, sortBy, sortOrder]);
+
+  // Client-side pagination based on processed list
+  const pageCount = Math.max(1, Math.ceil(processedMinistries.length / perPage));
   const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paged = processedMinistries.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  // Chevron rendering helper
+  const renderSortChevron = (column: "name" | "chef" | "schedule" | "is_active") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
 
   return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up">
+    <div className="mx-auto max-w-[1100px] animate-fade-up relative">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
@@ -209,7 +359,7 @@ export function MinistriesManager({
       {status && (
         <div
           className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
+            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm z-10 relative",
             status.type === "success" ? "border-online/20 bg-online/5 text-body-strong" : "border-live/20 bg-live/5 text-live"
           )}
         >
@@ -225,30 +375,102 @@ export function MinistriesManager({
         </div>
       )}
 
-      {/* Filter and search bar */}
-      <div className="mb-6 flex max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-        <Search className="size-4 text-faint" />
-        <input
-          type="text"
-          placeholder="Rechercher un ministère..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
-        />
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher un ministère..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+            asyncOptions={{
+              chef: staffOptions,
+            }}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      {/* Table grid */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Ordre</th>
-                <th className="px-6 py-4">Nom</th>
-                <th className="px-6 py-4">Chef</th>
-                <th className="px-6 py-4">Programme / Horaires</th>
-                <th className="px-6 py-4">Statut</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4 w-[80px]">Ordre</th>
+                
+                {/* Nom */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Nom</span>
+                    {renderSortChevron("name")}
+                  </div>
+                </th>
+
+                {/* Chef */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("chef")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Chef</span>
+                    {renderSortChevron("chef")}
+                  </div>
+                </th>
+
+                {/* Programme / Horaires */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("schedule")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Programme / Horaires</span>
+                    {renderSortChevron("schedule")}
+                  </div>
+                </th>
+
+                {/* Statut */}
+                <th 
+                  className="px-6 py-4 w-[140px] cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("is_active")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Statut</span>
+                    {renderSortChevron("is_active")}
+                  </div>
+                </th>
+
+                <th className="px-6 py-4 text-right w-[100px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
@@ -310,7 +532,7 @@ export function MinistriesManager({
                 </tr>
               ))}
 
-              {filtered.length === 0 && (
+              {processedMinistries.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-xs text-body">
                     Aucun ministère trouvé.
@@ -320,11 +542,11 @@ export function MinistriesManager({
             </tbody>
           </table>
         </div>
-        {filtered.length > 0 && (
+        {processedMinistries.length > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={filtered.length}
+            total={processedMinistries.length}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {
@@ -349,71 +571,56 @@ export function MinistriesManager({
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Nom du ministère *</span>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="ex: Département Jeunesse"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Nom du ministère *</span>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ex: Département Jeunesse"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
 
-              <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Programme / Horaires</span>
-                <input
-                  type="text"
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="ex: Samedi 16:00 · Salle Polyvalente"
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-                />
-              </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Programme / Horaires</span>
+              <input
+                type="text"
+                value={schedule}
+                onChange={(e) => setSchedule(e.target.value)}
+                placeholder="ex: Samedi 16:00 · Salle Polyvalente"
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+              />
+            </label>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Chef du ministère</span>
-                <SearchableSelect
-                  options={staffOptions}
-                  value={chefId}
-                  onChange={setChefId}
-                  placeholder="Assigner un responsable…"
-                  clearLabel="— Aucun chef —"
-                />
-              </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Chef du ministère</span>
+              <SearchableSelect
+                options={staffOptions}
+                value={chefId}
+                onChange={setChefId}
+                placeholder="Assigner un responsable…"
+                clearLabel="— Aucun chef —"
+              />
+            </div>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Image du ministère</span>
-                {currentImageSrc ? (
-                  <div className="relative overflow-hidden rounded-xl border border-[rgba(40,25,80,0.12)]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={currentImageSrc} alt="Aperçu du ministère" className="h-40 w-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={handleClearImage}
-                      className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white backdrop-blur-sm transition hover:bg-live"
-                      title="Retirer l'image"
-                    >
-                      <X className="size-4" />
-                    </button>
-                    <label className="absolute bottom-2 right-2 cursor-pointer rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-indigo shadow-sm backdrop-blur-sm transition hover:bg-white">
-                      Changer
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                  </div>
-                ) : (
-                  <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
-                    <span className="flex size-11 items-center justify-center rounded-full bg-indigo/5 text-indigo">
-                      <ImagePlus className="size-5" />
-                    </span>
-                    <span className="text-[13px] font-bold text-indigo">Importer une image</span>
-                    <span className="text-[11px] text-faint">JPG, PNG ou WEBP · max 4 Mo</span>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Image du ministère</span>
+              {currentImageSrc ? (
+                <div className="relative overflow-hidden rounded-xl border border-[rgba(40,25,80,0.12)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={currentImageSrc} alt="Aperçu du ministère" className="h-40 w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={handleClearImage}
+                    className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white backdrop-blur-sm transition hover:bg-live"
+                    title="Retirer l'image"
+                  >
+                    <X className="size-4" />
+                  </button>
+                  <label className="absolute bottom-2 right-2 cursor-pointer rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-bold text-indigo shadow-sm backdrop-blur-sm transition hover:bg-white">
+                    Changer
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
@@ -421,63 +628,78 @@ export function MinistriesManager({
                       onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
                     />
                   </label>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Ordre d’affichage</span>
+                </div>
+              ) : (
+                <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[rgba(40,25,80,0.25)] bg-[#faf8f4] text-center transition hover:border-gold hover:bg-gold/5">
+                  <span className="flex size-11 items-center justify-center rounded-full bg-indigo/5 text-indigo">
+                    <ImagePlus className="size-5" />
+                  </span>
+                  <span className="text-[13px] font-bold text-indigo">Importer une image</span>
+                  <span className="text-[11px] text-faint">JPG, PNG ou WEBP · max 4 Mo</span>
                   <input
-                    type="number"
-                    min={0}
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(Number(e.target.value))}
-                    className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
                   />
                 </label>
+              )}
+            </div>
 
-                <div className="flex flex-col gap-2.5 justify-center">
-                  <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Visibilité public</span>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isActive}
-                      onChange={(e) => setIsActive(e.target.checked)}
-                      className="size-4 accent-gold cursor-pointer"
-                    />
-                    <span className="text-[13px] font-semibold text-indigo">Afficher sur le site</span>
-                  </label>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-4">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Description</span>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Objectif et activités du ministère..."
-                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
+                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Ordre d’affichage</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={formSortOrder}
+                  onChange={(e) => setFormSortOrder(Number(e.target.value))}
+                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
                 />
               </label>
 
-              <div className="mt-2 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={isPending}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
-                >
-                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                  Enregistrer
-                </button>
+              <div className="flex flex-col gap-2.5 justify-center">
+                <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Visibilité public</span>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                    className="size-4 accent-gold cursor-pointer"
+                  />
+                  <span className="text-[13px] font-semibold text-indigo">Afficher sur le site</span>
+                </label>
               </div>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Description</span>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                placeholder="Objectif et activités du ministère..."
+                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
+              />
+            </label>
+
+            <div className="mt-2 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeModal}
+                className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
+              >
+                {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

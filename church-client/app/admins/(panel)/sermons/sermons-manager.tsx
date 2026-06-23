@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, useMemo } from "react";
 import {
   Plus,
   Search,
@@ -21,6 +21,9 @@ import {
   ImagePlus,
   PlayCircle,
   FileText,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import {
   createSermon,
@@ -36,6 +39,9 @@ import { SermonReaderDialog, type ReaderSermon } from "@/components/media/sermon
 import { BookMultiSelect } from "@/components/admin/book-multi-select";
 import { BIBLE_BOOKS } from "@/lib/constants/bible";
 import { SearchableSelect } from "../_components/searchable-select";
+import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 /** Form-only choice: the 4 real media types + "none" (notes-only sermon). */
 type MediaChoice = SermonMediaType | "none";
@@ -52,6 +58,39 @@ const isFileType = (t: MediaChoice) => t.endsWith("_file");
 const isAudioType = (t: MediaChoice) => t.startsWith("audio_");
 const baseName = (p?: string | null) => (p ? p.split("/").pop() ?? "" : "");
 
+const filterFields: FilterField[] = [
+  { id: "title", label: "Titre", type: "text" },
+  { id: "preacher", label: "Orateur", type: "async-select" },
+  { id: "series", label: "Série", type: "text" },
+  { 
+    id: "is_published", 
+    label: "Statut", 
+    type: "select", 
+    options: [
+      { value: "published", label: "Publié" },
+      { value: "draft", label: "Brouillon" }
+    ] 
+  }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") {
+    return v.includes(t);
+  }
+  if (operator === "equals") {
+    return v === t;
+  }
+  if (operator === "starts_with") {
+    return v.startsWith(t);
+  }
+  if (operator === "ends_with") {
+    return v.endsWith(t);
+  }
+  return true;
+};
+
 export function SermonsManager({
   initialSermons,
   preachers,
@@ -62,12 +101,21 @@ export function SermonsManager({
   const [sermons, setSermons] = useState<AdminSermon[]>(initialSermons);
   const preacherOptions = preachers.map((p) => ({ value: p.id, label: p.name }));
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSermon, setEditingSermon] = useState<AdminSermon | null>(null);
   const [previewSermon, setPreviewSermon] = useState<AdminSermon | null>(null);
+
+  // Table sorting states
+  const [sortBy, setSortBy] = useState<"date" | "title" | "speaker" | "is_published" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+
+  // Table filtering states (Centralized Inline Chips)
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   // Auto-dismiss the status banner after 4s so it never lingers across actions.
   useEffect(() => {
@@ -103,6 +151,13 @@ export function SermonsManager({
   // Scriptures (tags)
   const [scriptures, setScriptures] = useState<string[]>([]);
   const [scriptureInput, setScriptureInput] = useState("");
+
+  const preacherFilterOptions = useMemo(() => {
+    return preachers.map((p) => ({
+      value: p.id,
+      label: p.name,
+    }));
+  }, [preachers]);
 
   const resetForm = () => {
     setTitle("");
@@ -290,21 +345,129 @@ export function SermonsManager({
     });
   };
 
-  const filtered = sermons.filter(
-    (s) =>
-      s.title.toLowerCase().includes(search.toLowerCase()) ||
-      s.speaker.toLowerCase().includes(search.toLowerCase()) ||
-      (s.series && s.series.toLowerCase().includes(search.toLowerCase()))
-  );
+  const hasActiveFilters = activeFilters.length > 0;
+
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
+
+  const handleSort = (column: "date" | "title" | "speaker" | "is_published") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  // Combined filters + sorting logic
+  const processedSermons = useMemo(() => {
+    let result = sermons.filter((s) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const titleMatch = s.title.toLowerCase().includes(q);
+        const speakerMatch = s.speaker.toLowerCase().includes(q);
+        const seriesMatch = s.series ? s.series.toLowerCase().includes(q) : false;
+        if (!titleMatch && !speakerMatch && !seriesMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "title") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(s.title, filter.value, filter.operator)) {
+            return false;
+          }
+        } else if (filter.fieldId === "preacher") {
+          if (filter.value === "") continue;
+          const preacherIdVal = Number(filter.value);
+          if (s.user_id !== preacherIdVal) {
+            return false;
+          }
+        } else if (filter.fieldId === "series") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          const ser = s.series ?? "";
+          if (!matchString(ser, filter.value, filter.operator)) {
+            return false;
+          }
+        } else if (filter.fieldId === "is_published") {
+          if (filter.value === "") continue;
+          const targetPublished = filter.value === "published";
+          if (s.is_published !== targetPublished) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "date") {
+          valA = a.date ?? "";
+          valB = b.date ?? "";
+        } else if (sortBy === "title") {
+          valA = a.title;
+          valB = b.title;
+        } else if (sortBy === "speaker") {
+          valA = a.speaker;
+          valB = b.speaker;
+        } else if (sortBy === "is_published") {
+          const numA = a.is_published ? 1 : 0;
+          const numB = b.is_published ? 1 : 0;
+          return sortOrder === "asc" ? numA - numB : numB - numA;
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [sermons, search, activeFilters, sortBy, sortOrder]);
+
+  // Client-side pagination
+  const pageCount = Math.max(1, Math.ceil(processedSermons.length / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const paged = processedSermons.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  // Chevron rendering helper
+  const renderSortChevron = (column: "date" | "title" | "speaker" | "is_published") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
 
   return (
-    <div className="mx-auto max-w-275 animate-fade-up">
+    <div className="mx-auto max-w-275 animate-fade-up relative">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">Ressources</span>
           <h1 className="mt-1 font-display text-[34px] font-semibold text-indigo italic">Gestion des Prédications</h1>
           <p className="mt-1 text-sm text-body">
-            Gérez la médiathèque de sermons, leurs médias et leurs références bibliques.
+            Gerez la médiathèque de sermons, leurs médias et leurs références bibliques.
           </p>
         </div>
         <button
@@ -318,7 +481,7 @@ export function SermonsManager({
       {status && (
         <div
           className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
+            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm z-10 relative",
             status.type === "success" ? "border-online/20 bg-online/5 text-body-strong" : "border-live/20 bg-live/5 text-live"
           )}
         >
@@ -334,33 +497,107 @@ export function SermonsManager({
         </div>
       )}
 
-      <div className="mb-6 flex max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-        <Search className="size-4 text-faint" />
-        <input
-          type="text"
-          placeholder="Rechercher par titre, orateur ou série..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
-        />
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[240px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher par titre, orateur ou série..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
+            />
+          </div>
+
+          {/* Centralized Query Builder for inline filters */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+            asyncOptions={{
+              preacher: preacherFilterOptions,
+            }}
+          />
+        </div>
+
+        {hasActiveFilters && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Titre / Série</th>
-                <th className="px-6 py-4">Orateur</th>
+                {/* Date */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("date")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Date</span>
+                    {renderSortChevron("date")}
+                  </div>
+                </th>
+
+                {/* Titre / Série */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("title")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Titre / Série</span>
+                    {renderSortChevron("title")}
+                  </div>
+                </th>
+
+                {/* Orateur */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("speaker")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Orateur</span>
+                    {renderSortChevron("speaker")}
+                  </div>
+                </th>
+
                 <th className="px-6 py-4">Média</th>
                 <th className="px-6 py-4">Références</th>
-                <th className="px-6 py-4">Statut</th>
+
+                {/* Statut */}
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("is_published")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Statut</span>
+                    {renderSortChevron("is_published")}
+                  </div>
+                </th>
+
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {filtered.map((sermon) => (
+              {paged.map((sermon) => (
                 <tr key={sermon.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs font-semibold whitespace-nowrap text-faint">{sermon.date}</td>
                   <td className="px-6 py-4">
@@ -431,7 +668,7 @@ export function SermonsManager({
                 </tr>
               ))}
 
-              {filtered.length === 0 && (
+              {processedSermons.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-6 py-10 text-center text-xs text-body">Aucun sermon trouvé.</td>
                 </tr>
@@ -439,6 +676,20 @@ export function SermonsManager({
             </tbody>
           </table>
         </div>
+        {processedSermons.length > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={processedSermons.length}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="prédications"
+          />
+        )}
       </div>
 
       {/* ── Modal ──────────────────────────────────────────────────── */}
@@ -695,7 +946,6 @@ function toReaderSermon(s: AdminSermon): ReaderSermon {
     duration: s.duration,
     description: s.description,
     mediaType: s.media_type,
-    // `media_url` carries the Range-capable stream route for uploaded files.
     mediaSrc: s.is_file ? assetUrl(s.media_url) : s.media_url,
     background: assetUrl(s.background_image),
     scriptures: s.scriptures,

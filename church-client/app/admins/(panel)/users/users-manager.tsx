@@ -12,6 +12,12 @@ import {
   Users as UsersIcon,
   Mail,
   ShieldCheck,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  Search,
+  X,
 } from "lucide-react";
 
 import type { AdminServant } from "@/lib/admin-api";
@@ -26,6 +32,8 @@ import { Switch } from "@/components/ui/switch";
 import { MultiSelect } from "../_components/multi-select";
 import { groupStyle } from "../_components/group-style";
 import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type Feedback = { type: "success" | "error"; message: string } | null;
 
@@ -45,6 +53,16 @@ const EMPTY_FORM: FormState = {
   roles: [],
 };
 
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
+};
+
 export function UsersManager({
   initialServants,
   roleNames,
@@ -62,18 +80,135 @@ export function UsersManager({
   const [editing, setEditing] = useState<AdminServant | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
+  // Search, sorting, filtering states
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "roles" | "is_active" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
   // Pagination (client-side over the loaded servants).
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
-  const sorted = useMemo(
-    () => [...servants].sort((a, b) => a.name.localeCompare(b.name)),
-    [servants]
-  );
-  const pageCount = Math.max(1, Math.ceil(sorted.length / perPage));
+  const filterFields: FilterField[] = useMemo(() => [
+    { id: "name", label: "Nom", type: "text" },
+    { id: "email", label: "Email", type: "text" },
+    {
+      id: "role",
+      label: "Département",
+      type: "select",
+      options: roleNames.map((role) => ({ value: role, label: role })),
+    },
+    {
+      id: "is_active",
+      label: "Statut",
+      type: "select",
+      options: [
+        { value: "active", label: "Actif" },
+        { value: "suspended", label: "Suspendu" },
+      ],
+    },
+  ], [roleNames]);
+
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
+
+  const handleSort = (column: "name" | "roles" | "is_active") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "name" | "roles" | "is_active") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  const processedServants = useMemo(() => {
+    let result = servants.filter((s) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const nameMatch = s.name.toLowerCase().includes(q);
+        const emailMatch = s.email.toLowerCase().includes(q);
+        if (!nameMatch && !emailMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(s.name, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "email") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(s.email, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "role") {
+          if (filter.value === "") continue;
+          if (!s.roles.includes(filter.value)) return false;
+        } else if (filter.fieldId === "is_active") {
+          if (filter.value === "") continue;
+          const targetActive = filter.value === "active";
+          if (s.is_active !== targetActive) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "name") {
+          valA = a.name;
+          valB = b.name;
+        } else if (sortBy === "roles") {
+          valA = a.roles.join(", ");
+          valB = b.roles.join(", ");
+        } else if (sortBy === "is_active") {
+          valA = a.is_active ? "active" : "inactive";
+          valB = b.is_active ? "active" : "inactive";
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    } else {
+      // Default sort
+      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return result;
+  }, [servants, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedServants.length / perPage));
   // Clamp during render so the page stays valid when the list shrinks.
   const currentPage = Math.min(page, pageCount);
-  const paged = sorted.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paged = processedServants.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  const sorted = processedServants;
 
   const openCreate = () => {
     setEditing(null);
@@ -240,15 +375,79 @@ export function UsersManager({
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-sm items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher par nom ou email..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {activeFilters.length > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
+      </div>
+
+      {/* Table (Set z-10 relative for correct stacking context) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Serviteur</th>
-                <th className="px-6 py-4">Départements</th>
-                <th className="px-6 py-4">Accès</th>
+                <th
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Serviteur</span>
+                    {renderSortChevron("name")}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("roles")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Départements</span>
+                    {renderSortChevron("roles")}
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("is_active")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Accès</span>
+                    {renderSortChevron("is_active")}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -346,13 +545,13 @@ export function UsersManager({
                 );
               })}
 
-              {servants.length === 0 && (
+              {sorted.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <UsersIcon className="size-10 text-gold/40" />
                       <p className="text-sm font-semibold text-body-strong">
-                        Aucun serviteur
+                        Aucun serviteur trouvé
                       </p>
                     </div>
                   </td>

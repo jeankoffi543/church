@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { 
   Plus, 
   Search, 
@@ -11,6 +11,11 @@ import {
   EyeOff, 
   CheckCircle, 
   AlertCircle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  X
 } from "lucide-react";
 import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -18,6 +23,9 @@ import Link from "next/link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SearchableSelect } from "../_components/searchable-select";
 import { LocationPicker } from "../_components/location-picker";
+import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type HomeGroup = {
   id: number;
@@ -34,6 +42,31 @@ type HomeGroup = {
   is_active: boolean;
 };
 
+const filterFields: FilterField[] = [
+  { id: "name", label: "Nom", type: "text" },
+  { id: "leader", label: "Responsable", type: "text" },
+  { id: "address", label: "Quartier / Adresse", type: "text" },
+  { 
+    id: "is_active", 
+    label: "Statut", 
+    type: "select", 
+    options: [
+      { value: "active", label: "Actif" },
+      { value: "inactive", label: "Inactif" }
+    ] 
+  }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
+};
+
 export function HomeGroupsManager({
   initialHomeGroups,
   users = [],
@@ -45,6 +78,15 @@ export function HomeGroupsManager({
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Table sorting and filtering states
+  const [sortBy, setSortBy] = useState<"name" | "leader" | "address" | "is_active" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -59,7 +101,7 @@ export function HomeGroupsManager({
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [zoneName, setZoneName] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState(0);
+  const [formSortOrder, setFormSortOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
 
   const openCreateModal = () => {
@@ -72,7 +114,7 @@ export function HomeGroupsManager({
     setLatitude(null);
     setLongitude(null);
     setZoneName(null);
-    setSortOrder(0);
+    setFormSortOrder(0);
     setIsActive(true);
     setIsModalOpen(true);
   };
@@ -87,7 +129,7 @@ export function HomeGroupsManager({
     setLatitude(group.latitude ?? null);
     setLongitude(group.longitude ?? null);
     setZoneName(group.zone_name ?? null);
-    setSortOrder(group.sort_order);
+    setFormSortOrder(group.sort_order);
     setIsActive(group.is_active);
     setIsModalOpen(true);
   };
@@ -129,7 +171,7 @@ export function HomeGroupsManager({
           longitude,
           zone_name: zoneName,
           schedule: schedule || null,
-          sort_order: Number(sortOrder),
+          sort_order: Number(formSortOrder),
           is_active: isActive,
         };
 
@@ -158,11 +200,105 @@ export function HomeGroupsManager({
     sublabel: u.email,
   }));
 
-  const filtered = homeGroups.filter((g) =>
-    g.name.toLowerCase().includes(search.toLowerCase()) ||
-    (g.leader && g.leader.toLowerCase().includes(search.toLowerCase())) ||
-    g.address.toLowerCase().includes(search.toLowerCase())
-  );
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
+
+  const handleSort = (column: "name" | "leader" | "address" | "is_active") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "name" | "leader" | "address" | "is_active") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Home Groups (combined filters + sorting)
+  const processedHomeGroups = useMemo(() => {
+    let result = homeGroups.filter((g) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const nameMatch = g.name.toLowerCase().includes(q);
+        const leaderMatch = g.leader ? g.leader.toLowerCase().includes(q) : false;
+        const addrMatch = g.address.toLowerCase().includes(q);
+        if (!nameMatch && !leaderMatch && !addrMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(g.name, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "leader") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(g.leader ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "address") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(g.address, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "is_active") {
+          if (filter.value === "") continue;
+          const targetActive = filter.value === "active";
+          if (g.is_active !== targetActive) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "name") {
+          valA = a.name;
+          valB = b.name;
+        } else if (sortBy === "leader") {
+          valA = a.leader ?? "";
+          valB = b.leader ?? "";
+        } else if (sortBy === "address") {
+          valA = a.address;
+          valB = b.address;
+        } else if (sortBy === "is_active") {
+          const numA = a.is_active ? 1 : 0;
+          const numB = b.is_active ? 1 : 0;
+          return sortOrder === "asc" ? numA - numB : numB - numA;
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [homeGroups, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedHomeGroups.length / perPage));
+  const currentPage = Math.min(page, pageCount);
+  const paged = processedHomeGroups.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -214,34 +350,91 @@ export function HomeGroupsManager({
         </div>
       )}
 
-      {/* Filter and search bar */}
-      <div className="mb-6 flex max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-        <Search className="size-4 text-faint" />
-        <input
-          type="text"
-          placeholder="Rechercher par nom, responsable ou quartier..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-[14px] text-indigo outline-none placeholder:text-faint"
-        />
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher par nom, responsable ou quartier..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {activeFilters.length > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      {/* Table grid */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Nom du groupe</th>
-                <th className="px-6 py-4">Responsable</th>
-                <th className="px-6 py-4">Quartier / Adresse</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Nom du groupe</span>
+                    {renderSortChevron("name")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("leader")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Responsable</span>
+                    {renderSortChevron("leader")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("address")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Quartier / Adresse</span>
+                    {renderSortChevron("address")}
+                  </div>
+                </th>
                 <th className="px-6 py-4">Coordonnées</th>
-                <th className="px-6 py-4">Statut</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("is_active")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Statut</span>
+                    {renderSortChevron("is_active")}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {filtered.map((group) => (
+              {paged.map((group) => (
                 <tr key={group.id} className="hover:bg-cream/40 transition-colors">
                   <td className="px-6 py-4 font-semibold">{group.name}</td>
                   <td className="px-6 py-4">
@@ -303,7 +496,7 @@ export function HomeGroupsManager({
                 </tr>
               ))}
 
-              {filtered.length === 0 && (
+              {processedHomeGroups.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-xs text-body">
                     Aucun groupe de maison trouvé.
@@ -313,6 +506,21 @@ export function HomeGroupsManager({
             </tbody>
           </table>
         </div>
+
+        {processedHomeGroups.length > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={processedHomeGroups.length}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="groupes de maison"
+          />
+        )}
       </div>
 
       {/* Add / edit modal */}
@@ -387,8 +595,8 @@ export function HomeGroupsManager({
                   <input
                     type="number"
                     min={0}
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(Number(e.target.value))}
+                    value={formSortOrder}
+                    onChange={(e) => setFormSortOrder(Number(e.target.value))}
                     className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
                   />
                 </label>
