@@ -31,6 +31,8 @@ class DatabaseSeeder extends Seeder
             GallerySeeder::class,
             DonationSeeder::class,
             DemoSeeder::class,
+            BranchSeeder::class,
+            PrayerAndContactSeeder::class,
         ]);
     }
 }

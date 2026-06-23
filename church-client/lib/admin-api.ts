@@ -1181,3 +1181,51 @@ export async function getAdminWebhookEvents(): Promise<AdminWebhookEvent[]> {
 export async function replayWebhookEvent(id: number): Promise<{ data: AdminWebhookEvent }> {
   return adminFetch<{ data: AdminWebhookEvent }>(`/webhook-events/${id}/replay`, { method: "POST" });
 }
+/* ── Branches / Campus CRUD ──────────────────────────────────────── */
+
+export type AdminBranch = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  address: string;
+  phone: string;
+  hours: string;
+  lat: number;
+  lng: number;
+  website: string | null;
+  pastor_id: number | null;
+  pastor: { id: number; name: string; email: string } | null;
+};
+
+export async function getAdminBranches(): Promise<AdminBranch[]> {
+  const response = await adminFetch<{ data: AdminBranch[] }>("/branches");
+  return response.data;
+}
+
+export async function createBranch(data: Partial<AdminBranch>): Promise<{ data: AdminBranch }> {
+  const result = await adminFetch<{ data: AdminBranch }>("/branches", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  revalidateTag("branches", { expire: 0 });
+  revalidatePath("/branches");
+  return result;
+}
+
+export async function updateBranch(id: number, data: Partial<AdminBranch>): Promise<{ data: AdminBranch }> {
+  const result = await adminFetch<{ data: AdminBranch }>(`/branches/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  revalidateTag("branches", { expire: 0 });
+  revalidatePath("/branches");
+  return result;
+}
+
+export async function deleteBranch(id: number): Promise<void> {
+  await adminFetch<void>(`/branches/${id}`, { method: "DELETE" });
+  revalidateTag("branches", { expire: 0 });
+  revalidatePath("/branches");
+}
+

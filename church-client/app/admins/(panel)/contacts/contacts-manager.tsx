@@ -13,6 +13,11 @@ import {
   ShieldCheck,
   Loader2,
   User,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
 
 import type { AdminMe, AdminContactMessage } from "@/lib/admin-api";
@@ -26,6 +31,8 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { Pagination } from "../_components/pagination";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type StatusFilter = "all" | "pending" | "read" | "archived";
 
@@ -45,6 +52,16 @@ const STATUS_CONFIG: Record<
   archived: { label: "Archivé", bg: "bg-faint/10", text: "text-faint", dot: "bg-faint" },
 };
 
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
+};
+
 export function ContactsManager({
   initialMessages,
   initialSubjects,
@@ -60,6 +77,11 @@ export function ContactsManager({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Table sorting and filtering states
+  const [sortBy, setSortBy] = useState<"name" | "subject" | "status" | "phone" | "created_at" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -113,23 +135,123 @@ export function ContactsManager({
     setStatus(null);
   };
 
-  const filtered = useMemo(() => {
-    return messages.filter((msg) => {
-      const matchesSearch =
-        msg.name.toLowerCase().includes(search.toLowerCase()) ||
-        msg.email.toLowerCase().includes(search.toLowerCase()) ||
-        msg.subject.toLowerCase().includes(search.toLowerCase()) ||
-        (msg.phone && msg.phone.includes(search));
+  const filterFields: FilterField[] = useMemo(() => [
+    { id: "name", label: "Nom", type: "text" },
+    { id: "email", label: "Email", type: "text" },
+    { id: "phone", label: "Téléphone", type: "text" },
+    { 
+      id: "subject", 
+      label: "Sujet", 
+      type: "select", 
+      options: subjects.map((sub) => ({ value: sub, label: sub }))
+    }
+  ], [subjects]);
 
-      const matchesStatus = statusFilter === "all" ? true : msg.status === statusFilter;
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setStatusFilter("all");
+    setPage(1);
+  };
 
-      return matchesSearch && matchesStatus;
+  const handleSort = (column: "name" | "subject" | "status" | "phone" | "created_at") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "name" | "subject" | "status" | "phone" | "created_at") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Messages (combined filters + sorting)
+  const processedMessages = useMemo(() => {
+    let result = messages.filter((msg) => {
+      // Existing Status Filter Tab
+      if (statusFilter !== "all" && msg.status !== statusFilter) return false;
+
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const nameMatch = msg.name.toLowerCase().includes(q);
+        const emailMatch = msg.email.toLowerCase().includes(q);
+        const subMatch = msg.subject.toLowerCase().includes(q);
+        const phoneMatch = msg.phone ? msg.phone.includes(search) : false;
+        if (!nameMatch && !emailMatch && !subMatch && !phoneMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(msg.name, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "email") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(msg.email, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "phone") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(msg.phone ?? "", filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "subject") {
+          if (filter.value === "") continue;
+          if (msg.subject !== filter.value) return false;
+        }
+      }
+      return true;
     });
-  }, [messages, statusFilter, search]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "name") {
+          valA = a.name;
+          valB = b.name;
+        } else if (sortBy === "subject") {
+          valA = a.subject;
+          valB = b.subject;
+        } else if (sortBy === "status") {
+          valA = a.status;
+          valB = b.status;
+        } else if (sortBy === "phone") {
+          valA = a.phone ?? "";
+          valB = b.phone ?? "";
+        } else if (sortBy === "created_at") {
+          valA = a.created_at ?? "";
+          valB = b.created_at ?? "";
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [messages, statusFilter, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedMessages.length / perPage));
   const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paged = processedMessages.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const selected = messages.find((m) => m.id === selectedId) ?? null;
   const pendingCount = messages.filter((m) => m.status === "pending").length;
@@ -284,60 +406,114 @@ export function ContactsManager({
       {activeTab === "messages" && (
         <>
 
-      {/* Toolbar */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        {/* Filters */}
-        <div className="flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)] w-fit">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => {
-                setStatusFilter(f.key);
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Status filters */}
+          <div className="flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)] w-fit">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => {
+                  setStatusFilter(f.key);
+                  setPage(1);
+                }}
+                className={cn(
+                  "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
+                  statusFilter === f.key
+                    ? "bg-indigo text-white shadow-sm"
+                    : "text-body hover:bg-cream hover:text-indigo"
+                )}
+              >
+                {f.label}
+                {f.key === "pending" && pendingCount > 0 && (
+                  <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-gold text-[9px] font-black text-indigo">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-xs items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              type="text"
+              placeholder="Rechercher par nom, email..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
                 setPage(1);
               }}
-              className={cn(
-                "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
-                statusFilter === f.key
-                  ? "bg-indigo text-white shadow-sm"
-                  : "text-body hover:bg-cream hover:text-indigo"
-              )}
-            >
-              {f.label}
-              {f.key === "pending" && pendingCount > 0 && (
-                <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-gold text-[9px] font-black text-indigo">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
 
-        {/* Search */}
-        <div className="relative w-full max-w-xs sm:w-auto">
-          <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint" />
-          <input
-            type="text"
-            placeholder="Rechercher..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
               setPage(1);
             }}
-            className="w-full h-9 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] pl-10 pr-4 text-xs text-indigo outline-none focus:border-gold"
           />
         </div>
+
+        {activeFilters.length > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Nom</th>
-                <th className="px-6 py-4">Sujet</th>
-                <th className="px-6 py-4">Statut</th>
-                <th className="px-6 py-4">Date</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Nom</span>
+                    {renderSortChevron("name")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("subject")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Sujet</span>
+                    {renderSortChevron("subject")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("status")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Statut</span>
+                    {renderSortChevron("status")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("created_at")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Date</span>
+                    {renderSortChevron("created_at")}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
@@ -394,7 +570,7 @@ export function ContactsManager({
                 );
               })}
 
-              {filtered.length === 0 && (
+              {processedMessages.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -410,11 +586,11 @@ export function ContactsManager({
             </tbody>
           </table>
         </div>
-        {filtered.length > 0 && (
+        {processedMessages.length > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={filtered.length}
+            total={processedMessages.length}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n: number) => {

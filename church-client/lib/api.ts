@@ -530,6 +530,31 @@ export async function getChurchPastoralTeam(): Promise<ChurchPastoralTeam | null
   };
 }
 
+export type PublicBranch = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  address: string;
+  phone: string;
+  hours: string;
+  lat: number;
+  lng: number;
+  website: string | null;
+  pastor_id: number | null;
+  pastor: {
+    id: number;
+    name: string;
+    email: string;
+    initials: string;
+  } | null;
+};
+
+export async function getBranches(): Promise<PublicBranch[]> {
+  const json = await apiGet<{ data: PublicBranch[] }>("/public/branches", ["branches"]);
+  return json?.data || [];
+}
+
 // Re-export the settings response type for consumers that need it.
 export type { SettingsResponse };
 

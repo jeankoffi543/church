@@ -40,6 +40,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('events/{event}', [Public\EventController::class, 'show'])->name('events.show');
 
         Route::get('home-groups', [Public\HomeGroupController::class, 'index'])->name('home-groups.index');
+        Route::get('branches', [Public\BranchController::class, 'index'])->name('branches.index');
+        Route::get('branches/{branch}', [Public\BranchController::class, 'show'])->name('branches.show');
         Route::post('home-groups/applications', [Public\HomeGroupApplicationController::class, 'store'])->name('home-groups.applications.store');
         Route::post('home-groups/applications/verify', [Public\HomeGroupApplicationController::class, 'verify'])->name('home-groups.applications.verify');
         Route::post('home-groups/applications/status', [Public\HomeGroupApplicationController::class, 'status'])->name('home-groups.applications.status');
@@ -157,6 +159,10 @@ Route::prefix('v1')->group(function (): void {
                     ->middleware('permission:validate_home_group_applications')
                     ->name('reject');
             });
+
+            // Branches / campus
+            Route::apiResource('branches', Admin\BranchController::class)
+                ->middleware('permission:manage_branches');
 
             // Cellules / groupes de maison
             Route::apiResource('home-groups', Admin\HomeGroupController::class)

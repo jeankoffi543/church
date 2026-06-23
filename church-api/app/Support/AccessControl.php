@@ -105,6 +105,10 @@ final class AccessControl
                 ['name' => 'view_finances', 'label' => 'Consulter le livre de caisse des dons, dîmes et offrandes'],
                 ['name' => 'export_finances', 'label' => 'Exporter les rapports financiers et reçus fiscaux'],
             ],
+            'Gestion Territoriale' => [
+                ['name' => 'view_branches', 'label' => 'Consulter la liste des campus et branches annexes'],
+                ['name' => 'manage_branches', 'label' => 'Créer, modifier et supprimer les branches et affecter les pasteurs'],
+            ],
         ];
     }
 
@@ -164,6 +168,8 @@ final class AccessControl
                 'manage_gallery',
                 'manage_pastor_word',
                 'manage_church_vision',
+                'view_branches',
+                'manage_branches',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
