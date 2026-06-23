@@ -14,7 +14,7 @@ export default async function DonsPage() {
   return (
     <section className="min-h-screen bg-cream px-6 pt-[clamp(96px,11vw,120px)] pb-[90px]">
       <div className="mx-auto flex max-w-[1080px] flex-wrap items-stretch gap-8">
-        <DonationPitch />
+        <DonationPitch pitch={offering.pitch} />
         <DonationForm
           purposes={offering.purposes}
           presets={offering.presets}

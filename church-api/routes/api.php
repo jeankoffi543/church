@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
+use App\Http\Controllers\Api\V1\Webhooks;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -58,7 +59,14 @@ Route::prefix('v1')->group(function (): void {
         Route::get('past-lives/latest', [Public\PastLiveController::class, 'latest'])->name('past-lives.latest');
         Route::get('past-lives/{pastLive}/stream', [Public\PastLiveController::class, 'stream'])->name('past-lives.stream');
         Route::get('past-lives/{pastLive:slug}', [Public\PastLiveController::class, 'show'])->name('past-lives.show');
+
+        // Dons (Paystack) — open a transaction & poll its accounting status.
+        Route::post('donations/initialize', [Public\DonationController::class, 'initialize'])->name('donations.initialize');
+        Route::get('donations/{reference}/status', [Public\DonationController::class, 'status'])->name('donations.status');
     });
+
+    // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────
+    Route::post('webhooks/paystack', [Webhooks\PaystackWebhookController::class, 'handle'])->name('webhooks.paystack');
 
     // ── Admin authentication ──────────────────────────────────────────
     Route::prefix('admin')->name('api.v1.admin.')->group(function (): void {
@@ -117,6 +125,18 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('past-lives', [Admin\PastLiveController::class, 'store'])->name('past-lives.store');
                 Route::match(['put', 'patch'], 'past-lives/{pastLive}', [Admin\PastLiveController::class, 'update'])->name('past-lives.update');
                 Route::delete('past-lives/{pastLive}', [Admin\PastLiveController::class, 'destroy'])->name('past-lives.destroy');
+            });
+
+            // Finances — livre de caisse des dons + journal des webhooks.
+            Route::middleware('permission:view_finances')->group(function (): void {
+                Route::get('donations', [Admin\DonationController::class, 'index'])->name('donations.index');
+                Route::get('donations/stats', [Admin\DonationController::class, 'stats'])->name('donations.stats');
+                Route::get('donations/export', [Admin\DonationController::class, 'export'])->name('donations.export');
+                Route::post('donations/sync', [Admin\DonationController::class, 'sync'])->name('donations.sync');
+                Route::patch('donations/{donation}/status', [Admin\DonationController::class, 'updateStatus'])->name('donations.status');
+
+                Route::get('webhook-events', [Admin\WebhookEventController::class, 'index'])->name('webhook-events.index');
+                Route::post('webhook-events/{webhookEvent}/replay', [Admin\WebhookEventController::class, 'replay'])->name('webhook-events.replay');
             });
 
             // Agenda / événements
