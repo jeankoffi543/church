@@ -53,6 +53,7 @@ export function CustomVideoPlayer({
   title,
   autoPlay = false,
   onEnded,
+  onTime,
   resumeKey,
 }: {
   mediaType: SermonMediaType;
@@ -60,6 +61,8 @@ export function CustomVideoPlayer({
   title?: string;
   autoPlay?: boolean;
   onEnded?: () => void;
+  /** Playback position in seconds, emitted ~1×/s — drives time-synced replay. */
+  onTime?: (seconds: number) => void;
   /** When set, playback position is saved/restored via localStorage. */
   resumeKey?: string;
 }) {
@@ -75,7 +78,7 @@ export function CustomVideoPlayer({
   }
 
   if (ytId) {
-    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onError={() => setError(true)} resumeKey={resumeKey} />;
+    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onTime={onTime} onError={() => setError(true)} resumeKey={resumeKey} />;
   }
 
   if (vimeoId) {
@@ -98,6 +101,7 @@ export function CustomVideoPlayer({
       autoPlay={autoPlay}
       title={title}
       onEnded={onEnded}
+      onTime={onTime}
       onError={() => setError(true)}
       resumeKey={resumeKey}
     />
@@ -122,21 +126,30 @@ function YouTubeEmbed({
   videoId,
   title,
   onEnded,
+  onTime,
   onError,
   resumeKey,
 }: {
   videoId: string;
   title?: string;
   onEnded?: () => void;
+  onTime?: (seconds: number) => void;
   onError?: () => void;
   resumeKey?: string;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
+  const onTimeRef = useRef(onTime);
+
+  // Keep the latest callback without re-creating the player.
+  useEffect(() => {
+    onTimeRef.current = onTime;
+  });
 
   useEffect(() => {
     let cancelled = false;
     let saveTimer: ReturnType<typeof setInterval> | null = null;
+    let timeTimer: ReturnType<typeof setInterval> | null = null;
     const resumeAt = readResume(resumeKey);
 
     (async () => {
@@ -181,11 +194,24 @@ function YouTubeEmbed({
           }
         }, 5000);
       }
+
+      // Drive time-synced replay (chat reveal) without leaking the interval.
+      if (onTimeRef.current) {
+        timeTimer = setInterval(() => {
+          try {
+            const p = playerRef.current;
+            if (p) onTimeRef.current?.(p.getCurrentTime());
+          } catch {
+            /* player not ready */
+          }
+        }, 1000);
+      }
     })();
 
     return () => {
       cancelled = true;
       if (saveTimer) clearInterval(saveTimer);
+      if (timeTimer) clearInterval(timeTimer);
       try {
         playerRef.current?.destroy();
       } catch {
@@ -222,6 +248,7 @@ function FileVideoPlayer({
   autoPlay,
   title,
   onEnded,
+  onTime,
   onError,
   resumeKey,
 }: {
@@ -229,6 +256,7 @@ function FileVideoPlayer({
   autoPlay?: boolean;
   title?: string;
   onEnded?: () => void;
+  onTime?: (seconds: number) => void;
   onError?: () => void;
   resumeKey?: string;
 }) {
@@ -357,6 +385,7 @@ function FileVideoPlayer({
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={(e) => {
           setProgress(e.currentTarget.currentTime);
+          onTime?.(e.currentTarget.currentTime);
           saveResume(resumeKey, e.currentTarget.currentTime, e.currentTarget.duration);
         }}
         onProgress={onProgress}

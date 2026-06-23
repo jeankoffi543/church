@@ -172,6 +172,7 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
           src={active.mediaSrc}
           title={active.title}
           resumeKey={resumeKeyOf(active)}
+          chatSlug={active.hasChat ? active.slug : undefined}
         />
       )}
 

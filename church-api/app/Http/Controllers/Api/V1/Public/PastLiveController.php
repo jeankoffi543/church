@@ -21,6 +21,7 @@ class PastLiveController extends Controller
     {
         $lives = PastLive::query()
             ->with('preacher')
+            ->withCount('liveChatMessages')
             ->when($request->filled('series'), fn ($q) => $q->where('series_name', $request->string('series')))
             ->latestFirst()
             ->paginate($request->integer('per_page', 50));
@@ -33,7 +34,7 @@ class PastLiveController extends Controller
      */
     public function latest(): PastLiveResource
     {
-        $live = PastLive::query()->with('preacher')->latestFirst()->first();
+        $live = PastLive::query()->with('preacher')->withCount('liveChatMessages')->latestFirst()->first();
 
         abort_if($live === null, 404, 'Aucune rediffusion disponible.');
 
@@ -47,7 +48,7 @@ class PastLiveController extends Controller
     {
         $pastLive->increment('views_count');
 
-        return new PastLiveResource($pastLive->load('preacher'));
+        return new PastLiveResource($pastLive->load('preacher')->loadCount('liveChatMessages'));
     }
 
     /**

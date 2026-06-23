@@ -33,6 +33,7 @@
   --animate-live-pulse: livePulse 2s infinite;
   --animate-live-blink: liveBlink 1.2s infinite;
   --animate-fade-up: fadeUp 0.8s ease both;
+  --animate-reaction-float: reactionFloat 2.4s ease-out forwards;
 
   @keyframes livePulse {
     0% {
@@ -62,6 +63,20 @@
     to {
       opacity: 1;
       transform: none;
+    }
+  }
+  @keyframes reactionFloat {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.4);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(0, -10px) scale(var(--reaction-scale, 1));
+    }
+    100% {
+      opacity: 0;
+      transform: translate(var(--reaction-drift, 0), -220px) scale(var(--reaction-scale, 1));
     }
   }
 }

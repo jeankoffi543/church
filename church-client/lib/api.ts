@@ -834,6 +834,7 @@ type ApiPastLive = {
   month_label: string | null;
   media_type: SermonMediaType | null;
   media_src: string | null;
+  has_chat?: boolean;
 };
 
 export type PastLive = {
@@ -850,6 +851,8 @@ export type PastLive = {
   monthLabel: string;
   mediaType: SermonMediaType | null;
   mediaSrc: string | null;
+  youtubeId: string | null;
+  hasChat: boolean;
 };
 
 const mapPastLive = (l: ApiPastLive): PastLive => ({
@@ -867,6 +870,8 @@ const mapPastLive = (l: ApiPastLive): PastLive => ({
   mediaType: l.media_type,
   // Files come back as a relative stream route; resolve to the API origin.
   mediaSrc: l.media_type === "video_file" ? assetUrl(l.media_src) : l.media_src,
+  youtubeId: l.youtube_id,
+  hasChat: Boolean(l.has_chat),
 });
 
 export async function getPastLives(): Promise<PastLive[]> {
