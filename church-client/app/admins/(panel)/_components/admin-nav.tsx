@@ -17,6 +17,7 @@ import {
   Clapperboard,
   MessageSquare,
   Compass,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 
@@ -42,6 +43,7 @@ const NAV: NavItem[] = [
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },
   { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, required: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers] },
   { href: "/admins/contacts", label: "Messages de contact", icon: Inbox, required: [PERMISSIONS.viewContacts] },
+  { href: "/admins/branches", label: "Campus & Extensions", icon: Landmark, required: [PERMISSIONS.viewBranches, PERMISSIONS.manageBranches] },
   { href: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, required: [PERMISSIONS.managePastorWord] },
   { href: "/admins/settings/church-vision", label: "Vision & Équipe", icon: Compass, required: [PERMISSIONS.manageChurchVision] },
   { href: "/admins/settings", label: "Paramètres", icon: Settings, required: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings] },

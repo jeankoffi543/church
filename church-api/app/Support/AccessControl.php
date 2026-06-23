@@ -101,6 +101,10 @@ final class AccessControl
                 ['name' => 'manage_church_vision', 'label' => 'Modifier la vision, les piliers de foi et la composition de l’équipe pastorale'],
 
             ],
+            'Gestion Territoriale' => [
+                ['name' => 'view_branches', 'label' => 'Consulter la liste des campus et branches annexes'],
+                ['name' => 'manage_branches', 'label' => 'Créer, modifier et supprimer les branches et affecter les pasteurs'],
+            ],
         ];
     }
 
@@ -160,6 +164,8 @@ final class AccessControl
                 'manage_gallery',
                 'manage_pastor_word',
                 'manage_church_vision',
+                'view_branches',
+                'manage_branches',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
