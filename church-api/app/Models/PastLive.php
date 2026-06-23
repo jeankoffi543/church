@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $description
  * @property string|null $youtube_id
  * @property string|null $video_path
+ * @property string|null $embed_url
  * @property string|null $thumbnail_path
  * @property string|null $series_name
  * @property VideoSourceType $source_type
@@ -38,6 +39,7 @@ class PastLive extends Model
         'description',
         'youtube_id',
         'video_path',
+        'embed_url',
         'thumbnail_path',
         'series_name',
         'source_type',

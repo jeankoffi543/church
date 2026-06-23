@@ -50,12 +50,16 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
   const [audience, setAudience] = useState(0);
   const [pseudonym, setPseudonym] = useState<string | null>(null);
   const [askPseudonym, setAskPseudonym] = useState(false);
+  // True for the rest of the session after a live ends (cleared on reload).
+  const [justEnded, setJustEnded] = useState(false);
   const [tab, setTab] = useState<LiveTab>(() =>
     initialConfig.isLive && initialConfig.chatEnabled ? "chat" : "priere",
   );
 
   const reactionsRef = useRef<ReactionsHandle>(null);
   const pendingMessage = useRef<string | null>(null);
+  // Tracks the broadcast's start stamp so a new live wipes the previous chat.
+  const startedAtRef = useRef<string | null>(null);
 
   const appendMessage = useCallback((message: ChatMessage) => {
     setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
@@ -74,11 +78,19 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
     };
   }, []);
 
-  // Single socket subscription, fanned out to chat / audience / reactions.
+  // Single socket subscription, fanned out to chat / audience / reactions / state.
   useLiveChannel({
     onChat: appendMessage,
     onAudience: setAudience,
     onReaction: ({ type }) => reactionsRef.current?.spawn(type as ReactionType),
+    // Instant reaction to a live starting/ending — no reload, no poll wait.
+    onLiveState: ({ is_live, started_at }) => {
+      startedAtRef.current = started_at;
+      setMessages([]); // wipe the previous live's chat immediately
+      setJustEnded(!is_live);
+      setConfig((prev) => ({ ...prev, isLive: is_live }));
+      void refreshConfig(); // pull the fresh stream URL / title
+    },
   });
 
   // Anonymous audience heartbeat (server TTL is 40s → refresh well inside it).
@@ -106,36 +118,43 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
     };
   }, [config.isLive]);
 
-  // Keep live status / stream URL fresh without a reload.
-  useEffect(() => {
+  // Pull the live settings and reconcile config + chat. A changed start stamp
+  // means a fresh broadcast (or one that just ended) → drop the previous live's
+  // chat and reflect the "just ended" state.
+  const refreshConfig = useCallback(async () => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-    let active = true;
-    const refresh = async () => {
-      try {
-        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const live = (await res.json())?.data;
-        if (!live || !active) return;
-        setConfig((prev) => ({
-          ...prev,
-          isLive: Boolean(live.live_status),
-          streamUrl: (live.live_embed_url as string) ?? prev.streamUrl,
-          title: (live.live_title as string) ?? prev.title,
-          description: (live.live_description as string) ?? prev.description,
-        }));
-      } catch {
-        /* network blip — keep last good config */
+    try {
+      const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const live = (await res.json())?.data;
+      if (!live) return;
+      setConfig((prev) => ({
+        ...prev,
+        isLive: Boolean(live.live_status),
+        streamUrl: (live.live_embed_url as string) ?? prev.streamUrl,
+        title: (live.live_title as string) ?? prev.title,
+        description: (live.live_description as string) ?? prev.description,
+      }));
+
+      const startedAt = (live.live_started_at as string) ?? "";
+      if (startedAtRef.current !== null && startedAtRef.current !== startedAt) {
+        setMessages(await getLiveMessages());
+        setJustEnded(startedAt === "");
       }
-    };
-    const interval = setInterval(refresh, 15_000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
+      startedAtRef.current = startedAt;
+    } catch {
+      /* network blip — keep last good config */
+    }
   }, []);
+
+  // Fallback poll (the WebSocket `live.state` event is the instant path).
+  useEffect(() => {
+    const interval = setInterval(refreshConfig, 15_000);
+    return () => clearInterval(interval);
+  }, [refreshConfig]);
 
   const handleReact = useCallback((type: ReactionType) => {
     void sendReaction(type);
@@ -214,7 +233,7 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
 
         <div className="relative flex-1 overflow-hidden bg-black">
           {config.isLive && isHls ? (
-            <HlsPlayer src={config.streamUrl} title={config.title} />
+            <HlsPlayer src={config.streamUrl} title={config.title} live />
           ) : config.isLive && embedUrl ? (
             <iframe
               src={embedUrl}
@@ -226,12 +245,25 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
           ) : (
             <div className="absolute inset-0 grid place-items-center px-6 text-center">
               <div className="max-w-md animate-fade-up">
-                <p className="font-display text-2xl font-semibold italic text-white/90">
-                  Le prochain culte débutera bientôt.
-                </p>
-                <p className="mt-3 text-sm font-medium tracking-wide text-gold">
-                  Rejoignez-nous chaque dimanche à 9h00.
-                </p>
+                {justEnded ? (
+                  <>
+                    <p className="font-display text-2xl font-semibold italic text-white/90">
+                      Le direct vient de se terminer.
+                    </p>
+                    <p className="mt-3 text-sm font-medium tracking-wide text-gold">
+                      Merci d’avoir suivi le culte — la rediffusion sera bientôt disponible.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display text-2xl font-semibold italic text-white/90">
+                      Le prochain culte débutera bientôt.
+                    </p>
+                    <p className="mt-3 text-sm font-medium tracking-wide text-gold">
+                      Rejoignez-nous chaque dimanche à 9h00.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}

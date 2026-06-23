@@ -41,4 +41,10 @@ return [
         'currency' => env('PAYSTACK_CURRENCY', 'XOF'),
     ],
 
+    // Self-hosted RTMP→HLS server: the secret stream key OBS must push with.
+    // Kept here (env), never in the publicly-readable settings table.
+    'rtmp' => [
+        'publish_key' => env('RTMP_PUBLISH_KEY'),
+    ],
+
 ];

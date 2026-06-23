@@ -17,6 +17,7 @@ class PastLiveResource extends JsonResource
     public function toArray(Request $request): array
     {
         $isFile = $this->youtube_id === null && $this->video_path !== null;
+        $isEmbed = $this->youtube_id === null && $this->video_path === null && $this->embed_url !== null;
 
         return [
             'id' => $this->id,
@@ -37,13 +38,13 @@ class PastLiveResource extends JsonResource
             'date_label' => $this->broadcasted_at?->locale('fr')->translatedFormat('d F Y'),
             'month_label' => $this->broadcasted_at?->locale('fr')->translatedFormat('F Y'),
             // Player contract, mirroring the sermon media shape: external URL for
-            // YouTube, a Range-capable stream route for uploaded files.
-            'media_type' => $this->youtube_id !== null ? 'video_url' : ($isFile ? 'video_file' : null),
+            // YouTube / generic embeds, a Range-capable stream route for files.
+            'media_type' => $this->youtube_id !== null || $isEmbed ? 'video_url' : ($isFile ? 'video_file' : null),
             'media_src' => $this->youtube_id !== null
                 ? "https://www.youtube.com/watch?v={$this->youtube_id}"
                 : ($isFile
                     ? route('api.v1.public.past-lives.stream', $this->id, absolute: false).'?v='.substr(md5((string) $this->video_path), 0, 8)
-                    : null),
+                    : ($isEmbed ? $this->embed_url : null)),
         ];
     }
 }

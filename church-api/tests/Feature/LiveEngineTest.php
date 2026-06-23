@@ -1,9 +1,11 @@
 <?php
 
+use App\Events\LiveStateChanged;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 
 /* ── Chat, reactions, audience ──────────────────────────────────── */
 
@@ -40,6 +42,16 @@ it('aggregates a reaction and reports the running total', function () {
     $this->postJson('/api/v1/public/live/react', ['type' => 'flame'])->assertOk()->assertJsonPath('data.total', 1);
     $this->postJson('/api/v1/public/live/react', ['type' => 'flame'])->assertOk()->assertJsonPath('data.total', 2);
     $this->postJson('/api/v1/public/live/react', ['type' => 'invalid'])->assertStatus(422);
+});
+
+it('accumulates reactions on a store whose increment needs an existing key', function () {
+    // The database cache store (used in prod) does not auto-create keys on
+    // increment — guard the seed-then-increment fix against regression.
+    config(['cache.default' => 'database']);
+    Cache::flush();
+
+    $this->postJson('/api/v1/public/live/react', ['type' => 'flame'])->assertOk()->assertJsonPath('data.total', 1);
+    $this->postJson('/api/v1/public/live/react', ['type' => 'flame'])->assertOk()->assertJsonPath('data.total', 2);
 });
 
 it('counts the anonymous audience via heartbeats', function () {
@@ -130,6 +142,131 @@ it('counts distinct visitors separately', function () {
     $this->withHeaders(['User-Agent' => 'Navigateur-B'])->postJson("/api/v1/public/past-lives/{$live->id}/view")->assertJsonPath('data.counted', true);
 
     expect($live->fresh()->views_count)->toBe(2);
+});
+
+/* ── Self-hosted RTMP publish authorization ─────────────────────── */
+
+it('authorizes an RTMP publish carrying the correct stream key', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+
+    $this->post('/api/v1/public/rtmp/auth', ['name' => 'culte-secret'])->assertOk();
+});
+
+it('rejects an RTMP publish with a wrong or missing key', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+
+    $this->post('/api/v1/public/rtmp/auth', ['name' => 'pirate'])->assertForbidden();
+    $this->post('/api/v1/public/rtmp/auth', [])->assertForbidden();
+});
+
+it('rejects every RTMP publish when no key is configured', function () {
+    config(['services.rtmp.publish_key' => null]);
+
+    $this->post('/api/v1/public/rtmp/auth', ['name' => 'anything'])->assertForbidden();
+});
+
+it('broadcasts the off-air state when a broadcast is archived', function () {
+    Event::fake([LiveStateChanged::class]);
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_started_at', now()->subMinute()->toIso8601String(), 'live');
+    LiveChatMessage::create(['author_name' => 'A', 'message' => 'x', 'time_offset_seconds' => 1]);
+
+    $this->artisan('mfm:archive-live')->assertSuccessful();
+
+    Event::assertDispatched(LiveStateChanged::class, fn (LiveStateChanged $e) => $e->isLive === false);
+});
+
+it('auto-archives the live when OBS stops (on_publish_done)', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_started_at', now()->subMinutes(10)->toIso8601String(), 'live');
+    Setting::set('live_title', 'Veillée RTMP', 'live');
+    LiveChatMessage::create(['author_name' => 'A', 'message' => 'amen', 'time_offset_seconds' => 5]);
+
+    $this->post('/api/v1/public/rtmp/done', ['name' => 'culte-secret'])->assertOk();
+
+    expect((bool) Setting::get('live_status'))->toBeFalse();
+    expect(PastLive::query()->where('title', 'Veillée RTMP')->exists())->toBeTrue();
+});
+
+it('never exposes the stream key on the public settings API', function () {
+    Setting::set('live_stream_key', 'top-secret', 'live');
+    Setting::set('live_title', 'Visible', 'live');
+
+    $res = $this->getJson('/api/v1/public/settings?group=live')->assertOk();
+    expect($res->json('data.live_title'))->toBe('Visible');
+    expect($res->json('data'))->not->toHaveKey('live_stream_key');
+
+    $this->getJson('/api/v1/public/settings/live_stream_key')->assertNotFound();
+});
+
+it('authorizes RTMP against the admin-managed stream key (over env)', function () {
+    config(['services.rtmp.publish_key' => 'env-default']);
+    Setting::set('live_stream_key', 'admin-key', 'live');
+
+    $this->post('/api/v1/public/rtmp/auth', ['name' => 'admin-key'])->assertOk();
+    $this->post('/api/v1/public/rtmp/auth', ['name' => 'env-default'])->assertForbidden();
+});
+
+it('does not archive on a publish-done with a wrong key', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+    Setting::set('live_status', true, 'live');
+
+    $this->post('/api/v1/public/rtmp/done', ['name' => 'pirate'])->assertForbidden();
+    expect((bool) Setting::get('live_status'))->toBeTrue();
+});
+
+it('attaches a finished recording to the latest live archive', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+    $live = PastLive::factory()->create([
+        'source_type' => 'live_archive',
+        'video_path' => null,
+        'embed_url' => 'https://stale',
+    ]);
+
+    $this->post('/api/v1/public/rtmp/recorded', ['name' => 'culte-secret', 'file' => 'culte-123.mp4'])->assertOk();
+
+    $live->refresh();
+    expect($live->video_path)->toBe('/storage/lives/recordings/culte-123.mp4');
+    expect($live->embed_url)->toBeNull();
+});
+
+it('rejects a recording callback with a wrong key', function () {
+    config(['services.rtmp.publish_key' => 'culte-secret']);
+    PastLive::factory()->create(['source_type' => 'live_archive', 'video_path' => null]);
+
+    $this->post('/api/v1/public/rtmp/recorded', ['name' => 'pirate', 'file' => 'x.mp4'])->assertForbidden();
+});
+
+it('archives a non-YouTube live with a replayable embed_url', function () {
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_started_at', now()->subMinutes(5)->toIso8601String(), 'live');
+    Setting::set('live_title', 'Culte Facebook', 'live');
+    Setting::set('live_embed_url', 'https://www.facebook.com/MFMFicgayo/videos/123', 'live');
+    LiveChatMessage::create(['author_name' => 'A', 'message' => 'hi', 'time_offset_seconds' => 1]);
+
+    $this->artisan('mfm:archive-live')->assertSuccessful();
+
+    $live = PastLive::query()->where('title', 'Culte Facebook')->first();
+    expect($live->youtube_id)->toBeNull();
+    expect($live->embed_url)->toBe('https://www.facebook.com/MFMFicgayo/videos/123');
+
+    $this->getJson("/api/v1/public/past-lives/{$live->slug}")
+        ->assertOk()
+        ->assertJsonPath('data.media_type', 'video_url')
+        ->assertJsonPath('data.media_src', 'https://www.facebook.com/MFMFicgayo/videos/123');
+});
+
+it('does not store an ephemeral HLS playlist as a replay url', function () {
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_started_at', now()->subMinutes(5)->toIso8601String(), 'live');
+    Setting::set('live_title', 'Culte HLS', 'live');
+    Setting::set('live_embed_url', 'https://stream.mfm.ci/hls/culte.m3u8', 'live');
+    LiveChatMessage::create(['author_name' => 'A', 'message' => 'hi', 'time_offset_seconds' => 1]);
+
+    $this->artisan('mfm:archive-live')->assertSuccessful();
+
+    expect(PastLive::query()->where('title', 'Culte HLS')->value('embed_url'))->toBeNull();
 });
 
 it('returns engagement analytics for an archive', function () {

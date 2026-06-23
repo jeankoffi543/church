@@ -37,6 +37,7 @@ export type LiveHandlers = {
   onChat?: (message: ChatMessage) => void;
   onReaction?: (reaction: { type: string; total: number }) => void;
   onAudience?: (count: number) => void;
+  onLiveState?: (state: { is_live: boolean; started_at: string }) => void;
 };
 
 /**
@@ -60,6 +61,7 @@ export function useLiveChannel(handlers: LiveHandlers): void {
     channel.listen(".chat.message", (d: ChatMessage) => ref.current.onChat?.(d));
     channel.listen(".reaction", (d: { type: string; total: number }) => ref.current.onReaction?.(d));
     channel.listen(".audience", (d: { count: number }) => ref.current.onAudience?.(d.count));
+    channel.listen(".live.state", (d: { is_live: boolean; started_at: string }) => ref.current.onLiveState?.(d));
 
     return () => {
       echo.leaveChannel("live");

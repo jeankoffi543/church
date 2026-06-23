@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\VideoSourceType;
+use App\Events\LiveStateChanged;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
@@ -25,6 +26,7 @@ class ArchiveLive extends Command
         if (! $hasChat && (! is_string($startedAt) || $startedAt === '')) {
             Setting::set('live_status', false, 'live');
             Setting::set('live_started_at', '', 'live');
+            broadcast(new LiveStateChanged(false));
             $this->info('Aucun direct à archiver.');
 
             return self::SUCCESS;
@@ -33,12 +35,20 @@ class ArchiveLive extends Command
         $title = (string) (Setting::get('live_title') ?: 'Rediffusion du direct');
         $broadcastedAt = is_string($startedAt) && $startedAt !== '' ? Carbon::parse($startedAt) : now();
 
+        $rawUrl = (string) Setting::get('live_embed_url');
+        $youtubeId = $this->extractYouTubeId($rawUrl);
+        // Non-YouTube sources (e.g. Facebook VOD) replay from their URL. A live
+        // HLS playlist is excluded — its segments are gone once the stream ends;
+        // its replay would come from a recorded file instead.
+        $embedUrl = $youtubeId === null && $rawUrl !== '' && ! str_contains($rawUrl, '.m3u8') ? $rawUrl : null;
+
         $pastLive = PastLive::create([
             'title' => $title,
             'slug' => $this->uniqueSlug($title),
             'description' => (Setting::get('live_description') ?: null),
-            'youtube_id' => $this->extractYouTubeId((string) Setting::get('live_embed_url')),
+            'youtube_id' => $youtubeId,
             'video_path' => null,
+            'embed_url' => $embedUrl,
             'thumbnail_path' => null,
             'series_name' => 'Cultes en direct',
             'source_type' => VideoSourceType::LiveArchive,
@@ -53,6 +63,7 @@ class ArchiveLive extends Command
 
         Setting::set('live_status', false, 'live');
         Setting::set('live_started_at', '', 'live');
+        broadcast(new LiveStateChanged(false));
 
         $this->info("Direct archivé : {$pastLive->slug} ({$moved} message(s) de chat).");
 

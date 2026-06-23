@@ -91,6 +91,9 @@ function DialogBody({
   onEnded: () => void;
 }) {
   const [currentTime, setCurrentTime] = useState(0);
+  // Facebook embeds play in an iframe that can't report playback time → the chat
+  // can't be time-synced, so it falls back to showing the full conversation.
+  const synced = !(src && /facebook\.com|fb\.watch|fb\.me/.test(src));
 
   const player = (
     <CustomVideoPlayer
@@ -121,7 +124,7 @@ function DialogBody({
           {share}
         </div>
         <div className="flex h-[42vh] min-h-0 flex-col border-t border-white/10 lg:h-auto lg:border-t-0 lg:border-l">
-          <ReplayChat slug={chatSlug} currentTime={currentTime} />
+          <ReplayChat slug={chatSlug} currentTime={currentTime} synced={synced} />
         </div>
       </div>
     );

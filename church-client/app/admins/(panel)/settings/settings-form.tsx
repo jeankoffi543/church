@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { 
-  Plus, 
-  Trash, 
-  Save, 
-  Loader2, 
-  Globe, 
-  Clock, 
-  HeartHandshake, 
-  PhoneCall, 
+import { useEffect, useState, useTransition } from "react";
+import {
+  Plus,
+  Trash,
+  Save,
+  Loader2,
+  Globe,
+  Clock,
+  HeartHandshake,
+  PhoneCall,
   Tv,
   CheckCircle,
   AlertCircle,
   ImagePlus,
+  KeyRound,
+  RefreshCw,
+  Copy,
+  Check,
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
@@ -22,6 +26,9 @@ import { LocationPicker } from "../_components/location-picker";
 
 const SETTING_INPUT =
   "rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold w-full";
+
+// Base URL of the self-hosted HLS endpoint; the stream key fills in <base>/<key>.m3u8.
+const HLS_BASE = (process.env.NEXT_PUBLIC_HLS_BASE_URL || "http://localhost:8088/hls").replace(/\/+$/, "");
 
 type TabType = "general" | "schedule" | "offerings" | "contact" | "live";
 
@@ -121,6 +128,31 @@ export function SettingsForm({
   );
   const [liveTitle, setLiveTitle] = useState((initialSettings.live?.live_title as string) ?? "");
   const [liveDescription, setLiveDescription] = useState((initialSettings.live?.live_description as string) ?? "");
+  const [streamKey, setStreamKey] = useState((initialSettings.live?.live_stream_key as string) ?? "");
+  const [keyCopied, setKeyCopied] = useState(false);
+
+  // Reflect an externally-ended live (e.g. OBS stopped → auto-archived) by
+  // unchecking the status here without a reload. Only syncs OFF, so it never
+  // clobbers an admin who toggled the live ON before saving.
+  useEffect(() => {
+    if (!liveStatus) return;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    const id = setInterval(async () => {
+      if (isPending) return;
+      try {
+        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const live = (await res.json())?.data;
+        if (live && !live.live_status) setLiveStatus(false);
+      } catch {
+        /* network blip — retry next tick */
+      }
+    }, 12_000);
+    return () => clearInterval(id);
+  }, [liveStatus, isPending]);
   const [liveFallbackImage, setLiveFallbackImage] = useState((initialSettings.live?.live_fallback_image as string) ?? "");
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
@@ -312,6 +344,7 @@ export function SettingsForm({
           { key: "live_chat_enabled", value: liveChatEnabled, group: "live" },
           { key: "live_title", value: liveTitle, group: "live" },
           { key: "live_description", value: liveDescription, group: "live" },
+          { key: "live_stream_key", value: streamKey, group: "live" },
           { 
             key: "live_fallback_image", 
             value: liveFallbackImage.startsWith("blob:") ? "" : liveFallbackImage, 
@@ -1002,14 +1035,64 @@ export function SettingsForm({
             </label>
 
             <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">URL du flux vidéo (YouTube / Vimeo embed)</span>
+              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">URL du flux vidéo (YouTube / Facebook / HLS .m3u8)</span>
               <input
                 value={liveEmbedUrl}
                 onChange={(e) => setLiveEmbedUrl(e.target.value)}
                 className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold"
-                placeholder="ex: https://www.youtube.com/embed/live_stream?channel=YOUR_CHANNEL_ID"
+                placeholder="ex: https://www.youtube.com/watch?v=… · https://stream.mfm.ci/hls/<clé>.m3u8"
               />
             </label>
+
+            {/* Clé de streaming (serveur RTMP souverain) */}
+            <div className="rounded-2xl border border-[rgba(40,25,80,0.1)] bg-cream/50 p-5">
+              <div className="mb-1 flex items-center gap-2">
+                <KeyRound className="size-4 text-gold-dark" />
+                <h3 className="text-sm font-bold text-indigo">Clé de streaming (OBS → serveur souverain)</h3>
+              </div>
+              <p className="mb-3 text-[12.5px] text-body">
+                Pousse le flux depuis OBS vers <code className="rounded bg-indigo/5 px-1">rtmp://&lt;serveur&gt;:1935/live</code> avec cette clé.
+                Elle est secrète : elle n’est jamais exposée sur le site public.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={streamKey}
+                  onChange={(e) => setStreamKey(e.target.value)}
+                  placeholder="Génère ou colle une clé…"
+                  className="min-w-[200px] flex-1 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2.5 font-mono text-[13px] text-indigo outline-none focus:border-gold"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const key = crypto.randomUUID().replace(/-/g, "");
+                    setStreamKey(key);
+                    // Auto-fill the stream URL with the matching HLS playlist.
+                    setLiveEmbedUrl(`${HLS_BASE}/${key}.m3u8`);
+                    setKeyCopied(false);
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo/20 bg-lilac/30 px-3.5 py-2.5 text-xs font-bold text-indigo transition hover:border-indigo"
+                >
+                  <RefreshCw className="size-3.5" /> Générer
+                </button>
+                <button
+                  type="button"
+                  disabled={!streamKey}
+                  onClick={() => {
+                    navigator.clipboard.writeText(streamKey).then(() => {
+                      setKeyCopied(true);
+                      setTimeout(() => setKeyCopied(false), 2000);
+                    });
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2.5 text-xs font-bold text-body transition hover:border-gold disabled:opacity-40"
+                >
+                  {keyCopied ? <Check className="size-3.5 text-online" /> : <Copy className="size-3.5" />}
+                  {keyCopied ? "Copiée" : "Copier"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11.5px] text-faint">
+                « Générer » remplit aussi l’URL du flux ci-dessus (<code className="rounded bg-indigo/5 px-1">{HLS_BASE}/{streamKey || "<clé>"}.m3u8</code>). Pense à enregistrer.
+              </p>
+            </div>
 
             {/* Sermon Notes Section */}
             <div className="border-t border-[rgba(40,25,80,0.06)] pt-6 flex flex-col gap-4">

@@ -77,7 +77,11 @@ class LiveController extends Controller
             'type' => ['required', 'in:'.implode(',', self::REACTIONS)],
         ])['type'];
 
-        $total = (int) Cache::increment("live:reactions:{$type}");
+        // Seed the key first: `increment` on the database cache store is a no-op
+        // when the key is absent (unlike the array store used in tests).
+        $key = "live:reactions:{$type}";
+        Cache::add($key, 0, now()->addHours(12));
+        $total = (int) Cache::increment($key);
         broadcast(new ReactionSent($type, $total));
 
         return response()->json(['data' => ['type' => $type, 'total' => $total]]);
