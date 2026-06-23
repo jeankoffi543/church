@@ -7,6 +7,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
+use Keky\QueryMaster\Filter;
+
 /**
  * @property string $name
  * @property string $leader
@@ -19,7 +25,33 @@ use Illuminate\Database\Eloquent\Model;
 class HomeGroup extends Model
 {
     /** @use HasFactory<HomeGroupFactory> */
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'name' => SearchOperator::LIKE,
+        'leader' => SearchOperator::LIKE,
+        'address' => SearchOperator::LIKE,
+        'zone_name' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'name',
+        'leader',
+        'sort_order',
+        'is_active',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            Filter::make('is_active', 'is_active'),
+            Filter::make('leader_id', 'leader_id'),
+            Filter::make('zone_name', 'zone_name'),
+            Filter::make('name', 'name'),
+            Filter::make('meeting_day', 'day'),
+        ];
+    }
 
     protected $fillable = [
         'name',
