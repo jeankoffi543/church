@@ -1027,6 +1027,7 @@ export type AdminPastLive = {
   youtube_id: string | null;
   thumbnail_path: string | null;
   series_name: string | null;
+  source_type: VideoSourceType;
   preacher_id: number | null;
   preacher: string | null;
   views_count: number;
@@ -1035,6 +1036,15 @@ export type AdminPastLive = {
   date_label: string | null;
   media_type: SermonMediaType | null;
   media_src: string | null;
+};
+
+export type VideoSourceType = "live_archive" | "upload";
+
+export type PastLiveAnalytics = {
+  views_count: number;
+  messages_count: number;
+  reactions: Record<string, number>;
+  chat_timeline: { minute: number; count: number }[];
 };
 
 export type PastLiveInput = {
@@ -1070,6 +1080,11 @@ function revalidatePastLives() {
 
 export async function getAdminPastLives(): Promise<AdminPastLive[]> {
   const response = await adminFetch<{ data: AdminPastLive[] }>("/past-lives");
+  return response.data;
+}
+
+export async function getPastLiveAnalytics(id: number): Promise<PastLiveAnalytics> {
+  const response = await adminFetch<{ data: PastLiveAnalytics }>(`/past-lives/${id}/analytics`);
   return response.data;
 }
 

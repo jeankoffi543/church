@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\VideoSourceType;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
@@ -9,6 +10,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 #[Signature('mfm:archive-live')]
@@ -39,8 +41,10 @@ class ArchiveLive extends Command
             'video_path' => null,
             'thumbnail_path' => null,
             'series_name' => 'Cultes en direct',
+            'source_type' => VideoSourceType::LiveArchive,
             'preacher_id' => null,
             'views_count' => 0,
+            'reaction_stats' => $this->snapshotReactions(),
             'duration' => max(1, (int) $broadcastedAt->diffInMinutes(now())).' min',
             'broadcasted_at' => $broadcastedAt,
         ]);
@@ -53,6 +57,27 @@ class ArchiveLive extends Command
         $this->info("Direct archivé : {$pastLive->slug} ({$moved} message(s) de chat).");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Drain the live reaction tallies from the cache into a persisted snapshot,
+     * so the archive's "Impressions" dashboard can chart what was sent.
+     *
+     * @return array<string, int>|null
+     */
+    private function snapshotReactions(): ?array
+    {
+        $stats = [];
+
+        foreach (['heart', 'flame', 'hands', 'dove', 'crown'] as $type) {
+            $count = (int) Cache::get("live:reactions:{$type}", 0);
+            if ($count > 0) {
+                $stats[$type] = $count;
+                Cache::forget("live:reactions:{$type}");
+            }
+        }
+
+        return $stats === [] ? null : $stats;
     }
 
     private function extractYouTubeId(string $url): ?string

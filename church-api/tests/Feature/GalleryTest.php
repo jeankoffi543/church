@@ -49,12 +49,13 @@ it('returns the latest broadcast for the hero', function () {
         ->assertJsonPath('data.media_type', 'video_url');
 });
 
-it('increments the view counter when a broadcast is shown', function () {
+it('does not inflate the view counter merely by showing a broadcast', function () {
+    // Views are now counted only via the dedicated, refresh-proof endpoint.
     $live = PastLive::factory()->create(['slug' => 'culte', 'views_count' => 5]);
 
     $this->getJson('/api/v1/public/past-lives/culte')->assertOk();
 
-    expect($live->fresh()->views_count)->toBe(6);
+    expect($live->fresh()->views_count)->toBe(5);
 });
 
 it('streams an uploaded broadcast file with range support', function () {

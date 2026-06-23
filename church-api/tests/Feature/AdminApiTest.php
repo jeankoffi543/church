@@ -126,3 +126,25 @@ it('bulk updates settings', function () {
     expect(Setting::get('live_status'))->toBeTrue();
     expect(Setting::get('hero_title'))->toBe('Nouvelle saison');
 });
+
+it('accepts a Facebook live URL as the stream source', function () {
+    actingAsSuperAdmin();
+
+    $this->putJson('/api/v1/admin/settings', [
+        'settings' => [
+            ['key' => 'live_embed_url', 'value' => 'https://www.facebook.com/MFMFicgayo/videos/123456789', 'group' => 'live'],
+        ],
+    ])->assertOk();
+
+    expect(Setting::get('live_embed_url'))->toBe('https://www.facebook.com/MFMFicgayo/videos/123456789');
+});
+
+it('rejects a non-embeddable stream URL', function () {
+    actingAsSuperAdmin();
+
+    $this->putJson('/api/v1/admin/settings', [
+        'settings' => [
+            ['key' => 'live_embed_url', 'value' => 'https://example.com/whatever', 'group' => 'live'],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors('settings.0.value');
+});

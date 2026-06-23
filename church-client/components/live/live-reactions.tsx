@@ -1,18 +1,9 @@
 "use client";
 
-import { Flame, Heart, HeartHandshake } from "lucide-react";
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 
+import { CHURCH_REACTIONS, REACTION_BY_TYPE } from "@/lib/church-reactions";
 import type { ReactionType } from "@/lib/live";
-
-const REACTIONS: { type: ReactionType; Icon: typeof Heart; color: string; label: string }[] = [
-  { type: "flame", Icon: Flame, color: "#ff9b3d", label: "Flamme" },
-  { type: "heart", Icon: Heart, color: "#ff5b8a", label: "Cœur" },
-  { type: "hands", Icon: HeartHandshake, color: "#ffd36b", label: "Amen" },
-];
-
-const COLOR: Record<ReactionType, string> = { flame: "#ff9b3d", heart: "#ff5b8a", hands: "#ffd36b" };
-const ICON: Record<ReactionType, typeof Heart> = { flame: Flame, heart: Heart, hands: HeartHandshake };
 
 type Particle = { id: number; type: ReactionType; left: number; drift: number; scale: number };
 
@@ -68,7 +59,7 @@ export function LiveReactions({
       {/* Floating particles overlay */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {particles.map((p) => {
-          const Icon = ICON[p.type];
+          const { Icon, color } = REACTION_BY_TYPE[p.type];
           return (
             <span
               key={p.id}
@@ -76,7 +67,7 @@ export function LiveReactions({
               style={
                 {
                   left: `${p.left}%`,
-                  color: COLOR[p.type],
+                  color,
                   "--reaction-drift": `${p.drift}px`,
                   "--reaction-scale": p.scale,
                 } as React.CSSProperties
@@ -88,13 +79,14 @@ export function LiveReactions({
         })}
       </div>
 
-      {/* Reaction buttons */}
+      {/* Reaction buttons — the church emoji picker */}
       <div className="pointer-events-auto absolute right-4 bottom-4 flex gap-2">
-        {REACTIONS.map(({ type, Icon, color, label }) => (
+        {CHURCH_REACTIONS.map(({ type, Icon, color, label }) => (
           <button
             key={type}
             type="button"
             aria-label={label}
+            title={label}
             onClick={() => onReact(type)}
             className="grid size-11 cursor-pointer place-items-center rounded-full border border-white/15 bg-black/40 backdrop-blur-md transition hover:scale-110 hover:bg-black/60 active:scale-95"
           >
