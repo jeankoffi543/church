@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   UserCog,
   Inbox,
+  Images,
+  Clapperboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +35,8 @@ const NAV: NavItem[] = [
   { href: "/admins/ministries", label: "Ministères", icon: Users, required: [PERMISSIONS.manageSettings] },
   { href: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, required: [PERMISSIONS.manageSermons] },
   { href: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, required: [PERMISSIONS.manageEvents] },
+  { href: "/admins/gallery", label: "Galerie (Albums)", icon: Images, required: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery] },
+  { href: "/admins/past-lives", label: "Archives des lives", icon: Clapperboard, required: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery] },
   { href: "/admins/home_groups", label: "Groupes de maison", icon: MapPin, required: [PERMISSIONS.viewCells, PERMISSIONS.processCells] },
   { href: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, required: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers] },
   { href: "/admins/contacts", label: "Messages de contact", icon: Inbox, required: [PERMISSIONS.viewContacts] },

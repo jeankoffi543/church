@@ -92,6 +92,10 @@ final class AccessControl
                 ['name' => 'view_events', 'label' => "Consulter l'agenda et la liste des événements"],
                 ['name' => 'manage_events', 'label' => 'Créer, modifier, planifier et supprimer des événements'],
             ],
+            'Médiathèque & Visuels' => [
+                ['name' => 'view_gallery', 'label' => 'Consulter les albums photos et les archives des lives'],
+                ['name' => 'manage_gallery', 'label' => 'Créer des albums, uploader des photos/rediffusions et organiser le portfolio'],
+            ],
         ];
     }
 
@@ -147,6 +151,8 @@ final class AccessControl
                 'view_contacts',
                 'manage_contacts',
                 'view_events',
+                'view_gallery',
+                'manage_gallery',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
@@ -181,6 +187,11 @@ final class AccessControl
             'Secrétariat' => [
                 'view_contacts',
                 'manage_contacts',
+                'view_dashboard',
+            ],
+            'Média/Régie' => [
+                'view_gallery',
+                'manage_gallery',
                 'view_dashboard',
             ],
         ];

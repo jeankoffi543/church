@@ -795,3 +795,182 @@ export async function replyContact(id: number): Promise<{ data: AdminContactMess
   revalidatePath("/admins/contacts");
   return result;
 }
+
+/* ── Gallery: albums & photos ────────────────────────────────────── */
+
+export type AdminAlbumPhoto = { id: number; album_id: number; image_path: string; order: number };
+
+export type AdminAlbum = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  cover_image: string | null;
+  event_id: number | null;
+  category: string;
+  event_title: string | null;
+  year: string | null;
+  date_label: string | null;
+  photos_count: number;
+  photos?: AdminAlbumPhoto[];
+};
+
+export type AlbumInput = {
+  title?: string;
+  description?: string | null;
+  event_id?: number | null;
+};
+
+function buildAlbumFormData(data: AlbumInput, cover?: File | null, removeCover?: boolean): FormData {
+  const fd = new FormData();
+  if (data.title !== undefined) fd.append("title", data.title);
+  if (data.description !== undefined) fd.append("description", data.description ?? "");
+  if (data.event_id !== undefined) fd.append("event_id", data.event_id == null ? "" : String(data.event_id));
+  if (cover) fd.append("cover_image", cover);
+  if (removeCover) fd.append("remove_cover_image", "1");
+  return fd;
+}
+
+function revalidateGallery() {
+  revalidateTag("albums", { expire: 0 });
+  revalidatePath("/galerie");
+}
+
+export async function getAdminAlbums(): Promise<AdminAlbum[]> {
+  const response = await adminFetch<{ data: AdminAlbum[] }>("/albums");
+  return response.data;
+}
+
+export async function getAdminAlbum(id: number): Promise<AdminAlbum> {
+  const response = await adminFetch<{ data: AdminAlbum }>(`/albums/${id}`);
+  return response.data;
+}
+
+export async function createAlbum(
+  data: AlbumInput & { title: string },
+  cover?: File | null
+): Promise<{ data: AdminAlbum }> {
+  const result = await adminFetch<{ data: AdminAlbum }>("/albums", {
+    method: "POST",
+    body: buildAlbumFormData(data, cover),
+  });
+  revalidateGallery();
+  return result;
+}
+
+export async function updateAlbum(
+  id: number,
+  data: AlbumInput,
+  cover?: File | null,
+  removeCover?: boolean
+): Promise<{ data: AdminAlbum }> {
+  const fd = buildAlbumFormData(data, cover, removeCover);
+  fd.append("_method", "PUT");
+  const result = await adminFetch<{ data: AdminAlbum }>(`/albums/${id}`, { method: "POST", body: fd });
+  revalidateGallery();
+  return result;
+}
+
+export async function deleteAlbum(id: number): Promise<void> {
+  await adminFetch<void>(`/albums/${id}`, { method: "DELETE" });
+  revalidateGallery();
+}
+
+/** Bulk-upload photos (up to 50) into an album. */
+export async function uploadAlbumPhotos(albumId: number, files: File[]): Promise<{ data: AdminAlbumPhoto[] }> {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("photos[]", f));
+  const result = await adminFetch<{ data: AdminAlbumPhoto[] }>(`/albums/${albumId}/photos`, { method: "POST", body: fd });
+  revalidateGallery();
+  return result;
+}
+
+export async function deleteAlbumPhoto(photoId: number): Promise<void> {
+  await adminFetch<void>(`/album-photos/${photoId}`, { method: "DELETE" });
+  revalidateGallery();
+}
+
+/* ── Archives: past lives ────────────────────────────────────────── */
+
+export type AdminPastLive = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  youtube_id: string | null;
+  thumbnail_path: string | null;
+  series_name: string | null;
+  preacher_id: number | null;
+  preacher: string | null;
+  views_count: number;
+  duration: string | null;
+  broadcasted_at: string | null;
+  date_label: string | null;
+  media_type: SermonMediaType | null;
+  media_src: string | null;
+};
+
+export type PastLiveInput = {
+  title?: string;
+  description?: string | null;
+  youtube_id?: string | null;
+  series_name?: string | null;
+  preacher_id?: number | null;
+  duration?: string | null;
+  broadcasted_at?: string;
+};
+
+export type PastLiveFiles = { video?: File | null; thumbnail?: File | null };
+
+function buildPastLiveFormData(data: PastLiveInput, files?: PastLiveFiles): FormData {
+  const fd = new FormData();
+  if (data.title !== undefined) fd.append("title", data.title);
+  if (data.description !== undefined) fd.append("description", data.description ?? "");
+  if (data.youtube_id !== undefined) fd.append("youtube_id", data.youtube_id ?? "");
+  if (data.series_name !== undefined) fd.append("series_name", data.series_name ?? "");
+  if (data.preacher_id !== undefined) fd.append("preacher_id", data.preacher_id == null ? "" : String(data.preacher_id));
+  if (data.duration !== undefined) fd.append("duration", data.duration ?? "");
+  if (data.broadcasted_at !== undefined) fd.append("broadcasted_at", data.broadcasted_at);
+  if (files?.video) fd.append("video", files.video);
+  if (files?.thumbnail) fd.append("thumbnail", files.thumbnail);
+  return fd;
+}
+
+function revalidatePastLives() {
+  revalidateTag("past-lives", { expire: 0 });
+  revalidatePath("/lives-archives");
+}
+
+export async function getAdminPastLives(): Promise<AdminPastLive[]> {
+  const response = await adminFetch<{ data: AdminPastLive[] }>("/past-lives");
+  return response.data;
+}
+
+export async function createPastLive(
+  data: PastLiveInput & { title: string; broadcasted_at: string },
+  files?: PastLiveFiles
+): Promise<{ data: AdminPastLive }> {
+  const result = await adminFetch<{ data: AdminPastLive }>("/past-lives", {
+    method: "POST",
+    body: buildPastLiveFormData(data, files),
+  });
+  revalidatePastLives();
+  return result;
+}
+
+export async function updatePastLive(
+  id: number,
+  data: PastLiveInput,
+  files?: PastLiveFiles
+): Promise<{ data: AdminPastLive }> {
+  const fd = buildPastLiveFormData(data, files);
+  fd.append("_method", "PUT");
+  const result = await adminFetch<{ data: AdminPastLive }>(`/past-lives/${id}`, { method: "POST", body: fd });
+  revalidatePastLives();
+  return result;
+}
+
+export async function deletePastLive(id: number): Promise<void> {
+  await adminFetch<void>(`/past-lives/${id}`, { method: "DELETE" });
+  revalidatePastLives();
+}

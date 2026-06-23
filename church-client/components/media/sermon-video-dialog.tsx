@@ -17,12 +17,14 @@ export function SermonVideoDialog({
   mediaType,
   src,
   title,
+  resumeKey,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mediaType: SermonMediaType;
   src: string | null;
   title: string;
+  resumeKey?: string;
 }) {
   const { close } = useAudioPlayer();
 
@@ -46,6 +48,7 @@ export function SermonVideoDialog({
             title={title}
             autoPlay
             onEnded={() => onOpenChange(false)}
+            resumeKey={resumeKey}
           />
         )}
       </DialogContent>
