@@ -33,6 +33,64 @@ class SettingController extends Controller
      */
     public function show(string $key): JsonResponse
     {
-        return response()->json(['data' => Setting::get($key)]);
+        $value = Setting::get($key);
+
+        if ($key === 'pastor_word_showcase' && is_array($value) && isset($value['user_id'])) {
+            $user = \App\Models\User::find($value['user_id']);
+            $value['user_name'] = $user ? $user->name : null;
+        }
+
+        if ($key === 'pastor_long_message' && is_array($value) && isset($value['preacher_id'])) {
+            $user = \App\Models\User::with('roles')->find($value['preacher_id']);
+            if ($user) {
+                $value['preacher_name'] = $user->name;
+                $value['preacher_role'] = $user->roles->first()?->name ?? 'Surintendant Régional MFM Ficgayo';
+                
+                // Initials
+                $words = array_filter(explode(' ', $user->name));
+                $initials = '';
+                if (count($words) >= 2) {
+                    $initials = mb_strtoupper(mb_substr(reset($words), 0, 1) . mb_substr(end($words), 0, 1));
+                } else {
+                    $initials = mb_strtoupper(mb_substr($user->name, 0, 2));
+                }
+                $value['preacher_initials'] = $initials;
+                $value['preacher_photo_path'] = null; // Associated profile image (null fallback as users table doesn't have it)
+            }
+        }
+
+        if ($key === 'church_pastoral_team' && is_array($value) && isset($value['member_ids'])) {
+            $userIds = $value['member_ids'];
+            $users = \App\Models\User::with('roles')->whereIn('id', $userIds)->get()->keyBy('id');
+            $avatars = $value['avatars'] ?? [];
+            
+            $orderedUsers = [];
+            foreach ($userIds as $id) {
+                if (isset($users[$id])) {
+                    $user = $users[$id];
+                    
+                    // Generate initials
+                    $words = array_filter(explode(' ', $user->name));
+                    $initials = '';
+                    if (count($words) >= 2) {
+                        $initials = mb_strtoupper(mb_substr(reset($words), 0, 1) . mb_substr(end($words), 0, 1));
+                    } else {
+                        $initials = mb_strtoupper(mb_substr($user->name, 0, 2));
+                    }
+
+                    $orderedUsers[] = [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->roles->first()?->name ?? 'Serviteur',
+                        'initials' => $initials,
+                        'photo_path' => $avatars[$user->id] ?? null
+                    ];
+                }
+            }
+            $value['pastors'] = $orderedUsers;
+        }
+
+        return response()->json(['data' => $value]);
     }
 }

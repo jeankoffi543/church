@@ -401,6 +401,107 @@ export async function getLiveConfig(): Promise<LiveConfig> {
   };
 }
 
+export type PastorWordShowcase = {
+  user_id: number;
+  custom_title: string;
+  word: string;
+  photo_path: string | null;
+  social_links: {
+    facebook?: string;
+    instagram?: string;
+    youtube?: string;
+  };
+  user_name: string | null;
+};
+
+export async function getPastorWordShowcase(): Promise<PastorWordShowcase | null> {
+  const json = await apiGet<{ data: PastorWordShowcase }>("/public/settings/pastor_word_showcase", ["settings", "settings-pastor_word_showcase"]);
+  if (!json?.data) return null;
+
+  const data = json.data;
+  return {
+    ...data,
+    photo_path: data.photo_path ? assetUrl(data.photo_path) : null,
+  };
+}
+
+export type ChurchPresentationBanner = {
+  eyebrow: string;
+  quote: string;
+  short_description: string;
+  button_text: string;
+};
+
+export type PastorLongMessage = {
+  preacher_id: number;
+  custom_eyebrow: string;
+  custom_title: string;
+  guarantees_title: string;
+  guarantees_list: string[];
+  html_content: string;
+  preacher_name?: string | null;
+  preacher_role?: string | null;
+  preacher_initials?: string | null;
+  preacher_photo_path?: string | null;
+};
+
+export type ChurchPillarsVision = {
+  title: string;
+  intro: string;
+  pillars: Array<{
+    title: string;
+    desc: string;
+    icon_name: "Flame" | "ShieldCheck" | "HeartHandshake";
+  }>;
+};
+
+export type ChurchPastoralTeam = {
+  title: string;
+  intro: string;
+  member_ids: number[];
+  pastors?: Array<{
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    initials: string;
+    photo_path: string | null;
+  }>;
+};
+
+export async function getChurchPresentationBanner(): Promise<ChurchPresentationBanner | null> {
+  const json = await apiGet<{ data: ChurchPresentationBanner }>("/public/settings/church_presentation_banner", ["settings", "settings-church_presentation_banner"]);
+  return json?.data || null;
+}
+
+export async function getPastorLongMessage(): Promise<PastorLongMessage | null> {
+  const json = await apiGet<{ data: PastorLongMessage }>("/public/settings/pastor_long_message", ["settings", "settings-pastor_long_message"]);
+  if (!json?.data) return null;
+
+  const data = json.data;
+  return {
+    ...data,
+    preacher_photo_path: data.preacher_photo_path ? assetUrl(data.preacher_photo_path) : null,
+  };
+}
+
+export async function getChurchPillarsVision(): Promise<ChurchPillarsVision | null> {
+  const json = await apiGet<{ data: ChurchPillarsVision }>("/public/settings/church_pillars_vision", ["settings", "settings-church_pillars_vision"]);
+  return json?.data || null;
+}
+
+export async function getChurchPastoralTeam(): Promise<ChurchPastoralTeam | null> {
+  const json = await apiGet<{ data: ChurchPastoralTeam }>("/public/settings/church_pastoral_team", ["settings", "settings-church_pastoral_team"]);
+  if (!json?.data) return null;
+  return {
+    ...json.data,
+    pastors: json.data.pastors?.map((p) => ({
+      ...p,
+      photo_path: assetUrl(p.photo_path),
+    })),
+  };
+}
+
 // Re-export the settings response type for consumers that need it.
 export type { SettingsResponse };
 

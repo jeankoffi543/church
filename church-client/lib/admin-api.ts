@@ -154,6 +154,129 @@ export async function updateAdminSettings(
   return result;
 }
 
+export type AdminPastorWord = {
+  pastor_word: {
+    user_id: number;
+    custom_title: string | null;
+    word: string;
+    photo_path: string | null;
+    social_links: {
+      facebook: string | null;
+      instagram: string | null;
+      youtube: string | null;
+    };
+    user_name?: string | null;
+  } | null;
+  church_presentation_banner: {
+    eyebrow: string;
+    quote: string;
+    short_description: string;
+    button_text: string;
+  } | null;
+  pastor_long_message: {
+    preacher_id: number;
+    custom_eyebrow: string;
+    custom_title: string;
+    guarantees_title: string;
+    guarantees_list: string[];
+    html_content: string;
+  } | null;
+};
+
+export type AdminUserOption = {
+  id: number;
+  name: string;
+  email: string;
+  is_active: boolean;
+};
+
+export async function getAdminPastorWord(): Promise<{
+  pastor_word: AdminPastorWord["pastor_word"];
+  church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+  pastor_long_message: AdminPastorWord["pastor_long_message"];
+  users: AdminUserOption[];
+}> {
+  return adminFetch<{
+    pastor_word: AdminPastorWord["pastor_word"];
+    church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+    pastor_long_message: AdminPastorWord["pastor_long_message"];
+    users: AdminUserOption[];
+  }>("/settings/pastor-word");
+}
+
+export async function updateAdminPastorWord(formData: FormData): Promise<{
+  message: string;
+  pastor_word: AdminPastorWord["pastor_word"];
+  church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+  pastor_long_message: AdminPastorWord["pastor_long_message"];
+}> {
+  const result = await adminFetch<{
+    message: string;
+    pastor_word: AdminPastorWord["pastor_word"];
+    church_presentation_banner: AdminPastorWord["church_presentation_banner"];
+    pastor_long_message: AdminPastorWord["pastor_long_message"];
+  }>("/settings/pastor-word", {
+    method: "POST", // Multipart photo upload support
+    body: formData,
+  });
+
+  revalidateTag("settings", { expire: 0 });
+  revalidatePath("/");
+  revalidatePath("/eglise");
+  revalidatePath("/eglise/presentation");
+  return result;
+}
+
+export type AdminChurchVision = {
+  church_pillars_vision: {
+    title: string;
+    intro: string;
+    pillars: Array<{
+      title: string;
+      desc: string;
+      icon_name: string;
+    }>;
+  } | null;
+  church_pastoral_team: {
+    title: string;
+    intro: string;
+    member_ids: number[];
+    avatars?: Record<number, string | null>;
+  } | null;
+};
+
+export async function getAdminChurchVision(): Promise<{
+  church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+  church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+  users: AdminUserOption[];
+}> {
+  return adminFetch<{
+    church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+    church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+    users: AdminUserOption[];
+  }>("/settings/church-vision");
+}
+
+export async function updateAdminChurchVision(formData: FormData): Promise<{
+  message: string;
+  church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+  church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+}> {
+  const result = await adminFetch<{
+    message: string;
+    church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+    church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+  }>("/settings/church-vision", {
+    method: "POST", // Post/Put unified
+    body: formData,
+  });
+
+  revalidateTag("settings", { expire: 0 });
+  revalidatePath("/");
+  revalidatePath("/eglise");
+  return result;
+}
+
 /* ── Ministries CRUD ─────────────────────────────────────────────── */
 
 export async function getAdminMinistries(): Promise<AdminMinistry[]> {

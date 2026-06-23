@@ -96,6 +96,11 @@ final class AccessControl
                 ['name' => 'view_gallery', 'label' => 'Consulter les albums photos et les archives des lives'],
                 ['name' => 'manage_gallery', 'label' => 'Créer des albums, uploader des photos/rediffusions et organiser le portfolio'],
             ],
+            'Configuration & Vision' => [
+                ['name' => 'manage_pastor_word', 'label' => 'Gérer le mot du pasteur (Le Mot du Pasteur)'],
+                ['name' => 'manage_church_vision', 'label' => 'Modifier la vision, les piliers de foi et la composition de l’équipe pastorale'],
+
+            ],
         ];
     }
 
@@ -153,6 +158,8 @@ final class AccessControl
                 'view_events',
                 'view_gallery',
                 'manage_gallery',
+                'manage_pastor_word',
+                'manage_church_vision',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

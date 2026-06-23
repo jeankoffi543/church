@@ -23,6 +23,8 @@ export const PERMISSIONS = {
   manageContacts: "manage_contacts",
   viewGallery: "view_gallery",
   manageGallery: "manage_gallery",
+  managePastorWord: "manage_pastor_word",
+  manageChurchVision: "manage_church_vision",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
