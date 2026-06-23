@@ -384,7 +384,11 @@ export async function getHomeGroups(params?: GetHomeGroupsParams): Promise<{
   const query = new URLSearchParams();
   if (params?.search) query.append("search", params.search);
   if (params?.zone_name) query.append("zone_name", params.zone_name);
-  if (params?.day) query.append("day", params.day);
+  if (params?.day) {
+    const dayUpper = params.day.toUpperCase();
+    query.append("day", dayUpper);
+    query.append("meeting_day", dayUpper);
+  }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   const json = await apiGet<{

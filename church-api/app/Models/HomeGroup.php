@@ -49,7 +49,8 @@ class HomeGroup extends Model
             Filter::make('leader_id', 'leader_id'),
             Filter::make('zone_name', 'zone_name'),
             Filter::make('name', 'name'),
-            Filter::make('meeting_day', 'day'),
+            Filter::make('day', 'meeting_day'),
+            Filter::make('meeting_day', 'meeting_day'),
         ];
     }
 
