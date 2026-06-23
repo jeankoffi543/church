@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, useMemo } from "react";
 import {
   Plus,
   Search,
@@ -15,6 +15,10 @@ import {
   UploadCloud,
   Eye,
   X,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  SlidersHorizontal,
 } from "lucide-react";
 
 import {
@@ -30,10 +34,27 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SmartImage } from "@/components/ui/smart-image";
 import { Pagination } from "../_components/pagination";
 import { SearchableSelect } from "../_components/searchable-select";
+import { QueryBuilder } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type Source = "youtube" | "file";
 
 const IMG_FALLBACK = "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=600&q=80";
+
+const filterFields: FilterField[] = [
+  { id: "title", label: "Titre", type: "text" },
+  { id: "series_name", label: "Série", type: "text" }
+];
+
+const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
+  const v = value.toLowerCase();
+  const t = term.toLowerCase();
+  if (operator === "contains") return v.includes(t);
+  if (operator === "equals") return v === t;
+  if (operator === "starts_with") return v.startsWith(t);
+  if (operator === "ends_with") return v.endsWith(t);
+  return true;
+};
 
 export function PastLivesManager({
   initialLives,
@@ -49,6 +70,11 @@ export function PastLivesManager({
   const [perPage, setPerPage] = useState(10);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Sorting and Filtering states
+  const [sortBy, setSortBy] = useState<"title" | "series_name" | "media_type" | "views_count" | "broadcasted_at" | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   useEffect(() => {
     if (!status) return;
@@ -191,13 +217,100 @@ export function PastLivesManager({
     });
   };
 
-  const filtered = lives.filter(
-    (l) => l.title.toLowerCase().includes(search.toLowerCase()) || (l.series_name ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const clearAllFilters = () => {
+    setActiveFilters([]);
+    setSearch("");
+    setPage(1);
+  };
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
+  const handleSort = (column: "title" | "series_name" | "media_type" | "views_count" | "broadcasted_at") => {
+    if (sortBy !== column) {
+      setSortBy(column);
+      setSortOrder("asc");
+    } else {
+      if (sortOrder === "asc") {
+        setSortOrder("desc");
+      } else if (sortOrder === "desc") {
+        setSortBy(null);
+        setSortOrder(null);
+      } else {
+        setSortOrder("asc");
+      }
+    }
+  };
+
+  const renderSortChevron = (column: "title" | "series_name" | "media_type" | "views_count" | "broadcasted_at") => {
+    if (sortBy !== column) {
+      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+    }
+    if (sortOrder === "asc") {
+      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
+    }
+    if (sortOrder === "desc") {
+      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
+    }
+    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
+  };
+
+  // Processed Lives (combined filters + sorting)
+  const processedLives = useMemo(() => {
+    let result = lives.filter((l) => {
+      // Primary Search Bar
+      if (search.trim() !== "") {
+        const q = search.toLowerCase();
+        const titleMatch = l.title.toLowerCase().includes(q);
+        const seriesMatch = l.series_name ? l.series_name.toLowerCase().includes(q) : false;
+        if (!titleMatch && !seriesMatch) return false;
+      }
+
+      // Query Builder Active Filters
+      for (const filter of activeFilters) {
+        if (filter.fieldId === "title") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(l.title, filter.value, filter.operator)) return false;
+        } else if (filter.fieldId === "series_name") {
+          if (!filter.value || filter.value.trim() === "") continue;
+          if (!matchString(l.series_name ?? "", filter.value, filter.operator)) return false;
+        }
+      }
+      return true;
+    });
+
+    // Sorting
+    if (sortBy && sortOrder) {
+      result = [...result].sort((a, b) => {
+        let valA = "";
+        let valB = "";
+
+        if (sortBy === "title") {
+          valA = a.title;
+          valB = b.title;
+        } else if (sortBy === "series_name") {
+          valA = a.series_name ?? "";
+          valB = b.series_name ?? "";
+        } else if (sortBy === "media_type") {
+          valA = a.media_type ?? "";
+          valB = b.media_type ?? "";
+        } else if (sortBy === "broadcasted_at") {
+          valA = a.broadcasted_at ?? "";
+          valB = b.broadcasted_at ?? "";
+        } else if (sortBy === "views_count") {
+          const numA = a.views_count;
+          const numB = b.views_count;
+          return sortOrder === "asc" ? numA - numB : numB - numA;
+        }
+
+        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
+        return sortOrder === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [lives, search, activeFilters, sortBy, sortOrder]);
+
+  const pageCount = Math.max(1, Math.ceil(processedLives.length / perPage));
   const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const paged = processedLives.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -219,21 +332,93 @@ export function PastLivesManager({
         </div>
       )}
 
-      <div className="mb-6 flex max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5">
-        <Search className="size-4 text-faint" />
-        <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Rechercher une rediffusion…" className="w-full text-[14px] text-indigo outline-none placeholder:text-faint" />
+      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
+        <div className="flex flex-1 items-center gap-3 flex-wrap">
+          {/* Main search bar */}
+          <div className="flex flex-1 min-w-[220px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
+            <Search className="size-4 text-faint" />
+            <input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Rechercher une rediffusion…"
+              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+            />
+          </div>
+
+          {/* Reusable Query Builder containing inline chips & sliders filter button */}
+          <QueryBuilder
+            fields={filterFields}
+            activeFilters={activeFilters}
+            onChange={(nextFilters) => {
+              setActiveFilters(nextFilters);
+              setPage(1);
+            }}
+          />
+        </div>
+
+        {activeFilters.length > 0 && (
+          <button
+            onClick={clearAllFilters}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
+          >
+            <X className="size-3.5" />
+            Effacer les filtres actifs
+          </button>
+        )}
       </div>
 
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+      {/* Table grid (z-10 relative) */}
+      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
+            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
-                <th className="px-6 py-4">Rediffusion</th>
-                <th className="px-6 py-4">Série</th>
-                <th className="px-6 py-4">Source</th>
-                <th className="px-6 py-4">Vues</th>
-                <th className="px-6 py-4">Diffusé le</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("title")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Rediffusion</span>
+                    {renderSortChevron("title")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("series_name")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Série</span>
+                    {renderSortChevron("series_name")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("media_type")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Source</span>
+                    {renderSortChevron("media_type")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("views_count")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Vues</span>
+                    {renderSortChevron("views_count")}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
+                  onClick={() => handleSort("broadcasted_at")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Diffusé le</span>
+                    {renderSortChevron("broadcasted_at")}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -274,18 +459,18 @@ export function PastLivesManager({
                   </td>
                 </tr>
               ))}
-              {filtered.length === 0 && (
+              {processedLives.length === 0 && (
                 <tr><td colSpan={6} className="px-6 py-10 text-center text-xs text-body">Aucune rediffusion.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {filtered.length > 0 && (
+        {processedLives.length > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={filtered.length}
+            total={processedLives.length}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {
