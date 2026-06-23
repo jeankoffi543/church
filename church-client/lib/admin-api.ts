@@ -227,6 +227,56 @@ export async function updateAdminPastorWord(formData: FormData): Promise<{
   return result;
 }
 
+export type AdminChurchVision = {
+  church_pillars_vision: {
+    title: string;
+    intro: string;
+    pillars: Array<{
+      title: string;
+      desc: string;
+      icon_name: string;
+    }>;
+  } | null;
+  church_pastoral_team: {
+    title: string;
+    intro: string;
+    member_ids: number[];
+    avatars?: Record<number, string | null>;
+  } | null;
+};
+
+export async function getAdminChurchVision(): Promise<{
+  church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+  church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+  users: AdminUserOption[];
+}> {
+  return adminFetch<{
+    church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+    church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+    users: AdminUserOption[];
+  }>("/settings/church-vision");
+}
+
+export async function updateAdminChurchVision(formData: FormData): Promise<{
+  message: string;
+  church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+  church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+}> {
+  const result = await adminFetch<{
+    message: string;
+    church_pillars_vision: AdminChurchVision["church_pillars_vision"];
+    church_pastoral_team: AdminChurchVision["church_pastoral_team"];
+  }>("/settings/church-vision", {
+    method: "POST", // Post/Put unified
+    body: formData,
+  });
+
+  revalidateTag("settings", { expire: 0 });
+  revalidatePath("/");
+  revalidatePath("/eglise");
+  return result;
+}
+
 /* ── Ministries CRUD ─────────────────────────────────────────────── */
 
 export async function getAdminMinistries(): Promise<AdminMinistry[]> {

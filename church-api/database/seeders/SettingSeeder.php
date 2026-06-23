@@ -140,6 +140,40 @@ class SettingSeeder extends Seeder
                         '<p class="text-justify font-bold text-indigo">Je prie que le pouvoir qui a relevé cet homme vous relève et, alors que vous parcourez ce site, vous receviez votre délivrance au nom de JÉSUS. Amen.</p>',
                 ],
             ],
+            [
+                'key' => 'church_pillars_vision',
+                'group' => 'eglise',
+                'value' => [
+                    'title' => 'Notre Vision Spirituelle',
+                    'intro' => 'Nous sommes appelés à bâtir des vies de feu, ancrées dans la sainteté et l’autorité spirituelle.',
+                    'pillars' => [
+                        [
+                            'title' => 'La Parole Révélée',
+                            'desc' => 'Un enseignement biblique pur et sans compromis, qui libère la vérité et transforme les vies.',
+                            'icon_name' => 'ShieldCheck',
+                        ],
+                        [
+                            'title' => 'La Prière de Feu',
+                            'desc' => 'L’intercession prophétique et le combat spirituel pour briser les liens et libérer les captifs.',
+                            'icon_name' => 'Flame',
+                        ],
+                        [
+                            'title' => 'L’Amour Fraternel',
+                            'desc' => 'Une communauté unie et accueillante qui accompagne chaque croyant vers sa destinée en Christ.',
+                            'icon_name' => 'HeartHandshake',
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'church_pastoral_team',
+                'group' => 'eglise',
+                'value' => [
+                    'title' => 'L’Équipe Pastorale',
+                    'intro' => 'Des bergers consacrés pour vous accompagner et vous équiper dans votre parcours spirituel.',
+                    'member_ids' => [1],
+                ],
+            ],
         ];
 
         foreach ($settings as $setting) {
