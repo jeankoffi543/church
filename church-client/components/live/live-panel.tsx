@@ -147,7 +147,7 @@ function ChatTab() {
 
 /* ── Prière ───────────────────────────────────────────────── */
 
-function PrayerTab() {
+export function PrayerTab() {
   const [sent, setSent] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -384,7 +384,7 @@ function PrayerTab() {
 }
 
 /* ── Notes ────────────────────────────────────────────────── */
-function NotesTab({
+export function NotesTab({
   sermonTitle,
   sermonReference,
   sermonPoints,
@@ -452,7 +452,7 @@ function NotesTab({
 }
 
 /* ── Description ──────────────────────────────────────────── */
-function DescriptionTab({ description }: { description: string }) {
+export function DescriptionTab({ description }: { description: string }) {
   return (
     <div className="flex-1 overflow-y-auto p-5 animate-fade-up">
       <span className="text-[11px] font-bold tracking-[0.12em] text-gold uppercase">

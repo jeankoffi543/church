@@ -65,6 +65,15 @@ Route::prefix('v1')->group(function (): void {
         // Dons (Paystack) — open a transaction & poll its accounting status.
         Route::post('donations/initialize', [Public\DonationController::class, 'initialize'])->name('donations.initialize');
         Route::get('donations/{reference}/status', [Public\DonationController::class, 'status'])->name('donations.status');
+
+        // Live engine (Reverb realtime) — audience, chat & reactions.
+        Route::get('live/chat', [Public\LiveController::class, 'messages'])->name('live.messages');
+        Route::post('live/chat', [Public\LiveController::class, 'chat'])->name('live.chat');
+        Route::post('live/react', [Public\LiveController::class, 'react'])->name('live.react');
+        Route::post('live/presence', [Public\LiveController::class, 'presence'])->name('live.presence');
+        Route::post('live/leave', [Public\LiveController::class, 'leave'])->name('live.leave');
+        // Time-synced chat replay for an archived broadcast.
+        Route::get('past-lives/{pastLive:slug}/chat', [Public\LiveController::class, 'archivedChat'])->name('past-lives.chat');
     });
 
     // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { getLiveConfig } from "@/lib/api";
-import { LiveSection } from "@/components/live/live-section";
+import { LiveStage } from "@/components/live/live-stage";
 
 export const metadata: Metadata = {
   title: "En direct · MFM Ficgayo",
@@ -11,5 +11,5 @@ export const metadata: Metadata = {
 export default async function LivePage() {
   const config = await getLiveConfig();
 
-  return <LiveSection config={config} />;
+  return <LiveStage config={config} />;
 }

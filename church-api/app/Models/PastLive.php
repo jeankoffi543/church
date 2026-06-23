@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -61,6 +62,16 @@ class PastLive extends Model
     public function preacher(): BelongsTo
     {
         return $this->belongsTo(User::class, 'preacher_id');
+    }
+
+    /**
+     * Chat messages captured during the live, replayed in sync on the archive.
+     *
+     * @return HasMany<LiveChatMessage, $this>
+     */
+    public function liveChatMessages(): HasMany
+    {
+        return $this->hasMany(LiveChatMessage::class);
     }
 
     /**

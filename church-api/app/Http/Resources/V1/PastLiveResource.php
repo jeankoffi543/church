@@ -28,6 +28,8 @@ class PastLiveResource extends JsonResource
             'series_name' => $this->series_name,
             'preacher_id' => $this->preacher_id,
             'preacher' => $this->preacher?->name,
+            // True when a time-synced chat replay is available for this archive.
+            'has_chat' => (int) ($this->live_chat_messages_count ?? 0) > 0,
             'views_count' => $this->views_count,
             'duration' => $this->duration,
             'broadcasted_at' => $this->broadcasted_at?->toIso8601String(),

@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\SettingsUpdateRequest;
-use App\Models\Setting;
-use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-use App\Models\User;
 use App\Http\Resources\V1\UserResource;
+use App\Models\Setting;
+use App\Models\User;
 use App\Traits\HandlesFileUploads;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 class SettingController extends Controller
@@ -39,12 +40,24 @@ class SettingController extends Controller
         return DB::transaction(function () use ($request) {
             $settings = $this->mapRequestUploadsToSettings($request, $request->validated('settings'));
 
+            // Capture the live state before applying, to detect on/off transitions.
+            $wasLive = (bool) Setting::get('live_status');
+
             foreach ($settings as $item) {
                 Setting::set(
                     $item['key'],
                     $item['value'],
                     $item['group'] ?? 'general',
                 );
+            }
+
+            // Going live → stamp the start time (chat time-offsets). Cutting the
+            // live → archive metadata + chat into past_lives.
+            $isLive = (bool) Setting::get('live_status');
+            if ($isLive && ! $wasLive) {
+                Setting::set('live_started_at', now()->toIso8601String(), 'live');
+            } elseif (! $isLive && $wasLive) {
+                Artisan::call('mfm:archive-live');
             }
 
             return response()->json([
@@ -238,7 +251,7 @@ class SettingController extends Controller
         // Handle uploaded files: name format avatar_{id}
         $memberIds = array_map('intval', $request->input('church_pastoral_team.member_ids', []));
         foreach ($memberIds as $userId) {
-            $fileKey = 'avatar_' . $userId;
+            $fileKey = 'avatar_'.$userId;
             if ($request->hasFile($fileKey)) {
                 if (isset($avatars[$userId])) {
                     $this->deleteStoredFile($avatars[$userId]);
