@@ -30,6 +30,7 @@ class DatabaseSeeder extends Seeder
             HomeGroupSeeder::class,
             GallerySeeder::class,
             DemoSeeder::class,
+            BranchSeeder::class,
         ]);
     }
 }

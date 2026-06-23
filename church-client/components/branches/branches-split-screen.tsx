@@ -1,28 +1,37 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import type { Map as MbMap, Marker as MbMarker, Popup as MbPopup } from "mapbox-gl";
-import { MapPin, Phone, Clock, Search, Navigation, AlertCircle, Globe } from "lucide-react";
+import { MapPin, Phone, Clock, Search, Navigation, AlertCircle, Globe, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { PublicBranch } from "@/lib/api";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
 const DEFAULT_CENTER: [number, number] = [-4.0083, 5.3684]; // Center of Abidjan
 
-export interface Branch {
-  id: string;
+export interface SplitScreenBranch {
+  id: string | number;
   title: string;
+  slug?: string;
+  description: string;
   address: string;
   phone: string;
   hours: string;
   lat: number;
   lng: number;
-  description: string;
   website?: string;
+  pastor?: {
+    id: number;
+    name: string;
+    email: string;
+    initials: string;
+  } | null;
 }
 
-export const BRANCHES: Branch[] = [
+// Static fallback data matching original static view
+const STATIC_BRANCHES = [
   {
     id: "yopougon",
     title: "Temple Principal - Yopougon Ficgayo",
@@ -68,20 +77,56 @@ export const BRANCHES: Branch[] = [
   },
 ];
 
-export function BranchesSplitScreen() {
+type BranchesSplitScreenProps = {
+  initialBranches?: PublicBranch[];
+};
+
+export function BranchesSplitScreen({ initialBranches }: BranchesSplitScreenProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MbMap | null>(null);
   const markersRef = useRef<{ [id: string]: { marker: MbMarker; popup: MbPopup } }>({});
   
   const [search, setSearch] = useState("");
-  const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
+  const [activeBranchId, setActiveBranchId] = useState<string | number | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  const filtered = BRANCHES.filter((b) =>
-    b.title.toLowerCase().includes(search.toLowerCase()) ||
-    b.address.toLowerCase().includes(search.toLowerCase())
-  );
+  // Map backend API data to visual SplitScreenBranch structure, fallback to static defaults
+  const branchesList = useMemo<SplitScreenBranch[]>(() => {
+    if (initialBranches && initialBranches.length > 0) {
+      return initialBranches.map((b) => ({
+        id: b.id,
+        title: b.title,
+        slug: b.slug,
+        description: b.description ?? "Campus local de prière et d’édification chrétienne.",
+        address: b.address,
+        phone: b.phone,
+        hours: b.hours,
+        lat: b.lat,
+        lng: b.lng,
+        website: b.website ?? undefined,
+        pastor: b.pastor,
+      }));
+    }
+
+    return STATIC_BRANCHES.map((b) => ({
+      ...b,
+      pastor: {
+        id: 0,
+        name: "Non assigné",
+        email: "",
+        initials: b.id === "yopougon" ? "DV" : (b.id === "cocody" ? "DA" : "MFM"),
+      },
+    }));
+  }, [initialBranches]);
+
+  const filtered = useMemo(() => {
+    return branchesList.filter(
+      (b) =>
+        b.title.toLowerCase().includes(search.toLowerCase()) ||
+        b.address.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [branchesList, search]);
 
   useEffect(() => {
     if (!MAPBOX_TOKEN) {
@@ -91,10 +136,13 @@ export function BranchesSplitScreen() {
 
     if (!containerRef.current) return;
     let cancelled = false;
+    let mapboxgl: any;
+
+    const markersList: { marker: MbMarker; popup: MbPopup }[] = [];
 
     (async () => {
       try {
-        const mapboxgl = (await import("mapbox-gl")).default;
+        mapboxgl = (await import("mapbox-gl")).default;
         if (cancelled || !containerRef.current) return;
         mapboxgl.accessToken = MAPBOX_TOKEN;
 
@@ -120,7 +168,7 @@ export function BranchesSplitScreen() {
           }, 100);
 
           // Add markers for each branch
-          BRANCHES.forEach((branch) => {
+          branchesList.forEach((branch) => {
             const el = document.createElement("div");
             el.className =
               "relative flex size-9 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br from-gold to-gold-dark shadow-[0_6px_16px_rgba(200,144,46,0.45)] cursor-pointer transition-all duration-300 hover:scale-110";
@@ -133,17 +181,29 @@ export function BranchesSplitScreen() {
               </svg>
             `;
 
+            const pastorName = branch.pastor ? branch.pastor.name : "Non assigné";
+            const pastorInitials = branch.pastor ? (branch.pastor.initials || "PR") : "MFM";
+
             const popup = new mapboxgl.Popup({
               closeButton: false,
               closeOnClick: false,
               offset: 28,
               className: "mfm-popup",
-              focusAfterOpen: false,
+              focusAfterOpen: false, // Prevent auto focusing popup to avoid scroll shifts
             }).setHTML(`
               <div class="w-[200px] rounded-2xl border border-white/10 bg-[#160f33] p-3.5 text-cream shadow-[0_12px_30px_rgba(22,15,51,0.35)]">
                 <span class="text-[9px] font-bold tracking-widest text-[#e2b85f] uppercase font-sans">Campus MFM</span>
                 <h4 class="mt-0.5 font-display text-[13px] font-bold italic leading-snug text-cream">${branch.title}</h4>
                 <p class="mt-1.5 text-[11px] leading-snug text-cream/70">${branch.address}</p>
+                <div class="mt-3 flex items-center gap-2 border-t border-white/5 pt-2">
+                  <div class="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-indigo text-[10px] font-bold shadow-inner">
+                    ${pastorInitials}
+                  </div>
+                  <div class="min-w-0">
+                    <span class="block text-[10px] font-bold text-cream leading-tight truncate">${pastorName}</span>
+                    <span class="block text-[9px] text-cream/50 leading-tight">Pasteur Résident</span>
+                  </div>
+                </div>
               </div>
             `);
 
@@ -153,13 +213,15 @@ export function BranchesSplitScreen() {
               .addTo(map);
 
             // Handle marker click to highlight branch in list
-            el.addEventListener("click", () => {
+            el.addEventListener("click", (e) => {
+              e.preventDefault();
               setActiveBranchId(branch.id);
               const element = document.getElementById(`branch-card-${branch.id}`);
               element?.scrollIntoView({ behavior: "smooth", block: "nearest" });
             });
 
-            markersRef.current[branch.id] = { marker, popup };
+            markersRef.current[branch.id.toString()] = { marker, popup };
+            markersList.push({ marker, popup });
           });
         });
       } catch (err) {
@@ -170,18 +232,19 @@ export function BranchesSplitScreen() {
 
     return () => {
       cancelled = true;
-      Object.values(markersRef.current).forEach(({ marker }) => marker.remove());
+      markersList.forEach(({ marker }) => marker.remove());
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [branchesList]);
 
-  const handleBranchClick = (branch: Branch) => {
+  const handleBranchClick = (e: React.MouseEvent, branch: SplitScreenBranch) => {
+    e.preventDefault(); // Prevents default scroll shifts
     setActiveBranchId(branch.id);
     
-    // Close other popups
+    // Close other popups, show active one
     Object.entries(markersRef.current).forEach(([id, { popup }]) => {
-      if (id === branch.id) {
+      if (id === branch.id.toString()) {
         popup.addTo(mapRef.current!);
       } else {
         popup.remove();
@@ -206,7 +269,7 @@ export function BranchesSplitScreen() {
             Géolocalisation
           </span>
           <h2 className="font-display text-2xl font-bold text-indigo italic leading-tight mt-1">
-            Nos campus & branches
+            Nos campus &amp; branches
           </h2>
           <p className="text-xs text-body mt-1">
             Trouvez une assemblée MFM Ficgayo proche de votre localité.
@@ -233,7 +296,7 @@ export function BranchesSplitScreen() {
               <div
                 key={branch.id}
                 id={`branch-card-${branch.id}`}
-                onClick={() => handleBranchClick(branch)}
+                onClick={(e) => handleBranchClick(e, branch)}
                 className={cn(
                   "group relative cursor-pointer select-none rounded-[20px] border p-5 transition-all duration-300",
                   isActive
@@ -269,6 +332,17 @@ export function BranchesSplitScreen() {
                       {branch.phone}
                     </a>
                   </div>
+                  {branch.pastor && (
+                    <div className="flex items-start gap-2 border-t border-dashed border-white/10 pt-2 mt-2">
+                      <User className={cn("size-3.5 mt-0.5 shrink-0", isActive ? "text-gold" : "text-gold-dark")} />
+                      <div>
+                        <span className="font-semibold block">{branch.pastor.name}</span>
+                        <span className={cn("text-[10px] block", isActive ? "text-white/60" : "text-faint")}>
+                          Pasteur Résident
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
