@@ -60,6 +60,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('past-lives', [Public\PastLiveController::class, 'index'])->name('past-lives.index');
         Route::get('past-lives/latest', [Public\PastLiveController::class, 'latest'])->name('past-lives.latest');
         Route::get('past-lives/{pastLive}/stream', [Public\PastLiveController::class, 'stream'])->name('past-lives.stream');
+        Route::post('past-lives/{pastLive}/view', [Public\PastLiveController::class, 'recordView'])->name('past-lives.view');
         Route::get('past-lives/{pastLive:slug}', [Public\PastLiveController::class, 'show'])->name('past-lives.show');
 
         // Dons (Paystack) — open a transaction & poll its accounting status.
@@ -122,6 +123,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('albums', [Admin\AlbumController::class, 'index'])->name('albums.index');
                 Route::get('albums/{album}', [Admin\AlbumController::class, 'show'])->name('albums.show');
                 Route::get('past-lives', [Admin\PastLiveController::class, 'index'])->name('past-lives.index');
+                Route::get('past-lives/{pastLive}/analytics', [Admin\PastLiveController::class, 'analytics'])->name('past-lives.analytics');
                 Route::get('past-lives/{pastLive}', [Admin\PastLiveController::class, 'show'])->name('past-lives.show');
             });
             Route::middleware('permission:manage_gallery')->group(function (): void {

@@ -14,7 +14,7 @@ export type ChatMessage = {
   created_at: string | null;
 };
 
-export type ReactionType = "heart" | "flame" | "hands";
+export type ReactionType = "heart" | "flame" | "hands" | "dove" | "crown";
 
 async function getJson<T>(path: string): Promise<T | null> {
   try {
@@ -53,6 +53,11 @@ export async function getLiveMessages(): Promise<ChatMessage[]> {
 export async function getArchivedChat(slug: string): Promise<ChatMessage[]> {
   const json = await getJson<{ data: ChatMessage[] }>(`/public/past-lives/${slug}/chat`);
   return json?.data ?? [];
+}
+
+/** Register a (refresh-proof) view for an archive. Fire-and-forget. */
+export function recordPastLiveView(id: number): void {
+  void postJson(`/public/past-lives/${id}/view`, {});
 }
 
 export async function sendChat(authorName: string, message: string): Promise<ChatMessage | null> {

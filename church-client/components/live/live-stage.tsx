@@ -19,13 +19,21 @@ import {
   type ReactionType,
 } from "@/lib/live";
 
+import { HlsPlayer } from "./hls-player";
 import { LiveChat, PseudonymGate } from "./live-chat";
 import { DescriptionTab, NotesTab, PrayerTab, type LiveTab } from "./live-panel";
 import { LiveReactions, type ReactionsHandle } from "./live-reactions";
 
-/** Normalise a stored YouTube URL into an autoplay embed URL. */
+/** Normalise a stored stream URL (YouTube or Facebook) into an autoplay embed. */
 function toEmbedUrl(url: string): string {
   if (!url) return "";
+
+  // Facebook Live / video → official embedded video player (no JS SDK needed).
+  if (url.includes("facebook.com") || url.includes("fb.watch") || url.includes("fb.me")) {
+    if (url.includes("plugins/video.php")) return url; // already an embed URL
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true`;
+  }
+
   let embed = url;
   if (embed.includes("watch?v=")) {
     embed = embed.replace("watch?v=", "embed/");
@@ -164,6 +172,9 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
     [appendMessage],
   );
 
+  // Our own RTMP→HLS server is served as a `.m3u8` URL → played via hls.js;
+  // everything else (YouTube / Facebook) is embedded as an iframe.
+  const isHls = /\.m3u8(\?|$)/i.test(config.streamUrl);
   const embedUrl = toEmbedUrl(config.streamUrl);
   // Chat / audience / reactions are only meaningful while on air.
   const chatActive = config.isLive && config.chatEnabled;
@@ -202,7 +213,9 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
         </div>
 
         <div className="relative flex-1 overflow-hidden bg-black">
-          {config.isLive && embedUrl ? (
+          {config.isLive && isHls ? (
+            <HlsPlayer src={config.streamUrl} title={config.title} />
+          ) : config.isLive && embedUrl ? (
             <iframe
               src={embedUrl}
               title={config.title}

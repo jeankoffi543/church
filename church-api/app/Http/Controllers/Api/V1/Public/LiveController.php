@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Cache;
 
 class LiveController extends Controller
 {
-    private const REACTIONS = ['heart', 'flame', 'hands'];
+    private const REACTIONS = ['heart', 'flame', 'hands', 'dove', 'crown'];
 
     /**
      * Heartbeat: register/refresh this viewer and broadcast the live audience.

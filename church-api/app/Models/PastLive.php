@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\VideoSourceType;
 use Database\Factories\PastLiveFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -19,8 +20,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $video_path
  * @property string|null $thumbnail_path
  * @property string|null $series_name
+ * @property VideoSourceType $source_type
  * @property int|null $preacher_id
  * @property int $views_count
+ * @property array<string, int>|null $reaction_stats
  * @property string|null $duration
  * @property Carbon $broadcasted_at
  */
@@ -37,8 +40,10 @@ class PastLive extends Model
         'video_path',
         'thumbnail_path',
         'series_name',
+        'source_type',
         'preacher_id',
         'views_count',
+        'reaction_stats',
         'duration',
         'broadcasted_at',
     ];
@@ -51,6 +56,8 @@ class PastLive extends Model
         return [
             'broadcasted_at' => 'datetime',
             'views_count' => 'integer',
+            'source_type' => VideoSourceType::class,
+            'reaction_stats' => 'array',
         ];
     }
 

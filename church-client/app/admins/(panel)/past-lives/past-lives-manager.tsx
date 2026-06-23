@@ -19,6 +19,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   SlidersHorizontal,
+  BarChart3,
+  Clapperboard,
 } from "lucide-react";
 
 import {
@@ -27,6 +29,7 @@ import {
   deletePastLive,
   type AdminPastLive,
   type AdminUser,
+  type VideoSourceType,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -36,6 +39,7 @@ import { Pagination } from "../_components/pagination";
 import { SearchableSelect } from "../_components/searchable-select";
 import { QueryBuilder } from "@/components/admin/query-builder";
 import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { AnalyticsDialog } from "./analytics-dialog";
 
 type Source = "youtube" | "file";
 
@@ -84,6 +88,7 @@ export function PastLivesManager({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminPastLive | null>(null);
+  const [analyticsTarget, setAnalyticsTarget] = useState<AdminPastLive | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -435,7 +440,10 @@ export function PastLivesManager({
                         skeletonClassName="bg-indigo/5"
                         className="h-9 w-14 shrink-0 rounded-md"
                       />
-                      <span className="font-semibold">{l.title}</span>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold">{l.title}</span>
+                        <SourceBadge type={l.source_type} />
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-3 text-xs font-medium tracking-wide text-gold-dark uppercase">{l.series_name ?? "—"}</td>
@@ -449,6 +457,9 @@ export function PastLivesManager({
                   <td className="px-6 py-3 text-xs font-mono font-semibold whitespace-nowrap text-faint">{l.date_label}</td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex justify-end gap-2">
+                      <button onClick={() => setAnalyticsTarget(l)} title="Impressions" className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(40,25,80,0.1)] text-indigo hover:border-gold hover:bg-gold/5">
+                        <BarChart3 className="size-3.5" />
+                      </button>
                       <button onClick={() => openEdit(l)} title="Modifier" className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(40,25,80,0.1)] text-indigo hover:border-gold hover:bg-gold/5">
                         <Edit className="size-3.5" />
                       </button>
@@ -481,6 +492,12 @@ export function PastLivesManager({
           />
         )}
       </div>
+
+      <AnalyticsDialog
+        live={analyticsTarget}
+        open={analyticsTarget !== null}
+        onOpenChange={(o) => { if (!o) setAnalyticsTarget(null); }}
+      />
 
       <Dialog open={isModalOpen} onOpenChange={(o) => { if (!o) setIsModalOpen(false); }}>
         <DialogContent showCloseButton onOpenAutoFocus={(e) => e.preventDefault()} className="w-[95vw] md:max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl border-0 bg-white p-0 gap-0">
@@ -587,6 +604,23 @@ function extractYouTube(input: string): string {
   const v = input.trim();
   const m = v.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/);
   return m ? m[1] : v;
+}
+
+/** Distinct badge for the broadcast origin: neon violet for live captures,
+ *  cyan for asynchronous uploads. */
+function SourceBadge({ type }: { type: VideoSourceType }) {
+  if (type === "live_archive") {
+    return (
+      <span className="inline-flex w-fit items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wide text-violet-600 uppercase shadow-[0_0_12px_rgba(139,92,246,0.25)]">
+        <Clapperboard className="size-3" /> Live Archive
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex w-fit items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold tracking-wide text-cyan-600 uppercase shadow-[0_0_12px_rgba(6,182,212,0.2)]">
+      <UploadCloud className="size-3" /> Upload
+    </span>
+  );
 }
 
 const INPUT = "rounded-xl border border-[rgba(40,25,80,0.12)] bg-cream px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold w-full";

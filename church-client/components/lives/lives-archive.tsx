@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Play, Eye, Clock, Search, X, ChevronDown, CalendarRange } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { PastLive } from "@/lib/api";
+import { recordPastLiveView } from "@/lib/live";
 import { BrandButton } from "@/components/ui/brand-button";
 import { SmartImage } from "@/components/ui/smart-image";
 import { SermonVideoDialog } from "@/components/media/sermon-video-dialog";
@@ -31,6 +32,27 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
   const [facetLimit, setFacetLimit] = useState(FACET_SHEET_STEP);
 
   const archive = useMemo(() => lives.filter((l) => l.id !== latest?.id), [lives, latest]);
+
+  // Record a unique view whenever a broadcast opens in the player.
+  useEffect(() => {
+    if (active) recordPastLiveView(active.id);
+  }, [active]);
+
+  // Deep link support: `?v=slug&t=seconds` auto-opens that archive and, via the
+  // resume key, starts playback at the shared timestamp.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("v");
+    if (!slug) return;
+    const target = lives.find((l) => l.slug === slug);
+    if (!target) return;
+    const t = Number(params.get("t"));
+    if (Number.isFinite(t) && t > 0) {
+      window.localStorage.setItem(`mfm:resume:past-live:${target.id}`, String(Math.floor(t)));
+    }
+    const id = setTimeout(() => setActive(target), 0);
+    return () => clearTimeout(id);
+  }, [lives]);
   const allSeries = useMemo(() => uniq(archive.map((l) => l.series ?? "")), [archive]);
   const allYears = useMemo(() => uniq(archive.map(yearOf)).sort((a, b) => b.localeCompare(a)), [archive]);
 
@@ -173,6 +195,7 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
           title={active.title}
           resumeKey={resumeKeyOf(active)}
           chatSlug={active.hasChat ? active.slug : undefined}
+          shareSlug={active.slug}
         />
       )}
 

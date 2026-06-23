@@ -26,6 +26,7 @@ class PastLiveResource extends JsonResource
             'youtube_id' => $this->youtube_id,
             'thumbnail_path' => $this->thumbnail_path,
             'series_name' => $this->series_name,
+            'source_type' => $this->source_type->value,
             'preacher_id' => $this->preacher_id,
             'preacher' => $this->preacher?->name,
             // True when a time-synced chat replay is available for this archive.
