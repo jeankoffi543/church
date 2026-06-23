@@ -21,6 +21,8 @@ export const PERMISSIONS = {
   validateMinistryApplications: "validate_ministry_applications",
   viewContacts: "view_contacts",
   manageContacts: "manage_contacts",
+  viewGallery: "view_gallery",
+  manageGallery: "manage_gallery",
   managePastorWord: "manage_pastor_word",
   manageChurchVision: "manage_church_vision",
 } as const;

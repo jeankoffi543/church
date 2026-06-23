@@ -48,6 +48,16 @@ Route::prefix('v1')->group(function (): void {
 
         // Contact messages (public submission)
         Route::post('contact', [Public\ContactController::class, 'store'])->name('contact.store');
+
+        // Galerie / Portfolio (albums + photos)
+        Route::get('albums', [Public\AlbumController::class, 'index'])->name('albums.index');
+        Route::get('albums/{album:slug}', [Public\AlbumController::class, 'show'])->name('albums.show');
+
+        // Archives des lives (VOD) — `latest` & `stream` before the slug route.
+        Route::get('past-lives', [Public\PastLiveController::class, 'index'])->name('past-lives.index');
+        Route::get('past-lives/latest', [Public\PastLiveController::class, 'latest'])->name('past-lives.latest');
+        Route::get('past-lives/{pastLive}/stream', [Public\PastLiveController::class, 'stream'])->name('past-lives.stream');
+        Route::get('past-lives/{pastLive:slug}', [Public\PastLiveController::class, 'show'])->name('past-lives.show');
     });
 
     // ── Admin authentication ──────────────────────────────────────────
@@ -86,6 +96,28 @@ Route::prefix('v1')->group(function (): void {
             // Médiathèque / messages
             Route::apiResource('sermons', Admin\SermonController::class)
                 ->middleware('permission:manage_sermons');
+
+            // Galerie & archives des lives — read gated by view_gallery,
+            // writes by manage_gallery.
+            Route::middleware('permission:view_gallery')->group(function (): void {
+                Route::get('albums', [Admin\AlbumController::class, 'index'])->name('albums.index');
+                Route::get('albums/{album}', [Admin\AlbumController::class, 'show'])->name('albums.show');
+                Route::get('past-lives', [Admin\PastLiveController::class, 'index'])->name('past-lives.index');
+                Route::get('past-lives/{pastLive}', [Admin\PastLiveController::class, 'show'])->name('past-lives.show');
+            });
+            Route::middleware('permission:manage_gallery')->group(function (): void {
+                Route::post('albums', [Admin\AlbumController::class, 'store'])->name('albums.store');
+                Route::match(['put', 'patch'], 'albums/{album}', [Admin\AlbumController::class, 'update'])->name('albums.update');
+                Route::delete('albums/{album}', [Admin\AlbumController::class, 'destroy'])->name('albums.destroy');
+
+                Route::post('albums/{album}/photos', [Admin\AlbumPhotoController::class, 'store'])->name('albums.photos.store');
+                Route::post('albums/{album}/photos/reorder', [Admin\AlbumPhotoController::class, 'reorder'])->name('albums.photos.reorder');
+                Route::delete('album-photos/{albumPhoto}', [Admin\AlbumPhotoController::class, 'destroy'])->name('album-photos.destroy');
+
+                Route::post('past-lives', [Admin\PastLiveController::class, 'store'])->name('past-lives.store');
+                Route::match(['put', 'patch'], 'past-lives/{pastLive}', [Admin\PastLiveController::class, 'update'])->name('past-lives.update');
+                Route::delete('past-lives/{pastLive}', [Admin\PastLiveController::class, 'destroy'])->name('past-lives.destroy');
+            });
 
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])

@@ -700,3 +700,130 @@ export async function checkMinistryApplicationStatus(
   }
 }
 
+
+/* ── Gallery / Portfolio ──────────────────────────────────────────── */
+
+type ApiAlbumPhoto = { id: number; album_id: number; image_path: string; order: number };
+
+type ApiAlbum = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  cover_image: string | null;
+  category: string;
+  event_title: string | null;
+  year: string | null;
+  date_label: string | null;
+  photos_count: number;
+  photos?: ApiAlbumPhoto[];
+};
+
+export type GalleryPhoto = { id: number; src: string; order: number };
+
+export type GalleryAlbum = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  cover: string | null;
+  category: string;
+  year: string;
+  dateLabel: string;
+  photosCount: number;
+  photos: GalleryPhoto[];
+};
+
+const mapAlbumPhoto = (p: ApiAlbumPhoto): GalleryPhoto => ({
+  id: p.id,
+  src: assetUrl(p.image_path) ?? "",
+  order: p.order,
+});
+
+const mapAlbum = (a: ApiAlbum): GalleryAlbum => ({
+  id: a.id,
+  title: a.title,
+  slug: a.slug,
+  description: a.description,
+  cover: assetUrl(a.cover_image),
+  category: a.category,
+  year: a.year ?? "",
+  dateLabel: a.date_label ?? "",
+  photosCount: a.photos_count,
+  photos: (a.photos ?? []).map(mapAlbumPhoto),
+});
+
+export async function getAlbums(): Promise<GalleryAlbum[]> {
+  const json = await apiGet<{ data: ApiAlbum[] }>("/public/albums?per_page=100", ["albums"]);
+  return json?.data ? json.data.map(mapAlbum) : [];
+}
+
+export async function getAlbum(slug: string): Promise<GalleryAlbum | null> {
+  const json = await apiGet<{ data: ApiAlbum }>(`/public/albums/${slug}`, ["albums"]);
+  return json?.data ? mapAlbum(json.data) : null;
+}
+
+/* ── Past lives (VOD archive) ─────────────────────────────────────── */
+
+type ApiPastLive = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  youtube_id: string | null;
+  thumbnail_path: string | null;
+  series_name: string | null;
+  preacher: string | null;
+  views_count: number;
+  duration: string | null;
+  broadcasted_at: string | null;
+  date_label: string | null;
+  month_label: string | null;
+  media_type: SermonMediaType | null;
+  media_src: string | null;
+};
+
+export type PastLive = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string;
+  thumbnail: string | null;
+  series: string | null;
+  preacher: string | null;
+  views: number;
+  duration: string;
+  dateLabel: string;
+  monthLabel: string;
+  mediaType: SermonMediaType | null;
+  mediaSrc: string | null;
+};
+
+const mapPastLive = (l: ApiPastLive): PastLive => ({
+  id: l.id,
+  title: l.title,
+  slug: l.slug,
+  description: l.description ?? "",
+  thumbnail: assetUrl(l.thumbnail_path),
+  series: l.series_name,
+  preacher: l.preacher,
+  views: l.views_count,
+  duration: l.duration ?? "",
+  dateLabel: l.date_label ?? "",
+  monthLabel: l.month_label ?? "",
+  mediaType: l.media_type,
+  // Files come back as a relative stream route; resolve to the API origin.
+  mediaSrc: l.media_type === "video_file" ? assetUrl(l.media_src) : l.media_src,
+});
+
+export async function getPastLives(): Promise<PastLive[]> {
+  // Fetch the whole archive so the client can group by month, filter by series /
+  // year and "load more" without extra round-trips.
+  const json = await apiGet<{ data: ApiPastLive[] }>("/public/past-lives?per_page=500", ["past-lives"]);
+  return json?.data ? json.data.map(mapPastLive) : [];
+}
+
+export async function getLatestPastLive(): Promise<PastLive | null> {
+  const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"]);
+  return json?.data ? mapPastLive(json.data) : null;
+}

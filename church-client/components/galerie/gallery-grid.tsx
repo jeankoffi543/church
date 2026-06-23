@@ -1,194 +1,196 @@
 "use client";
 
-import React, { useState } from "react";
-import { X, Image as ImageIcon, ZoomIn, Calendar } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useMemo, useState } from "react";
+import { Images, ChevronLeft, ChevronRight } from "lucide-react";
 
-type Photo = {
-  id: string;
-  url: string;
+import { cn } from "@/lib/utils";
+import { getAlbum, type GalleryAlbum, type GalleryPhoto } from "@/lib/api";
+import { Lightbox } from "@/components/galerie/lightbox";
+
+const PAGE_SIZE = 9;
+const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
+
+type LightboxState = {
+  open: boolean;
   title: string;
-  category: string;
-  date: string;
-  aspect: string; // for asymmetric masonry effect
+  photos: GalleryPhoto[];
+  index: number;
+  loading: boolean;
 };
 
-const CATEGORIES = ["Tous", "Louange", "Culte", "Communauté", "Jeunesse", "Événements"];
+const CLOSED: LightboxState = { open: false, title: "", photos: [], index: 0, loading: false };
 
-const PHOTOS: Photo[] = [
-  {
-    id: "1",
-    url: "https://images.unsplash.com/photo-1519491050282-cf00c82424b4?w=800&q=80&auto=format&fit=crop",
-    title: "Conférence Maison de Feu 2026",
-    category: "Événements",
-    date: "12 Juillet 2026",
-    aspect: "aspect-[4/3]"
-  },
-  {
-    id: "2",
-    url: "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?w=800&q=80&auto=format&fit=crop",
-    title: "Chœur de Louange en action",
-    category: "Louange",
-    date: "14 Juin 2026",
-    aspect: "aspect-[3/4]"
-  },
-  {
-    id: "3",
-    url: "https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=800&q=80&auto=format&fit=crop",
-    title: "Culte du Dimanche - Prédication",
-    category: "Culte",
-    date: "7 Juin 2026",
-    aspect: "aspect-video"
-  },
-  {
-    id: "4",
-    url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80&auto=format&fit=crop",
-    title: "Moments d'intercession",
-    category: "Louange",
-    date: "7 Juin 2026",
-    aspect: "aspect-square"
-  },
-  {
-    id: "5",
-    url: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&q=80&auto=format&fit=crop",
-    title: "Rassemblement de la Jeunesse",
-    category: "Jeunesse",
-    date: "30 Mai 2026",
-    aspect: "aspect-[3/4]"
-  },
-  {
-    id: "6",
-    url: "https://images.unsplash.com/photo-1517048676732-d65bc937f952?w=800&q=80&auto=format&fit=crop",
-    title: "Partage en cellule de quartier",
-    category: "Communauté",
-    date: "27 Mai 2026",
-    aspect: "aspect-video"
-  },
-  {
-    id: "7",
-    url: "https://images.unsplash.com/photo-1461532247732-225e412ecd0f?w=800&q=80&auto=format&fit=crop",
-    title: "Service des enfants - MFM Kids",
-    category: "Communauté",
-    date: "24 Mai 2026",
-    aspect: "aspect-[4/3]"
-  },
-  {
-    id: "8",
-    url: "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=800&q=80&auto=format&fit=crop",
-    title: "Bénédiction finale",
-    category: "Culte",
-    date: "24 Mai 2026",
-    aspect: "aspect-square"
-  },
-  {
-    id: "9",
-    url: "https://images.unsplash.com/photo-1543165796-540007779593?w=800&q=80&auto=format&fit=crop",
-    title: "Baptêmes d'eau",
-    category: "Événements",
-    date: "17 Mai 2026",
-    aspect: "aspect-[3/4]"
-  }
-];
+export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
+  const [year, setYear] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [box, setBox] = useState<LightboxState>(CLOSED);
 
-export function GalleryGrid() {
-  const [activeCategory, setActiveCategory] = useState("Tous");
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const years = useMemo(() => uniq(albums.map((a) => a.year)).sort((a, b) => b.localeCompare(a)), [albums]);
+  const categories = useMemo(() => uniq(albums.map((a) => a.category)).sort(), [albums]);
 
-  const filteredPhotos = activeCategory === "Tous"
-    ? PHOTOS
-    : PHOTOS.filter(p => p.category === activeCategory);
+  const filtered = useMemo(
+    () => albums.filter((a) => (!year || a.year === year) && (!category || a.category === category)),
+    [albums, year, category]
+  );
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const openAlbum = async (album: GalleryAlbum) => {
+    setBox({ open: true, title: album.title, photos: album.photos, index: 0, loading: true });
+    // The list endpoint omits photos; fetch the album detail on demand.
+    const full = await getAlbum(album.slug);
+    setBox((b) => ({ ...b, photos: full?.photos ?? [], loading: false }));
+  };
+
+  const pick = (setter: (v: string | null) => void, value: string, current: string | null) => {
+    setter(current === value ? null : value);
+    setPage(1);
+  };
 
   return (
-    <div className="space-y-10">
-      {/* Categories Filter Tabs */}
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {CATEGORIES.map((cat) => (
+    <>
+      {/* Filters */}
+      {(years.length > 1 || categories.length > 1) && (
+        <div className="mb-8 flex flex-col gap-3">
+          {categories.length > 1 && (
+            <FilterRow label="Catégorie" options={categories} active={category} onPick={(v) => pick(setCategory, v, category)} />
+          )}
+          {years.length > 1 && (
+            <FilterRow label="Année" options={years} active={year} onPick={(v) => pick(setYear, v, year)} />
+          )}
+        </div>
+      )}
+
+      <p className="mb-5 text-[13px] font-semibold text-faint">{filtered.length} album(s)</p>
+
+      {/* Asymmetric Masonry */}
+      <div className="columns-1 gap-6 sm:columns-2 lg:columns-3">
+        {paged.map((album) => (
           <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`rounded-full px-5 py-2.5 text-xs font-bold transition-all duration-300 ${
-              activeCategory === cat
-                ? "bg-indigo text-white shadow-md shadow-indigo/10"
-                : "border border-[rgba(40,25,80,0.08)] bg-white text-indigo-mid hover:bg-cream/50"
-            }`}
+            key={album.id}
+            type="button"
+            onClick={() => openAlbum(album)}
+            className="group mb-6 block w-full cursor-pointer break-inside-avoid overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.07)] bg-white text-left shadow-[0_1px_3px_rgba(22,15,51,0.05)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_18px_46px_rgba(22,15,51,0.13)]"
           >
-            {cat}
+            <div className="relative overflow-hidden bg-gradient-to-br from-indigo-mid to-ink">
+              {album.cover ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={album.cover}
+                  alt={album.title}
+                  loading="lazy"
+                  className="w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              ) : (
+                <div className="flex aspect-[4/3] items-center justify-center">
+                  <Images className="size-10 text-white/40" />
+                </div>
+              )}
+              <span className="absolute top-3 left-3 rounded-md bg-ink/55 px-2.5 py-1 text-[10px] font-bold tracking-wide text-gold uppercase backdrop-blur-sm">
+                {album.category}
+              </span>
+              <span className="absolute right-3 bottom-3 inline-flex items-center gap-1 rounded-md bg-ink/55 px-2 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
+                <Images className="size-3" /> {album.photosCount}
+              </span>
+            </div>
+            <div className="p-4">
+              <h3 className="font-display text-[20px] leading-tight font-semibold text-indigo italic">{album.title}</h3>
+              <p className="mt-1 text-[12.5px] font-semibold text-faint">{album.dateLabel || album.year}</p>
+            </div>
           </button>
         ))}
       </div>
 
-      {/* Asymmetric Masonry Grid */}
-      <div className="columns-1 gap-5 space-y-5 sm:columns-2 md:columns-3">
-        {filteredPhotos.map((photo) => (
-          <div
-            key={photo.id}
-            onClick={() => setSelectedPhoto(photo)}
-            className="group relative overflow-hidden rounded-[20px] border border-[rgba(40,25,80,0.06)] bg-white p-2 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md cursor-pointer break-inside-avoid"
-          >
-            <div className={`relative overflow-hidden rounded-[14px] ${photo.aspect} bg-cream`}>
-              <img
-                src={photo.url}
-                alt={photo.title}
-                className="size-full object-cover transition-all duration-700 group-hover:scale-105"
-                loading="lazy"
-              />
-              
-              {/* Premium Hover Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-ink/90 via-ink/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 flex flex-col justify-end p-5 text-white">
-                <span className="text-[10px] font-extrabold tracking-wider text-gold uppercase mb-1">
-                  {photo.category}
-                </span>
-                <h3 className="font-display text-lg font-bold leading-tight italic">
-                  {photo.title}
-                </h3>
-                <div className="mt-2.5 flex items-center justify-between text-[11px] text-faint border-t border-white/10 pt-2.5">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="size-3 text-gold-dark" />
-                    {photo.date}
-                  </span>
-                  <ZoomIn className="size-4 text-gold" />
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Empty State */}
-      {filteredPhotos.length === 0 && (
-        <div className="py-20 text-center rounded-[24px] border border-dashed border-[rgba(40,25,80,0.12)] bg-white">
-          <ImageIcon className="size-8 text-faint mx-auto mb-3" />
-          <h3 className="font-display text-sm font-bold text-indigo">Aucune photo trouvée</h3>
-          <p className="text-xs text-body mt-1">Sélectionnez une autre catégorie.</p>
+      {filtered.length === 0 && (
+        <div className="rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white px-6 py-16 text-center">
+          <p className="text-sm font-semibold text-body-strong">Aucun album</p>
+          <p className="mt-1 text-xs text-body">Ajustez vos filtres pour découvrir d’autres souvenirs.</p>
         </div>
       )}
 
-      {/* Lightbox Dialog */}
-      <Dialog open={!!selectedPhoto} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
-        <DialogContent className="max-w-4xl w-[90vw] border-none bg-ink p-1 text-white shadow-2xl overflow-hidden flex flex-col items-center">
-          <DialogTitle className="sr-only">
-            {selectedPhoto?.title || "Visualisation Photo"}
-          </DialogTitle>
-          {selectedPhoto && (
-            <div className="relative flex flex-col items-center w-full max-h-[85vh]">
-              <img
-                src={selectedPhoto.url}
-                alt={selectedPhoto.title}
-                className="max-h-[70vh] w-auto max-w-full rounded-lg object-contain shadow-2xl"
-              />
-              <div className="w-full text-center px-4 py-3 mt-2 bg-ink/40">
-                <span className="text-[10px] font-bold text-gold uppercase tracking-wider">
-                  {selectedPhoto.category}
-                </span>
-                <h3 className="font-display text-xl font-bold italic mt-0.5 text-white">
-                  {selectedPhoto.title}
-                </h3>
-                <p className="text-xs text-faint mt-1">{selectedPhoto.date}</p>
-              </div>
-            </div>
+      {/* Pagination */}
+      {filtered.length > PAGE_SIZE && (
+        <div className="mt-10 flex items-center justify-center gap-2">
+          <Pager onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} aria-label="Précédent">
+            <ChevronLeft className="size-4" />
+          </Pager>
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPage(p)}
+              aria-current={p === currentPage ? "page" : undefined}
+              className={cn(
+                "flex size-10 cursor-pointer items-center justify-center rounded-xl text-sm font-bold transition",
+                p === currentPage
+                  ? "bg-gradient-to-br from-gold to-gold-dark text-indigo shadow-[0_8px_20px_rgba(200,144,46,0.25)]"
+                  : "border border-[rgba(40,25,80,0.12)] bg-white text-indigo hover:border-gold hover:text-gold-dark"
+              )}
+            >
+              {p}
+            </button>
+          ))}
+          <Pager onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount} aria-label="Suivant">
+            <ChevronRight className="size-4" />
+          </Pager>
+        </div>
+      )}
+
+      <Lightbox
+        open={box.open}
+        onOpenChange={(o) => setBox((b) => ({ ...b, open: o }))}
+        photos={box.photos}
+        index={box.index}
+        onIndex={(i) => setBox((b) => ({ ...b, index: i }))}
+        title={box.title}
+        loading={box.loading}
+      />
+    </>
+  );
+}
+
+function FilterRow({
+  label,
+  options,
+  active,
+  onPick,
+}: {
+  label: string;
+  options: string[];
+  active: string | null;
+  onPick: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="mr-1 text-[11px] font-bold tracking-wider text-faint uppercase">{label}</span>
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onPick(opt)}
+          className={cn(
+            "cursor-pointer rounded-full border px-3 py-1.5 text-[12.5px] font-bold transition",
+            active === opt
+              ? "border-gold bg-gold/10 text-gold-dark"
+              : "border-[rgba(40,25,80,0.12)] bg-white text-indigo hover:border-gold/60"
           )}
-        </DialogContent>
-      </Dialog>
+        >
+          {opt}
+        </button>
+      ))}
     </div>
+  );
+}
+
+function Pager({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      className="flex size-10 cursor-pointer items-center justify-center rounded-xl border border-[rgba(40,25,80,0.12)] bg-white text-indigo transition hover:border-gold hover:text-gold-dark disabled:cursor-not-allowed disabled:opacity-35"
+    >
+      {children}
+    </button>
   );
 }

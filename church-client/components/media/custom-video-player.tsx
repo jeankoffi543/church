@@ -23,6 +23,25 @@ import type { SermonMediaType } from "@/lib/data";
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const;
 const SKIP = 10;
 
+/* ── Playback resume (localStorage) ──────────────────────────────────── */
+function readResume(key?: string): number {
+  if (!key || typeof window === "undefined") return 0;
+  const v = Number(window.localStorage.getItem(key));
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+function saveResume(key: string | undefined, time: number, duration: number): void {
+  if (!key || typeof window === "undefined") return;
+  // Skip trivial starts; treat near-completion as finished.
+  if (time < 5 || (duration > 0 && time > duration - 8)) {
+    window.localStorage.removeItem(key);
+  } else {
+    window.localStorage.setItem(key, String(Math.floor(time)));
+  }
+}
+function clearResume(key?: string): void {
+  if (key && typeof window !== "undefined") window.localStorage.removeItem(key);
+}
+
 /**
  * Universal in-place video player. External YouTube links use the official JS
  * API (end / error detection); other files render a native `<video>` driven
@@ -34,12 +53,15 @@ export function CustomVideoPlayer({
   title,
   autoPlay = false,
   onEnded,
+  resumeKey,
 }: {
   mediaType: SermonMediaType;
   src: string | null;
   title?: string;
   autoPlay?: boolean;
   onEnded?: () => void;
+  /** When set, playback position is saved/restored via localStorage. */
+  resumeKey?: string;
 }) {
   const [error, setError] = useState(false);
 
@@ -53,7 +75,7 @@ export function CustomVideoPlayer({
   }
 
   if (ytId) {
-    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onError={() => setError(true)} />;
+    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onError={() => setError(true)} resumeKey={resumeKey} />;
   }
 
   if (vimeoId) {
@@ -70,7 +92,16 @@ export function CustomVideoPlayer({
     );
   }
 
-  return <FileVideoPlayer src={fileSrc as string} autoPlay={autoPlay} title={title} onEnded={onEnded} onError={() => setError(true)} />;
+  return (
+    <FileVideoPlayer
+      src={fileSrc as string}
+      autoPlay={autoPlay}
+      title={title}
+      onEnded={onEnded}
+      onError={() => setError(true)}
+      resumeKey={resumeKey}
+    />
+  );
 }
 
 /* ── Error state ─────────────────────────────────────────────────────── */
@@ -92,17 +123,22 @@ function YouTubeEmbed({
   title,
   onEnded,
   onError,
+  resumeKey,
 }: {
   videoId: string;
   title?: string;
   onEnded?: () => void;
   onError?: () => void;
+  resumeKey?: string;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let saveTimer: ReturnType<typeof setInterval> | null = null;
+    const resumeAt = readResume(resumeKey);
+
     (async () => {
       const YT = await loadYouTubeApi();
       if (cancelled || !YT || !hostRef.current) {
@@ -120,18 +156,36 @@ function YouTubeEmbed({
           iv_load_policy: 3,
           enablejsapi: 1,
           playsinline: 1,
+          // Resume where the viewer left off.
+          start: resumeAt > 0 ? resumeAt : 0,
         },
         events: {
           onStateChange: (e) => {
-            if (e.data === YT.PlayerState.ENDED) onEnded?.();
+            if (e.data === YT.PlayerState.ENDED) {
+              clearResume(resumeKey);
+              onEnded?.();
+            }
           },
           onError: () => onError?.(),
         },
       });
+
+      // Persist the position periodically so a refresh/close resumes cleanly.
+      if (resumeKey) {
+        saveTimer = setInterval(() => {
+          try {
+            const p = playerRef.current;
+            if (p) saveResume(resumeKey, p.getCurrentTime(), p.getDuration());
+          } catch {
+            /* player not ready */
+          }
+        }, 5000);
+      }
     })();
 
     return () => {
       cancelled = true;
+      if (saveTimer) clearInterval(saveTimer);
       try {
         playerRef.current?.destroy();
       } catch {
@@ -169,12 +223,14 @@ function FileVideoPlayer({
   title,
   onEnded,
   onError,
+  resumeKey,
 }: {
   src: string;
   autoPlay?: boolean;
   title?: string;
   onEnded?: () => void;
   onError?: () => void;
+  resumeKey?: string;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -299,11 +355,21 @@ function FileVideoPlayer({
           emitMedia(MEDIA_EVENTS.pauseAudio);
         }}
         onPause={() => setIsPlaying(false)}
-        onTimeUpdate={(e) => setProgress(e.currentTarget.currentTime)}
+        onTimeUpdate={(e) => {
+          setProgress(e.currentTarget.currentTime);
+          saveResume(resumeKey, e.currentTarget.currentTime, e.currentTarget.duration);
+        }}
         onProgress={onProgress}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+        onLoadedMetadata={(e) => {
+          const v = e.currentTarget;
+          setDuration(v.duration);
+          // Resume where the viewer left off (if a meaningful position exists).
+          const resumeAt = readResume(resumeKey);
+          if (resumeAt > 0 && resumeAt < v.duration - 8) v.currentTime = resumeAt;
+        }}
         onEnded={() => {
           setIsPlaying(false);
+          clearResume(resumeKey);
           onEnded?.();
         }}
         onError={() => {

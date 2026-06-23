@@ -6,6 +6,8 @@ export type YTPlayer = {
   pauseVideo(): void;
   destroy(): void;
   getPlayerState(): number;
+  getCurrentTime(): number;
+  getDuration(): number;
 };
 
 type YTPlayerEvent = { data: number };
