@@ -334,11 +334,32 @@ export async function getContactInfo(): Promise<ContactInfo> {
   };
 }
 
+export type OfferingPitch = {
+  eyebrow: string;
+  title: string;
+  quote: string;
+  reference: string;
+  points: string[];
+};
+
 export type OfferingConfig = {
   purposes: DonationPurpose[];
   presets: number[];
   methods: string[];
   currency: string;
+  pitch: OfferingPitch;
+};
+
+const DEFAULT_PITCH: OfferingPitch = {
+  eyebrow: "Générosité",
+  title: "Semer pour la moisson",
+  quote: "« Que chacun donne comme il l'a résolu dans son cœur, avec joie. »",
+  reference: "2 Corinthiens 9.7",
+  points: [
+    "Transactions chiffrées & 100% sécurisées",
+    "Reçu envoyé automatiquement par e-mail",
+    "Gestion transparente, rapport annuel public",
+  ],
 };
 
 export async function getOfferingConfig(): Promise<OfferingConfig> {
@@ -358,6 +379,13 @@ export async function getOfferingConfig(): Promise<OfferingConfig> {
         "Wave",
       ],
     currency: (offerings?.offering_currency as string) ?? "FCFA",
+    pitch: {
+      eyebrow: (offerings?.offering_pitch_eyebrow as string) ?? DEFAULT_PITCH.eyebrow,
+      title: (offerings?.offering_pitch_title as string) ?? DEFAULT_PITCH.title,
+      quote: (offerings?.offering_pitch_quote as string) ?? DEFAULT_PITCH.quote,
+      reference: (offerings?.offering_pitch_reference as string) ?? DEFAULT_PITCH.reference,
+      points: (offerings?.offering_pitch_points as string[] | undefined) ?? DEFAULT_PITCH.points,
+    },
   };
 }
 

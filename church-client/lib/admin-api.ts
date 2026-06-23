@@ -1102,6 +1102,85 @@ export async function deletePastLive(id: number): Promise<void> {
   revalidatePastLives();
 }
 
+/* ── Finances: donations ledger ──────────────────────────────────── */
+
+export type DonationStatus = "pending" | "success" | "failed";
+export type DonationFrequency = "unique" | "mensuel";
+
+export type AdminDonation = {
+  id: number;
+  reference: string;
+  donor_name: string;
+  donor_email: string;
+  donor_phone: string | null;
+  purpose_key: string;
+  amount: number;
+  currency: string;
+  frequency: DonationFrequency;
+  status: DonationStatus;
+  channel: string | null;
+  paystack_reference: string | null;
+  created_at: string | null;
+  date_label: string | null;
+};
+
+export async function getAdminDonations(): Promise<AdminDonation[]> {
+  // Load the ledger so the dashboard can filter / paginate / aggregate client-side.
+  const response = await adminFetch<{ data: AdminDonation[] }>("/donations?per_page=2000");
+  return response.data;
+}
+
+/** Fetch the (optionally filtered) ledger as raw CSV text, authenticated. */
+export async function exportDonationsCsv(params: Record<string, string> = {}): Promise<string> {
+  const session = await getAdminSession();
+  const token = session?.token;
+  if (!token) throw new Error("UNAUTHORIZED");
+
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${API_URL}/donations/export${qs ? `?${qs}` : ""}`, {
+    headers: { Accept: "text/csv", Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error("Export impossible");
+  return res.text();
+}
+
+/* ── Donations: manual reconcile + webhook audit log ─────────────── */
+
+export async function updateDonationStatus(id: number, status: DonationStatus): Promise<{ data: AdminDonation }> {
+  return adminFetch<{ data: AdminDonation }>(`/donations/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+/** Pull missed transactions from Paystack and reconcile pending donations. */
+export async function syncDonations(): Promise<{ checked: number; reconciled: number }> {
+  const res = await adminFetch<{ data: { checked: number; reconciled: number } }>("/donations/sync", { method: "POST" });
+  return res.data;
+}
+
+export type AdminWebhookEvent = {
+  id: number;
+  provider: string;
+  event: string | null;
+  reference: string | null;
+  signature_valid: boolean;
+  status: string;
+  error: string | null;
+  payload: Record<string, unknown> | null;
+  processed_at: string | null;
+  created_at: string | null;
+  date_label: string | null;
+};
+
+export async function getAdminWebhookEvents(): Promise<AdminWebhookEvent[]> {
+  const response = await adminFetch<{ data: AdminWebhookEvent[] }>("/webhook-events?per_page=500");
+  return response.data;
+}
+
+export async function replayWebhookEvent(id: number): Promise<{ data: AdminWebhookEvent }> {
+  return adminFetch<{ data: AdminWebhookEvent }>(`/webhook-events/${id}/replay`, { method: "POST" });
+}
 /* ── Branches / Campus CRUD ──────────────────────────────────────── */
 
 export type AdminBranch = {
