@@ -25,6 +25,7 @@ export type AdminSermon = {
   title: string;
   description: string | null;
   speaker: string;
+  user_id: number | null;
   book: string | null;
   date: string | null;
   preached_at?: string;
@@ -368,6 +369,8 @@ export type SermonInput = {
   title?: string;
   description?: string | null;
   speaker?: string;
+  // Linked preacher (user). The backend derives `speaker` from it.
+  user_id?: number | null;
   book?: string | null;
   preached_at?: string;
   duration?: string | null;
@@ -392,6 +395,7 @@ function buildSermonFormData(data: SermonInput, files?: SermonFiles): FormData {
   if (data.title !== undefined) fd.append("title", data.title);
   if (data.description !== undefined) fd.append("description", data.description ?? "");
   if (data.speaker !== undefined) fd.append("speaker", data.speaker);
+  if (data.user_id !== undefined) fd.append("user_id", data.user_id == null ? "" : String(data.user_id));
   if (data.book !== undefined) fd.append("book", data.book ?? "");
   if (data.preached_at !== undefined) fd.append("preached_at", data.preached_at);
   if (data.duration !== undefined) fd.append("duration", data.duration ?? "");
@@ -414,7 +418,7 @@ function revalidateSermons() {
 }
 
 export async function createSermon(
-  data: SermonInput & { title: string; speaker: string; preached_at: string; media_type: SermonMediaType | null },
+  data: SermonInput & { title: string; preached_at: string; media_type: SermonMediaType | null },
   files?: SermonFiles
 ): Promise<{ data: AdminSermon }> {
   const result = await adminFetch<{ data: AdminSermon }>("/sermons", {

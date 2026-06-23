@@ -59,7 +59,10 @@ class SermonRequest extends FormRequest
             'series' => ['nullable', 'string', 'max:255'],
             'title' => [$required, 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'speaker' => [$required, 'string', 'max:255'],
+            // The preacher is now a linked user; `speaker` text is derived from
+            // it server-side, but stays accepted for legacy/API callers.
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'speaker' => [$isCreating ? 'required_without:user_id' : 'sometimes', 'nullable', 'string', 'max:255'],
             'book' => ['nullable', 'string', 'max:255'],
             'preached_at' => [$required, 'date'],
             'duration' => ['nullable', 'string', 'max:50'],
