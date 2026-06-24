@@ -99,15 +99,15 @@ it('validates ministry creation', function () {
 it('auto-generates a unique slug for events', function () {
     actingAsSuperAdmin();
 
-    $first = $this->postJson('/api/v1/admin/events', [
+    $payload = [
         'title' => 'Maison de Feu',
-        'starts_at' => '2026-07-11 09:00:00',
-    ])->assertCreated();
+        'description' => 'Veillée de combat spirituel.',
+        'location' => 'Temple principal',
+        'start_date' => '2026-07-11 09:00:00',
+    ];
 
-    $second = $this->postJson('/api/v1/admin/events', [
-        'title' => 'Maison de Feu',
-        'starts_at' => '2026-07-12 09:00:00',
-    ])->assertCreated();
+    $first = $this->postJson('/api/v1/admin/events', $payload)->assertCreated();
+    $second = $this->postJson('/api/v1/admin/events', [...$payload, 'start_date' => '2026-07-12 09:00:00'])->assertCreated();
 
     expect($first->json('data.slug'))->toBe('maison-de-feu');
     expect($second->json('data.slug'))->toBe('maison-de-feu-2');

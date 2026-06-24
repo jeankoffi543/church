@@ -721,7 +721,7 @@ export async function submitMinistryApplication(data: {
       success: true,
       message: json.message || "Votre candidature a été soumise avec succès !",
     };
-  } catch (err) {
+  } catch {
     return {
       success: false,
       message: "Impossible de se connecter au serveur.",

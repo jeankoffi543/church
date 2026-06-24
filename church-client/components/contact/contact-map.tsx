@@ -23,15 +23,15 @@ export function ContactMap({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MbMap | null>(null);
   const markerRef = useRef<MbMarker | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
+  // Missing-token is a static condition → derive it as the initial state instead
+  // of setting it synchronously inside the effect (same result, no extra render).
+  const [mapError, setMapError] = useState<string | null>(
+    MAPBOX_TOKEN ? null : "Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant).",
+  );
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    if (!MAPBOX_TOKEN) {
-      setMapError("Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant).");
-      return;
-    }
-
+    if (!MAPBOX_TOKEN) return;
     if (!containerRef.current) return;
     let cancelled = false;
 
@@ -116,6 +116,9 @@ export function ContactMap({
       mapRef.current?.remove();
       mapRef.current = null;
     };
+    // mapHint is intentionally excluded: it only feeds the popup label, and we
+    // don't want to tear down & rebuild the whole map when the label changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lat, lng]);
 
   if (mapError) {

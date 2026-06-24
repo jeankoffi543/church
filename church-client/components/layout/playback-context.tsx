@@ -50,6 +50,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const formatTime = (secs: number) => {
+    if (isNaN(secs)) return "0:00";
+    const minutes = Math.floor(secs / 60);
+    const seconds = Math.floor(secs % 60);
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  };
+
   useEffect(() => {
     // Instantiate audio element client-side
     const audio = new Audio();
@@ -86,13 +93,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
     };
   }, []);
-
-  const formatTime = (secs: number) => {
-    if (isNaN(secs)) return "0:00";
-    const minutes = Math.floor(secs / 60);
-    const seconds = Math.floor(secs % 60);
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  };
 
   const playAudio = (track: AudioTrack) => {
     if (!audioRef.current) return;

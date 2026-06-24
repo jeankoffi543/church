@@ -1,0 +1,90 @@
+import {
+  LayoutDashboard,
+  Settings,
+  Users,
+  Video,
+  CalendarDays,
+  MapPin,
+  HandHeart,
+  ShieldCheck,
+  UserCog,
+  Inbox,
+  Images,
+  Clapperboard,
+  MessageSquare,
+  Compass,
+  Wallet,
+  Landmark,
+  Church,
+  type LucideIcon,
+} from "lucide-react";
+
+import { PERMISSIONS } from "@/lib/auth/permissions";
+
+/**
+ * Single source of truth for the admin backoffice screens. Drives the sidebar
+ * (grouped by theme), the active-link resolution, and is available for page
+ * titles / breadcrumbs. Add a screen here once — never re-declare it in the nav.
+ */
+
+export type AdminNavGroupId = "overview" | "content" | "community" | "finance" | "church" | "admin";
+
+export type AdminPage = {
+  key: string;
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  /** Any of these permissions grants access (empty = always visible). */
+  permission: readonly string[];
+  group: AdminNavGroupId;
+};
+
+/**
+ * Ordered sidebar sections. Each drives one rail item: `short` is the label
+ * shown under the icon in the narrow rail, `label` is the flyout panel header.
+ */
+export const ADMIN_NAV_GROUPS: { id: AdminNavGroupId; label: string; short: string; icon: LucideIcon }[] = [
+  { id: "overview", label: "Vue d'ensemble", short: "Accueil", icon: LayoutDashboard },
+  { id: "content", label: "Contenu & Diffusion", short: "Contenu", icon: Clapperboard },
+  { id: "community", label: "Communauté", short: "Communauté", icon: Users },
+  { id: "finance", label: "Finances", short: "Finances", icon: Wallet },
+  { id: "church", label: "Église & Présentation", short: "Église", icon: Church },
+  { id: "admin", label: "Administration", short: "Admin", icon: ShieldCheck },
+];
+
+export const ADMIN_PAGES: AdminPage[] = [
+  { key: "dashboard", path: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, permission: [], group: "overview" },
+
+  // Contenu & Diffusion
+  { key: "sermons", path: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, permission: [PERMISSIONS.manageSermons], group: "content" },
+  { key: "past-lives", path: "/admins/past-lives", label: "Archives des lives", icon: Clapperboard, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
+  { key: "gallery", path: "/admins/gallery", label: "Galerie (Albums)", icon: Images, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
+  { key: "events", path: "/admins/events", label: "Agenda (Événements)", icon: CalendarDays, permission: [PERMISSIONS.manageEvents], group: "content" },
+
+  // Communauté
+  { key: "home-groups", path: "/admins/home-groups", label: "Groupes de maison", icon: MapPin, permission: [PERMISSIONS.viewCells, PERMISSIONS.processCells], group: "community" },
+  { key: "prayers", path: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, permission: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers], group: "community" },
+  { key: "contacts", path: "/admins/contacts", label: "Messages de contact", icon: Inbox, permission: [PERMISSIONS.viewContacts], group: "community" },
+  { key: "ministries", path: "/admins/ministries", label: "Ministères", icon: Users, permission: [PERMISSIONS.manageSettings], group: "community" },
+
+  // Finances
+  { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },
+
+  // Église & Présentation
+  { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },
+  { key: "church-vision", path: "/admins/settings/church-vision", label: "Vision & Équipe", icon: Compass, permission: [PERMISSIONS.manageChurchVision], group: "church" },
+  { key: "settings", path: "/admins/settings", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings], group: "church" },
+  { key: "branches", path: "/admins/branches", label: "Campus & Extensions", icon: Landmark, permission: [PERMISSIONS.viewBranches, PERMISSIONS.manageBranches], group: "church" },
+
+  // Administration
+  { key: "users", path: "/admins/users", label: "Serviteurs", icon: UserCog, permission: [PERMISSIONS.manageAccess], group: "admin" },
+  { key: "roles", path: "/admins/roles", label: "Groupes & Accès", icon: ShieldCheck, permission: [PERMISSIONS.manageAccess], group: "admin" },
+];
+
+/** The longest registered path matching the current pathname (so a nested route
+ *  like /ministries/applications activates /ministries, not nothing). */
+export function resolveActivePath(pathname: string): string | undefined {
+  return ADMIN_PAGES.map((p) => p.path)
+    .filter((path) => pathname === path || pathname.startsWith(path + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+}
