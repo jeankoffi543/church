@@ -8,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function BranchesPage() {
+  // The split-screen view filters client-side, so load the full set once.
   const branches = await getBranches();
   return <BranchesSplitScreen initialBranches={branches} />;
 }

@@ -1,0 +1,303 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: query-master.spec.ts >> QueryMaster Front-End E2E Tests >> Médiathèque (/mediatheque) >> handles pagination and page updates
+- Location: tests/e2e/query-master.spec.ts:11:9
+
+# Error details
+
+```
+Error: apiRequestContext._wrapApiCall: file data stream has unexpected number of bytes
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "MFM Ficgayo — Accueil" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e6]
+          - generic [ref=e7]:
+            - generic [ref=e8]: MFM Ficgayo
+            - generic [ref=e9]: Maison du Feu
+        - navigation [ref=e10]:
+          - navigation "Main" [ref=e11]:
+            - list [ref=e13]:
+              - listitem [ref=e14]:
+                - button "L'Église" [ref=e15]:
+                  - text: L'Église
+                  - img [ref=e16]
+              - listitem [ref=e18]:
+                - button "Communauté" [ref=e19]:
+                  - text: Communauté
+                  - img [ref=e20]
+              - listitem [ref=e22]:
+                - button "Médiathèque" [ref=e23]:
+                  - text: Médiathèque
+                  - img [ref=e24]
+              - listitem [ref=e26]:
+                - link "Agenda" [ref=e27] [cursor=pointer]:
+                  - /url: /agenda
+                  - img [ref=e28]
+                  - text: Agenda
+              - listitem [ref=e30]:
+                - link "Contact" [ref=e31] [cursor=pointer]:
+                  - /url: /contact
+                  - img [ref=e32]
+                  - text: Contact
+        - generic [ref=e34]:
+          - link "HORS LIGNE" [ref=e35] [cursor=pointer]:
+            - /url: /live
+            - text: HORS LIGNE
+          - link "Donner" [ref=e37] [cursor=pointer]:
+            - /url: /dons
+    - main [ref=e38]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - generic [ref=e42]: Médiathèque
+          - heading "Enseignements & rediffusions" [level=1] [ref=e43]
+          - paragraph [ref=e44]: Réécoute chaque message, filtre par série, par orateur ou par livre de la Bible.
+        - generic [ref=e45]:
+          - generic [ref=e46]:
+            - img [ref=e47]
+            - textbox "Rechercher par titre, orateur, série…" [ref=e50]
+          - button "Plus de Filtres" [ref=e51] [cursor=pointer]:
+            - img [ref=e52]
+            - text: Plus de Filtres
+        - generic [ref=e53]: 74 message(s)
+        - generic [ref=e54]:
+          - article [ref=e55]:
+            - button "Vivre par la foi Vidéo 38 min" [ref=e56] [cursor=pointer]:
+              - generic [ref=e57]: Vivre par la foi
+              - generic [ref=e58]:
+                - img [ref=e59]
+                - text: Vidéo
+              - img [ref=e63]
+              - generic [ref=e65]: 38 min
+            - generic [ref=e66]:
+              - 'heading "Culte Spécial : La Grâce triomphante sur les ténèbres..." [level=3] [ref=e67]'
+              - generic [ref=e68]:
+                - generic [ref=e69]: Sunny Crooks
+                - generic [ref=e71]: 07 May 2026
+              - generic [ref=e73]:
+                - img [ref=e74]
+                - text: Romains
+              - button "Lire le résumé" [ref=e76] [cursor=pointer]:
+                - img [ref=e77]
+                - text: Lire le résumé
+          - article [ref=e80]:
+            - button "Fondations solides Vidéo 65 min" [ref=e81] [cursor=pointer]:
+              - generic [ref=e82]: Fondations solides
+              - generic [ref=e83]:
+                - img [ref=e84]
+                - text: Vidéo
+              - img [ref=e88]
+              - generic [ref=e90]: 65 min
+            - generic [ref=e91]:
+              - 'heading "Culte de Pentecôte : Recevoir la puissance de l''Esprit" [level=3] [ref=e92]'
+              - generic [ref=e93]:
+                - generic [ref=e94]: Thomas Davis IV
+                - generic [ref=e96]: 16 June 2026
+              - generic [ref=e98]:
+                - img [ref=e99]
+                - text: Actes
+              - button "Lire le résumé" [ref=e101] [cursor=pointer]:
+                - img [ref=e102]
+                - text: Lire le résumé
+          - article [ref=e105]:
+            - button "Prière de combat Vidéo 59 min" [ref=e106] [cursor=pointer]:
+              - generic [ref=e107]: Prière de combat
+              - generic [ref=e108]:
+                - img [ref=e109]
+                - text: Vidéo
+              - img [ref=e113]
+              - generic [ref=e115]: 59 min
+            - generic [ref=e116]:
+              - heading "Cum alias cupiditate odit consequatur dolores et perspiciatis rerum earum est." [level=3] [ref=e117]
+              - generic [ref=e118]:
+                - generic [ref=e119]: Ezekiel Hand III
+                - generic [ref=e121]: 05 February 2026
+              - generic [ref=e123]:
+                - img [ref=e124]
+                - text: Psaumes
+              - button "Lire le résumé" [ref=e126] [cursor=pointer]:
+                - img [ref=e127]
+                - text: Lire le résumé
+          - article [ref=e130]:
+            - button "Intimité divine Vidéo 48 min" [ref=e131] [cursor=pointer]:
+              - generic [ref=e132]: Intimité divine
+              - generic [ref=e133]:
+                - img [ref=e134]
+                - text: Vidéo
+              - img [ref=e138]
+              - generic [ref=e140]: 48 min
+            - generic [ref=e141]:
+              - heading "Dolore ut quibusdam iste rem repellendus aspernatur nesciunt rerum." [level=3] [ref=e142]
+              - generic [ref=e143]:
+                - generic [ref=e144]: Mrs. Kaylie Kris
+                - generic [ref=e146]: 04 March 2024
+              - generic [ref=e148]:
+                - img [ref=e149]
+                - text: Actes
+              - button "Lire le résumé" [ref=e151] [cursor=pointer]:
+                - img [ref=e152]
+                - text: Lire le résumé
+          - article [ref=e155]:
+            - button "Intimité divine Vidéo 44 min" [ref=e156] [cursor=pointer]:
+              - generic [ref=e157]: Intimité divine
+              - generic [ref=e158]:
+                - img [ref=e159]
+                - text: Vidéo
+              - img [ref=e163]
+              - generic [ref=e165]: 44 min
+            - generic [ref=e166]:
+              - heading "Délivrance ! Le joug est brisé" [level=3] [ref=e167]
+              - generic [ref=e168]:
+                - generic [ref=e169]: Olin Nicolas DDS
+                - generic [ref=e171]: 17 June 2026
+              - generic [ref=e173]:
+                - img [ref=e174]
+                - text: Romains
+              - button "Lire le résumé" [ref=e176] [cursor=pointer]:
+                - img [ref=e177]
+                - text: Lire le résumé
+          - article [ref=e180]:
+            - button "Vivre par la foi Vidéo 60 min" [ref=e181] [cursor=pointer]:
+              - generic [ref=e182]: Vivre par la foi
+              - generic [ref=e183]:
+                - img [ref=e184]
+                - text: Vidéo
+              - img [ref=e188]
+              - generic [ref=e190]: 60 min
+            - generic [ref=e191]:
+              - heading "Délivrance de l'esprit de peur" [level=3] [ref=e192]
+              - generic [ref=e193]:
+                - generic [ref=e194]: Prof. Kira Oberbrunner
+                - generic [ref=e196]: 18 May 2026
+              - generic [ref=e198]:
+                - img [ref=e199]
+                - text: Matthieu
+              - button "Lire le résumé" [ref=e201] [cursor=pointer]:
+                - img [ref=e202]
+                - text: Lire le résumé
+          - article [ref=e205]:
+            - button "Vivre par la foi Vidéo 44 min" [ref=e206] [cursor=pointer]:
+              - generic [ref=e207]: Vivre par la foi
+              - generic [ref=e208]:
+                - img [ref=e209]
+                - text: Vidéo
+              - img [ref=e213]
+              - generic [ref=e215]: 44 min
+            - generic [ref=e216]:
+              - heading "Délivrance des captifs selon Luc 4" [level=3] [ref=e217]
+              - generic [ref=e218]:
+                - generic [ref=e219]: Jeanie Treutel
+                - generic [ref=e221]: 23 July 2024
+              - generic [ref=e223]:
+                - img [ref=e224]
+                - text: Actes
+              - button "Lire le résumé" [ref=e226] [cursor=pointer]:
+                - img [ref=e227]
+                - text: Lire le résumé
+          - article [ref=e230]:
+            - button "Intimité divine Vidéo 61 min" [ref=e231] [cursor=pointer]:
+              - generic [ref=e232]: Intimité divine
+              - generic [ref=e233]:
+                - img [ref=e234]
+                - text: Vidéo
+              - img [ref=e238]
+              - generic [ref=e240]: 61 min
+            - generic [ref=e241]:
+              - heading "Délivrance spirituelle et restauration des âmes" [level=3] [ref=e242]
+              - generic [ref=e243]:
+                - generic [ref=e244]: Amara Stroman
+                - generic [ref=e246]: 19 February 2026
+              - generic [ref=e248]:
+                - img [ref=e249]
+                - text: Romains
+              - button "Lire le résumé" [ref=e251] [cursor=pointer]:
+                - img [ref=e252]
+                - text: Lire le résumé
+        - generic [ref=e255]:
+          - button "Précédent" [ref=e256] [cursor=pointer]:
+            - img [ref=e257]
+          - button "1" [ref=e259] [cursor=pointer]
+          - button "2" [active] [ref=e260] [cursor=pointer]
+          - button "3" [ref=e261] [cursor=pointer]
+          - button "4" [ref=e262] [cursor=pointer]
+          - button "5" [ref=e263] [cursor=pointer]
+          - button "6" [ref=e264] [cursor=pointer]
+          - button "7" [ref=e265] [cursor=pointer]
+          - button "8" [ref=e266] [cursor=pointer]
+          - button "9" [ref=e267] [cursor=pointer]
+          - button "10" [ref=e268] [cursor=pointer]
+          - button "Suivant" [ref=e269] [cursor=pointer]:
+            - img [ref=e270]
+    - contentinfo [ref=e272]:
+      - generic [ref=e273]:
+        - generic [ref=e274]:
+          - link "MFM Ficgayo — Accueil" [ref=e275] [cursor=pointer]:
+            - /url: /
+            - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e276]
+            - generic [ref=e277]:
+              - generic [ref=e278]: MFM Ficgayo
+              - generic [ref=e279]: Maison du Feu
+          - paragraph [ref=e280]: Une église chrétienne évangélique de grâce, de feu et de miracles, au cœur d'Abidjan.
+          - generic [ref=e281]:
+            - link "Facebook" [ref=e282] [cursor=pointer]:
+              - /url: https://facebook.com/mfmficgayo
+              - text: f
+            - link "YouTube" [ref=e283] [cursor=pointer]:
+              - /url: https://youtube.com/@mfmficgayo
+              - text: ▶
+            - link "Instagram" [ref=e284] [cursor=pointer]:
+              - /url: https://instagram.com/mfmficgayo
+              - text: "@"
+        - generic [ref=e285]:
+          - generic [ref=e286]: Navigation
+          - generic [ref=e287]:
+            - link "Accueil" [ref=e288] [cursor=pointer]:
+              - /url: /
+            - link "Culte en direct" [ref=e289] [cursor=pointer]:
+              - /url: /live
+            - link "Médiathèque" [ref=e290] [cursor=pointer]:
+              - /url: /mediatheque
+            - link "Ministères" [ref=e291] [cursor=pointer]:
+              - /url: /ministeres
+            - link "L'Église" [ref=e292] [cursor=pointer]:
+              - /url: /eglise
+            - link "Agenda" [ref=e293] [cursor=pointer]:
+              - /url: /agenda
+            - link "Contact" [ref=e294] [cursor=pointer]:
+              - /url: /contact
+        - generic [ref=e295]:
+          - generic [ref=e296]: Nous trouver
+          - generic [ref=e297]:
+            - generic [ref=e298]: Yopougon Ficgayo
+            - generic [ref=e299]: Abidjan, Côte d'Ivoire
+            - text: +225 07 00 00 00 00
+            - text: bonjour@mfm-ficgayo.ci
+          - generic [ref=e300]:
+            - strong [ref=e301]: Cultes
+            - text: · Dim 9h · Mar 18h30 · Ven 22h
+        - generic [ref=e302]:
+          - generic [ref=e303]: Reste connecté
+          - paragraph [ref=e304]: Reçois les actus et les méditations de la semaine.
+          - generic [ref=e305]:
+            - textbox "Ton e-mail" [ref=e306]
+            - button "S'abonner" [ref=e307]: →
+      - generic [ref=e308]:
+        - generic [ref=e309]: © 2026 Église MFM Ficgayo. Tous droits réservés.
+        - generic [ref=e310]: Bâti avec foi · « À Dieu seul la gloire »
+  - button "Open Next.js Dev Tools" [ref=e316] [cursor=pointer]:
+    - img [ref=e317]
+  - alert [ref=e320]
+```

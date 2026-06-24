@@ -35,7 +35,15 @@ import { HomeGroupsMap } from "@/components/eglise/home-groups-map";
 
 type Selection = HomeGroup | "general" | null;
 
-export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
+export function HomeGroups({
+  groups = [],
+  allZones = [],
+  allDays = [],
+}: {
+  groups?: HomeGroup[];
+  allZones?: string[];
+  allDays?: string[];
+}) {
   const [selection, setSelection] = useState<Selection>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -175,8 +183,7 @@ export function HomeGroups({ groups = [] }: { groups?: HomeGroup[] }) {
         </button>
       </div>
 
-      {/* Interactive Mapbox cartography (join is delegated back here) */}
-      <HomeGroupsMap groups={groups} onJoin={handleSelectGroup} />
+      <HomeGroupsMap groups={groups} allZones={allZones} allDays={allDays} onJoin={handleSelectGroup} />
 
       {/* ── Status-lookup dialog ──────────────────────────────────── */}
       <Dialog open={statusOpen} onOpenChange={handleStatusOpenChange}>

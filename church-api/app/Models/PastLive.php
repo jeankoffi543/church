@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\VideoSourceType;
+use App\Support\QueryFilters;
 use Database\Factories\PastLiveFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,6 +11,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
+use Keky\QueryMaster\Filter;
 
 /**
  * @property int $id
@@ -31,7 +37,41 @@ use Illuminate\Support\Carbon;
 class PastLive extends Model
 {
     /** @use HasFactory<PastLiveFactory> */
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'title' => SearchOperator::LIKE,
+        'description' => SearchOperator::LIKE,
+        'series_name' => SearchOperator::LIKE,
+        'youtube_id' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'title',
+        'series_name',
+        'media_type',
+        'broadcasted_at',
+        'views_count',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            ...QueryFilters::exact('preacher_id'),
+            Filter::make('series_name', 'series'),
+            ...QueryFilters::text('series_name'),
+            ...QueryFilters::text('title'),
+            ...QueryFilters::exact('media_type'),
+            Filter::make('broadcasted_at', 'year')->applyWith(function ($q, $value) {
+                $q->where(function ($sub) use ($value) {
+                    foreach ((array) $value as $yr) {
+                        $sub->orWhereYear('broadcasted_at', $yr);
+                    }
+                });
+            }),
+        ];
+    }
 
     protected $fillable = [
         'title',

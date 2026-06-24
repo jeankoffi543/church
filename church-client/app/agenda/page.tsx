@@ -11,9 +11,23 @@ export const metadata: Metadata = {
   description: "Programmes et événements de l'Église MFM Ficgayo.",
 };
 
-export default async function AgendaPage() {
-  const events = await getEvents();
-  const featured = events.find((e) => e.is_featured) ?? events[0];
+export default async function AgendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; per_page?: string }>;
+}) {
+  const { page, per_page } = await searchParams;
+  const pageNum = page ? Number(page) : 1;
+  const perPageNum = per_page ? Number(per_page) : 10;
+
+  const [featuredRes, eventsRes] = await Promise.all([
+    getEvents({ featured: true, perPage: 1 }),
+    getEvents({ page: pageNum, perPage: perPageNum }),
+  ]);
+
+  const featured = featuredRes.data[0] ?? eventsRes.data[0];
+  const events = eventsRes.data;
+  const meta = eventsRes.meta;
 
   return (
     <section className="min-h-screen bg-cream px-6 pt-[clamp(96px,11vw,120px)] pb-[90px]">
@@ -56,7 +70,7 @@ export default async function AgendaPage() {
         )}
 
         {/* Event list (Asymmetric row style list with integrated pagination) */}
-        <AgendaAsymmetricList events={events} />
+        <AgendaAsymmetricList events={events} initialMeta={meta} />
       </div>
     </section>
   );

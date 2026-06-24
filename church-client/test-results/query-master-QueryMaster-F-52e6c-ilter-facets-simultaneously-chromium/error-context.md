@@ -1,0 +1,428 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: query-master.spec.ts >> QueryMaster Front-End E2E Tests >> Médiathèque (/mediatheque) >> combines multiple filter facets simultaneously
+- Location: tests/e2e/query-master.spec.ts:55:9
+
+# Error details
+
+```
+Error: apiRequestContext._wrapApiCall: file data stream has unexpected number of bytes
+```
+
+# Page snapshot
+
+```yaml
+- generic:
+  - generic:
+    - banner:
+      - generic:
+        - link:
+          - /url: /
+          - img
+          - generic:
+            - generic: MFM Ficgayo
+            - generic: Maison du Feu
+        - navigation:
+          - navigation:
+            - generic:
+              - list:
+                - listitem:
+                  - button:
+                    - text: L'Église
+                    - img
+                - listitem:
+                  - button:
+                    - text: Communauté
+                    - img
+                - listitem:
+                  - button:
+                    - text: Médiathèque
+                    - img
+                - listitem:
+                  - link:
+                    - /url: /agenda
+                    - img
+                    - text: Agenda
+                - listitem:
+                  - link:
+                    - /url: /contact
+                    - img
+                    - text: Contact
+        - generic:
+          - link:
+            - /url: /live
+            - text: HORS LIGNE
+          - link:
+            - /url: /dons
+            - text: Donner
+    - main:
+      - generic:
+        - generic:
+          - generic:
+            - generic: Médiathèque
+            - heading [level=1]: Enseignements & rediffusions
+            - paragraph: Réécoute chaque message, filtre par série, par orateur ou par livre de la Bible.
+          - generic:
+            - generic:
+              - img
+              - textbox:
+                - /placeholder: Rechercher par titre, orateur, série…
+            - button [active]:
+              - img
+              - text: Plus de Filtres
+          - generic: 74 message(s)
+          - generic:
+            - article:
+              - button:
+                - generic: Prière de combat
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 58 min
+              - generic:
+                - heading [level=3]: Alias quia sapiente quia labore soluta laudantium cupiditate ab ratione earum adipisci.
+                - generic:
+                  - generic: Bella Schulist
+                  - generic: 13 February 2026
+                - generic:
+                  - generic:
+                    - img
+                    - text: Éphésiens
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Prière de combat
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 58 min
+              - generic:
+                - heading [level=3]: Asperiores dolorum tenetur totam aspernatur quam.
+                - generic:
+                  - generic: Maryjane Ritchie
+                  - generic: 01 September 2025
+                - generic:
+                  - generic:
+                    - img
+                    - text: Actes
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Intimité divine
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 35 min
+              - generic:
+                - heading [level=3]: Attiser le Feu de la prière
+                - generic:
+                  - generic: Pasquale Ferry
+                  - generic: 18 February 2026
+                - generic:
+                  - generic:
+                    - img
+                    - text: Matthieu
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Prière de combat
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 57 min
+              - generic:
+                - heading [level=3]: Aut dignissimos temporibus occaecati cumque excepturi voluptate ut itaque.
+                - generic:
+                  - generic: Brittany Hammes
+                  - generic: 04 April 2026
+                - generic:
+                  - generic:
+                    - img
+                    - text: Matthieu
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Fondations solides
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 38 min
+              - generic:
+                - heading [level=3]: Autem dolore quam tenetur tempore.
+                - generic:
+                  - generic: Layla Langworth
+                  - generic: 09 April 2026
+                - generic:
+                  - generic:
+                    - img
+                    - text: Romains
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Intimité divine
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 60 min
+              - generic:
+                - heading [level=3]: "Briser les chaînes de captivité : Délivrance !"
+                - generic:
+                  - generic: Olin Nicolas DDS
+                  - generic: 09 April 2024
+                - generic:
+                  - generic:
+                    - img
+                    - text: Romains
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic: Prière de combat
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+                - generic: 54 min
+              - generic:
+                - heading [level=3]: Brûler du Feu céleste
+                - generic:
+                  - generic: Crawford Jones
+                  - generic: 13 June 2025
+                - generic:
+                  - generic:
+                    - img
+                    - text: Actes
+                - button:
+                  - img
+                  - text: Lire le résumé
+            - article:
+              - button:
+                - generic:
+                  - img
+                  - text: Vidéo
+                - generic:
+                  - img
+              - generic:
+                - heading [level=3]: Conférence Annuelle (Lien Invalide Test)
+                - generic:
+                  - generic: Invité
+                  - generic: 06 June 2026
+                - button:
+                  - img
+                  - text: Lire le résumé
+          - generic:
+            - button [disabled]:
+              - img
+            - button: "1"
+            - button: "2"
+            - button: "3"
+            - button: "4"
+            - button: "5"
+            - button: "6"
+            - button: "7"
+            - button: "8"
+            - button: "9"
+            - button: "10"
+            - button:
+              - img
+    - contentinfo:
+      - generic:
+        - generic:
+          - link:
+            - /url: /
+            - img
+            - generic:
+              - generic: MFM Ficgayo
+              - generic: Maison du Feu
+          - paragraph: Une église chrétienne évangélique de grâce, de feu et de miracles, au cœur d'Abidjan.
+          - generic:
+            - link:
+              - /url: https://facebook.com/mfmficgayo
+              - text: f
+            - link:
+              - /url: https://youtube.com/@mfmficgayo
+              - text: ▶
+            - link:
+              - /url: https://instagram.com/mfmficgayo
+              - text: "@"
+        - generic:
+          - generic: Navigation
+          - generic:
+            - link:
+              - /url: /
+              - text: Accueil
+            - link:
+              - /url: /live
+              - text: Culte en direct
+            - link:
+              - /url: /mediatheque
+              - text: Médiathèque
+            - link:
+              - /url: /ministeres
+              - text: Ministères
+            - link:
+              - /url: /eglise
+              - text: L'Église
+            - link:
+              - /url: /agenda
+              - text: Agenda
+            - link:
+              - /url: /contact
+              - text: Contact
+        - generic:
+          - generic: Nous trouver
+          - generic:
+            - generic: Yopougon Ficgayo
+            - generic: Abidjan, Côte d'Ivoire
+            - text: +225 07 00 00 00 00 bonjour@mfm-ficgayo.ci
+          - generic:
+            - strong: Cultes
+            - text: · Dim 9h · Mar 18h30 · Ven 22h
+        - generic:
+          - generic: Reste connecté
+          - paragraph: Reçois les actus et les méditations de la semaine.
+          - generic:
+            - textbox:
+              - /placeholder: Ton e-mail
+            - button: →
+      - generic:
+        - generic: © 2026 Église MFM Ficgayo. Tous droits réservés.
+        - generic: Bâti avec foi · « À Dieu seul la gloire »
+  - button "Open Next.js Dev Tools" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+  - alert
+  - dialog "Filtres avancés" [ref=e11]:
+    - generic [ref=e12]:
+      - heading "Filtres avancés" [level=2] [ref=e13]
+      - paragraph [ref=e14]: Affinez par orateur, catégorie ou année.
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - paragraph [ref=e18]: Orateurs
+        - generic [ref=e19]:
+          - button "Alanis Hayes" [ref=e20] [cursor=pointer]:
+            - generic [ref=e21]: Alanis Hayes
+          - button "Allene Hackett" [ref=e23] [cursor=pointer]:
+            - generic [ref=e24]: Allene Hackett
+          - button "Amara Stroman" [ref=e26] [cursor=pointer]:
+            - generic [ref=e27]: Amara Stroman
+          - button "Antoinette Carter DVM" [ref=e29] [cursor=pointer]:
+            - generic [ref=e30]: Antoinette Carter DVM
+          - button "Arlene Hilpert IV" [ref=e32] [cursor=pointer]:
+            - generic [ref=e33]: Arlene Hilpert IV
+        - button "Voir plus (58)" [ref=e35] [cursor=pointer]:
+          - text: Voir plus (58)
+          - img [ref=e36]
+      - generic [ref=e38]:
+        - paragraph [ref=e40]: Catégories
+        - generic [ref=e41]:
+          - button "Action de grâce" [ref=e42] [cursor=pointer]:
+            - generic [ref=e43]: Action de grâce
+          - button "Combats spirituels" [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]: Combats spirituels
+          - button "Fondations solides" [ref=e48] [cursor=pointer]:
+            - generic [ref=e49]: Fondations solides
+          - button "Intimité" [ref=e51] [cursor=pointer]:
+            - generic [ref=e52]: Intimité
+          - button "Intimité divine" [ref=e54] [cursor=pointer]:
+            - generic [ref=e55]: Intimité divine
+        - button "Voir plus (8)" [ref=e57] [cursor=pointer]:
+          - text: Voir plus (8)
+          - img [ref=e58]
+      - generic [ref=e60]:
+        - paragraph [ref=e62]: Années
+        - generic [ref=e63]:
+          - button "2026" [ref=e64] [cursor=pointer]:
+            - generic [ref=e65]: "2026"
+          - button "2025" [ref=e67] [cursor=pointer]:
+            - generic [ref=e68]: "2025"
+          - button "2024" [ref=e70] [cursor=pointer]:
+            - generic [ref=e71]: "2024"
+      - generic [ref=e73]:
+        - paragraph [ref=e75]: Dates
+        - generic [ref=e76]:
+          - button "2026-06-23" [ref=e77] [cursor=pointer]:
+            - generic [ref=e78]:
+              - img [ref=e79]
+              - text: 2026-06-23
+          - button "2026-06-21" [ref=e82] [cursor=pointer]:
+            - generic [ref=e83]:
+              - img [ref=e84]
+              - text: 2026-06-21
+          - button "2026-06-18" [ref=e87] [cursor=pointer]:
+            - generic [ref=e88]:
+              - img [ref=e89]
+              - text: 2026-06-18
+          - button "2026-06-17" [ref=e92] [cursor=pointer]:
+            - generic [ref=e93]:
+              - img [ref=e94]
+              - text: 2026-06-17
+          - button "2026-06-16" [ref=e97] [cursor=pointer]:
+            - generic [ref=e98]:
+              - img [ref=e99]
+              - text: 2026-06-16
+        - button "Voir plus (71)" [ref=e102] [cursor=pointer]:
+          - text: Voir plus (71)
+          - img [ref=e103]
+      - generic [ref=e105]:
+        - paragraph [ref=e107]: Livres bibliques
+        - generic [ref=e108]:
+          - button "Genèse" [ref=e109] [cursor=pointer]:
+            - generic [ref=e110]:
+              - img [ref=e111]
+              - text: Genèse
+          - button "Exode" [ref=e114] [cursor=pointer]:
+            - generic [ref=e115]:
+              - img [ref=e116]
+              - text: Exode
+          - button "Lévitique" [ref=e119] [cursor=pointer]:
+            - generic [ref=e120]:
+              - img [ref=e121]
+              - text: Lévitique
+          - button "Nombres" [ref=e124] [cursor=pointer]:
+            - generic [ref=e125]:
+              - img [ref=e126]
+              - text: Nombres
+          - button "Deutéronome" [ref=e129] [cursor=pointer]:
+            - generic [ref=e130]:
+              - img [ref=e131]
+              - text: Deutéronome
+        - button "Voir plus (66)" [ref=e134] [cursor=pointer]:
+          - text: Voir plus (66)
+          - img [ref=e135]
+    - generic [ref=e137]:
+      - button "Réinitialiser" [ref=e138] [cursor=pointer]
+      - button "Voir les 8 résultat(s)" [ref=e139] [cursor=pointer]
+    - button "Close" [ref=e140]:
+      - img
+      - generic [ref=e141]: Close
+```

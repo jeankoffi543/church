@@ -7,8 +7,10 @@ import {
   createPastLive,
   updatePastLive,
   deletePastLive,
+  getAdminPastLivesPaginated,
   type AdminPastLive,
   type AdminUser,
+  type AdminListMeta,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -17,7 +19,8 @@ import type { FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Badge } from "@/components/admin/ui/badge";
 import { Field, inputClass } from "@/components/admin/ui/field";
@@ -36,15 +39,18 @@ const filterFields: FilterField[] = [
   { id: "series_name", label: "Série", type: "text" },
 ];
 
+export const PAST_LIVES_PER_PAGE = 10;
+
 export function PastLivesManager({
   initialLives,
+  initialMeta,
   preachers,
 }: {
   initialLives: AdminPastLive[];
+  initialMeta: AdminListMeta;
   preachers: AdminUser[];
 }) {
   const preacherOptions = preachers.map((p) => ({ value: p.id, label: p.name, sublabel: p.email }));
-  const [lives, setLives] = useState<AdminPastLive[]>(initialLives);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -162,10 +168,12 @@ export function PastLivesManager({
         if (editing) {
           const res = await updatePastLive(editing.id, payload, files);
           setLives((prev) => prev.map((l) => (l.id === res.data.id ? res.data : l)));
+          table.refresh();
           setStatus({ type: "success", message: `« ${title} » mis à jour.` });
         } else {
           const res = await createPastLive(payload, files);
           setLives((prev) => [res.data, ...prev]);
+          table.refresh();
           setStatus({ type: "success", message: `« ${title} » créé.` });
         }
         stopFaux(true);
@@ -185,6 +193,7 @@ export function PastLivesManager({
       try {
         await deletePastLive(l.id);
         setLives((prev) => prev.filter((x) => x.id !== l.id));
+        table.refresh();
         setStatus({ type: "success", message: `« ${l.title} » supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -283,12 +292,13 @@ export function PastLivesManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: lives,
-    columns,
-    searchKeys: [(l) => l.title, (l) => l.series_name],
-    filterAccessors: { title: (l) => l.title, series_name: (l) => l.series_name },
+  const table = useServerDataTable<AdminPastLive>({
+    fetcher: getAdminPastLivesPaginated,
+    initialData: initialLives,
+    initialMeta,
+    initialPerPage: PAST_LIVES_PER_PAGE,
   });
+  const setLives = table.setItems;
 
   return (
     <PageShell>

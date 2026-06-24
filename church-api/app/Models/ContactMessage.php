@@ -3,10 +3,16 @@
 namespace App\Models;
 
 use App\Enums\ContactMessageStatus;
+use App\Support\QueryFilters;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
 
 /**
  * @property int $id
@@ -16,12 +22,39 @@ use Illuminate\Database\Eloquent\Builder;
  * @property string $subject
  * @property string $message
  * @property ContactMessageStatus $status
- * @property \Illuminate\Support\Carbon|null $replied_at
+ * @property Carbon|null $replied_at
  * @property int|null $replied_by
  */
 class ContactMessage extends Model
 {
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'name' => SearchOperator::LIKE,
+        'email' => SearchOperator::LIKE,
+        'subject' => SearchOperator::LIKE,
+        'message' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'name',
+        'email',
+        'subject',
+        'phone',
+        'status',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            ...QueryFilters::exact('status'),
+            ...QueryFilters::exact('subject'),
+            ...QueryFilters::text('name'),
+            ...QueryFilters::text('email'),
+            ...QueryFilters::text('phone'),
+        ];
+    }
 
     protected $fillable = [
         'name',

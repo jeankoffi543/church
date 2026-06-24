@@ -3,14 +3,15 @@
 import { useEffect, useState, useTransition, useMemo } from "react";
 import { Plus, Pencil, Trash2, MapPin } from "lucide-react";
 
-import { createBranch, updateBranch, deleteBranch, type AdminBranch, type AdminUser } from "@/lib/admin-api";
+import { createBranch, updateBranch, deleteBranch, getAdminBranchesPaginated, type AdminBranch, type AdminUser, type AdminListMeta } from "@/lib/admin-api";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -39,14 +40,24 @@ const filterFields: FilterField[] = [
 
 const INPUT_CLASS = "h-10 rounded-lg border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 text-sm text-indigo focus-visible:border-gold";
 
+export const BRANCHES_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field (pastor is a relation, not sortable). */
+const BRANCH_SORT_FIELD: Record<string, string | undefined> = {
+  title: "title",
+  address: "address",
+  pastor: undefined,
+};
+
 export function BranchesManager({
   initialBranches,
+  initialMeta,
   users,
 }: {
   initialBranches: AdminBranch[];
+  initialMeta: AdminListMeta;
   users: AdminUser[];
 }) {
-  const [branches, setBranches] = useState<AdminBranch[]>(initialBranches);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -142,10 +153,12 @@ export function BranchesManager({
         if (editingBranch) {
           const res = await updateBranch(editingBranch.id, payload);
           setBranches((prev) => prev.map((item) => (item.id === editingBranch.id ? res.data : item)));
+          table.refresh();
           setStatus({ type: "success", message: "La branche a été mise à jour avec succès." });
         } else {
           const res = await createBranch(payload);
           setBranches((prev) => [...prev, res.data]);
+          table.refresh();
           setStatus({ type: "success", message: "La branche a été créée avec succès." });
         }
         setIsModalOpen(false);
@@ -163,6 +176,7 @@ export function BranchesManager({
       try {
         await deleteBranch(b.id);
         setBranches((prev) => prev.filter((item) => item.id !== b.id));
+        table.refresh();
         setStatus({ type: "success", message: "La branche a été supprimée." });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -240,21 +254,21 @@ export function BranchesManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: branches,
-    columns,
-    searchKeys: [(b) => b.title, (b) => b.address, (b) => b.pastor?.name],
-    filterAccessors: { title: (b) => b.title, address: (b) => b.address },
-    matchFilters: { pastor: (b, f) => f.value === "" || b.pastor_id === Number(f.value) },
-    defaultSort: { id: "title", dir: "asc" },
+  const table = useServerDataTable<AdminBranch>({
+    fetcher: getAdminBranchesPaginated,
+    initialData: initialBranches,
+    initialMeta,
+    initialPerPage: BRANCHES_PER_PAGE,
+    sortFieldMap: BRANCH_SORT_FIELD,
   });
+  const setBranches = table.setItems;
 
   return (
     <PageShell>
       <PageHeader
         eyebrow="Gestion territoriale"
         title="Campus & Extensions"
-        subtitle={`${branches.length} site${branches.length > 1 ? "s" : ""} · gérez les campus principaux, les extensions régionales et les pasteurs résidents.`}
+        subtitle={`${table.total} site${table.total > 1 ? "s" : ""} · gérez les campus principaux, les extensions régionales et les pasteurs résidents.`}
         actions={
           <Button icon={<Plus className="size-4" />} onClick={openCreateModal}>
             Nouveau campus / extension

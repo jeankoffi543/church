@@ -11,7 +11,7 @@ export interface FilterField {
   options?: { value: string | number; label: string }[];
 }
 
-export type FilterOperator = "contains" | "equals" | "starts_with" | "ends_with";
+export type FilterOperator = "equals" | "contains" | "starts_with" | "ends_with";
 
 export interface ActiveFilter {
   fieldId: string;
@@ -38,6 +38,44 @@ const getOperatorsForType = (type: FilterField["type"]): { value: FilterOperator
       return [{ value: "equals", label: "Est égal à" }];
   }
 };
+
+/**
+ * Sérialise les filtres actifs du QueryBuilder au format attendu par Keky\QueryMaster.
+ * Associe chaque opérateur graphique à son suffixe d'enum PHP correspondant :
+ * - 'equals' -> '__eq'
+ * - 'contains' -> '__lk'
+ * - 'starts_with' -> '__sw'
+ * - 'ends_with' -> '__ew'
+ */
+export function serializeFiltersForQueryMaster(filters: ActiveFilter[]): Record<string, string> {
+  const params: Record<string, string> = {};
+
+  for (const filter of filters) {
+    if (filter.value === undefined || filter.value === null || filter.value === "") {
+      continue;
+    }
+
+    let suffix = "";
+    switch (filter.operator) {
+      case "equals":
+        suffix = "__eq";
+        break;
+      case "contains":
+        suffix = "__lk";
+        break;
+      case "starts_with":
+        suffix = "__sw";
+        break;
+      case "ends_with":
+        suffix = "__ew";
+        break;
+    }
+
+    params[`${filter.fieldId}${suffix}`] = String(filter.value);
+  }
+
+  return params;
+}
 
 interface QueryBuilderProps {
   fields: FilterField[];

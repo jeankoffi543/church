@@ -3,15 +3,16 @@
 import { useState, useTransition } from "react";
 import { Plus, Pencil, Trash2, Mail, ShieldCheck, Users as UsersIcon } from "lucide-react";
 
-import type { AdminServant } from "@/lib/admin-api";
-import { createServant, updateServant, deleteServant } from "@/lib/admin-api";
+import type { AdminServant, AdminListMeta } from "@/lib/admin-api";
+import { createServant, updateServant, deleteServant, getServantsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import type { FilterField } from "@/components/admin/query-builder";
+import { serializeFiltersForQueryMaster, type FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field, inputClass } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -30,16 +31,26 @@ type FormState = {
 
 const EMPTY_FORM: FormState = { name: "", email: "", password: "", is_active: true, roles: [] };
 
+export const USERS_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field (roles is a relation, not sortable). */
+const SERVANT_SORT_FIELD: Record<string, string | undefined> = {
+  name: "name",
+  is_active: "is_active",
+  roles: undefined,
+};
+
 export function UsersManager({
   initialServants,
+  initialMeta,
   roleNames,
   currentUserId,
 }: {
   initialServants: AdminServant[];
+  initialMeta: AdminListMeta;
   roleNames: string[];
   currentUserId: number;
 }) {
-  const [servants, setServants] = useState<AdminServant[]>(initialServants);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -100,6 +111,7 @@ export function UsersManager({
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
           });
           setServants((prev) => prev.map((s) => (s.id === editing.id ? res.data : s)));
+          table.refresh();
           setStatus({ type: "success", message: "Serviteur mis à jour." });
         } else {
           const res = await createServant({
@@ -110,6 +122,7 @@ export function UsersManager({
             roles: form.roles,
           });
           setServants((prev) => [...prev, res.data]);
+          table.refresh();
           setStatus({ type: "success", message: "Serviteur ajouté." });
         }
         setModalOpen(false);
@@ -126,6 +139,7 @@ export function UsersManager({
       try {
         const res = await updateServant(servant.id, { is_active: next });
         setServants((prev) => prev.map((s) => (s.id === servant.id ? res.data : s)));
+        table.refresh();
         setStatus({ type: "success", message: next ? "Accès réactivé." : "Accès suspendu." });
       } catch (err) {
         setServants((prev) => prev.map((s) => (s.id === servant.id ? servant : s)));
@@ -142,6 +156,7 @@ export function UsersManager({
     startTransition(async () => {
       try {
         await deleteServant(servant.id);
+        table.refresh();
         setStatus({ type: "success", message: "Serviteur supprimé." });
       } catch (err) {
         setServants((prev) => [...prev, servant].sort((a, b) => a.name.localeCompare(b.name)));
@@ -244,26 +259,27 @@ export function UsersManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: servants,
-    columns,
-    searchKeys: [(s) => s.name, (s) => s.email],
-    filterAccessors: { name: (s) => s.name, email: (s) => s.email },
-    matchFilters: {
-      role: (s, f) => f.value === "" || s.roles.includes(f.value),
-      is_active: (s, f) => f.value === "" || s.is_active === (f.value === "active"),
+  const table = useServerDataTable<AdminServant>({
+    fetcher: getServantsPaginated,
+    initialData: initialServants,
+    initialMeta,
+    initialPerPage: USERS_PER_PAGE,
+    sortFieldMap: SERVANT_SORT_FIELD,
+    buildFilters: (filters) => {
+      const f = { ...serializeFiltersForQueryMaster(filters) };
+      // The "Statut" <select> ships "active"/"suspended" — map to 1/0.
+      if (f.is_active__eq) f.is_active__eq = f.is_active__eq === "active" ? "1" : "0";
+      return f;
     },
-    defaultSort: { id: "name", dir: "asc" },
   });
-
-  const activeCount = servants.filter((s) => s.is_active).length;
+  const setServants = table.setItems;
 
   return (
     <PageShell>
       <PageHeader
         eyebrow="Serviteurs"
         title="Comptes & Accès"
-        subtitle={`${servants.length} compte${servants.length > 1 ? "s" : ""} · ${activeCount} actif${activeCount > 1 ? "s" : ""} · gérez les serviteurs et leurs départements.`}
+        subtitle={`${table.total} compte${table.total > 1 ? "s" : ""} · gérez les serviteurs et leurs départements.`}
         actions={
           <Button icon={<Plus className="size-4" />} onClick={openCreate}>
             Nouveau serviteur

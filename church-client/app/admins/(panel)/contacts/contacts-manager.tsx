@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { Clock, Inbox, Mail, Phone, MessageCircle, ShieldCheck, Loader2, User, CheckCircle } from "lucide-react";
 
-import type { AdminMe, AdminContactMessage } from "@/lib/admin-api";
-import { updateContactStatus, archiveContact, replyContact, updateAdminSettings } from "@/lib/admin-api";
+import type { AdminMe, AdminContactMessage, AdminListMeta } from "@/lib/admin-api";
+import { updateContactStatus, archiveContact, replyContact, updateAdminSettings, getAdminContactsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
@@ -12,7 +12,10 @@ import type { FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
+
+export const CONTACTS_PER_PAGE = 10;
 import { Button } from "@/components/admin/ui/button";
 import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
@@ -36,18 +39,39 @@ const STATUS_CONFIG: Record<
 
 export function ContactsManager({
   initialMessages,
+  initialMeta,
+  initialPendingCount,
   initialSubjects,
   me,
 }: {
   initialMessages: AdminContactMessage[];
+  initialMeta: AdminListMeta;
+  initialPendingCount: number;
   initialSubjects: string[];
   me: AdminMe;
 }) {
-  const [messages, setMessages] = useState<AdminContactMessage[]>(initialMessages);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
+
+  const table = useServerDataTable<AdminContactMessage>({
+    fetcher: getAdminContactsPaginated,
+    initialData: initialMessages,
+    initialMeta,
+    initialPerPage: CONTACTS_PER_PAGE,
+    extraFilters: statusFilter === "all" ? undefined : { status: statusFilter },
+  });
+  const messages = table.view;
+  const setMessages = table.setItems;
+
+  // The "pending" badge needs the global count, not just the visible page.
+  const [pendingCount, setPendingCount] = useState(initialPendingCount);
+  const refreshPending = useCallback(() => {
+    getAdminContactsPaginated({ filters: { status: "pending" }, perPage: 1 })
+      .then((res) => setPendingCount(res.meta.total))
+      .catch(() => {});
+  }, []);
 
   const [activeTab, setActiveTab] = useState<"messages" | "subjects">("messages");
   const [subjects, setSubjects] = useState<string[]>(initialSubjects);
@@ -101,10 +125,12 @@ export function ContactsManager({
   };
 
   const selected = messages.find((m) => m.id === selectedId) ?? null;
-  const pendingCount = messages.filter((m) => m.status === "pending").length;
 
-  const replaceInList = (updated: AdminContactMessage) =>
+  const replaceInList = (updated: AdminContactMessage) => {
     setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    table.refresh();
+    refreshPending();
+  };
 
   const handleStatusChange = (msg: AdminContactMessage, nextStatus: "pending" | "read" | "archived") => {
     setStatus(null);
@@ -212,22 +238,12 @@ export function ContactsManager({
     },
   ];
 
-  const visibleMessages = messages.filter((m) => statusFilter === "all" || m.status === statusFilter);
-
-  const table = useDataTable({
-    rows: visibleMessages,
-    columns,
-    searchKeys: [(m) => m.name, (m) => m.email, (m) => m.subject, (m) => m.phone],
-    filterAccessors: { name: (m) => m.name, email: (m) => m.email, phone: (m) => m.phone },
-    matchFilters: { subject: (m, f) => f.value === "" || m.subject === f.value },
-  });
-
   return (
     <PageShell>
       <PageHeader
         eyebrow="Secrétariat"
         title="Messages de contact"
-        subtitle={`${messages.length} message${messages.length > 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""} · consultez et traitez les demandes des visiteurs.`}
+        subtitle={`${table.total} message${table.total > 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""} · consultez et traitez les demandes des visiteurs.`}
       />
 
       <StatusBanner status={status} className="mb-6" />
@@ -255,7 +271,10 @@ export function ContactsManager({
             {STATUS_FILTERS.map((f) => (
               <button
                 key={f.key}
-                onClick={() => setStatusFilter(f.key)}
+                onClick={() => {
+                  setStatusFilter(f.key);
+                  table.setPage(1);
+                }}
                 className={cn(
                   "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
                   statusFilter === f.key ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo",

@@ -6,7 +6,7 @@ import { Eyebrow } from "@/components/ui/eyebrow";
 import { EventTeaserCard } from "@/components/cards/event-card";
 
 export async function EventsTeaser() {
-  const events = await getEvents();
+  const { data: events } = await getEvents({ perPage: 10 });
   return (
     <section className="pb-[clamp(72px,9vw,108px)]">
       <div className="mx-auto max-w-[1200px] px-6">

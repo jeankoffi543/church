@@ -23,18 +23,26 @@ class MinistryApplicationController extends Controller
     {
         $user = $request->user();
 
-        $applications = MinistryApplication::with(['ministry', 'user'])
+        $query = MinistryApplication::with(['ministry', 'user'])
             ->when(
                 ! AccessControl::validatesMinistriesGlobally($user),
                 fn ($query) => $query->whereHas(
                     'ministry',
                     fn ($q) => $q->where('chef_id', $user->id),
                 ),
-            )
-            ->latest()
-            ->get();
+            );
 
-        return MinistryApplicationResource::collection($applications);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latest();
+        }
+
+        return MinistryApplicationResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     /**

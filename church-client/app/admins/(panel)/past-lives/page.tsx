@@ -1,7 +1,7 @@
-import { getAdminMe, getAdminPastLives, getAdminUsers } from "@/lib/admin-api";
+import { getAdminMe, getAdminPastLivesPaginated, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { PastLivesManager } from "./past-lives-manager";
+import { PastLivesManager, PAST_LIVES_PER_PAGE } from "./past-lives-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,10 @@ export default async function AdminPastLivesPage() {
     return <AccessRestricted />;
   }
 
-  const [lives, users] = await Promise.all([getAdminPastLives(), getAdminUsers()]);
+  const [list, users] = await Promise.all([
+    getAdminPastLivesPaginated({ perPage: PAST_LIVES_PER_PAGE }),
+    getAdminUsers(),
+  ]);
 
-  return <PastLivesManager initialLives={lives} preachers={users} />;
+  return <PastLivesManager initialLives={list.data} initialMeta={list.meta} preachers={users} />;
 }

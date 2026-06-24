@@ -9,6 +9,7 @@ use App\Http\Resources\V1\PastLiveResource;
 use App\Models\PastLive;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Str;
 
@@ -16,10 +17,20 @@ class PastLiveController extends Controller
 {
     use HandlesFileUploads;
 
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
+        $query = PastLive::query()->with('preacher');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
         return PastLiveResource::collection(
-            PastLive::query()->with('preacher')->latestFirst()->paginate(20)
+            $query->paginate($request->integer('per_page', 20))
         );
     }
 

@@ -1,7 +1,7 @@
-import { getAdminMe, getMinistryApplications } from "@/lib/admin-api";
+import { getAdminMe, getMinistryApplicationsPaginated } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../../_components/access-restricted";
-import { ApplicationsManager } from "./applications-manager";
+import { ApplicationsManager, MINISTRY_APPLICATIONS_PER_PAGE } from "./applications-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,17 @@ export default async function AdminMinistryApplicationsPage() {
     return <AccessRestricted />;
   }
 
-  const applications = await getMinistryApplications();
+  const [list, pending] = await Promise.all([
+    getMinistryApplicationsPaginated({ perPage: MINISTRY_APPLICATIONS_PER_PAGE }),
+    getMinistryApplicationsPaginated({ filters: { status: "pending" }, perPage: 1 }),
+  ]);
 
-  return <ApplicationsManager initialApplications={applications} me={me!} />;
+  return (
+    <ApplicationsManager
+      initialApplications={list.data}
+      initialMeta={list.meta}
+      initialPendingCount={pending.meta.total}
+      me={me!}
+    />
+  );
 }

@@ -3,14 +3,15 @@
 import { useState, useTransition, useEffect } from "react";
 import { Plus, Edit, Trash2, Star } from "lucide-react";
 
-import { createEvent, updateEvent, deleteEvent, checkEventSlug } from "@/lib/admin-api";
+import { createEvent, updateEvent, deleteEvent, checkEventSlug, getAdminEventsPaginated, type AdminListMeta } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
-import type { FilterField } from "@/components/admin/query-builder";
+import { serializeFiltersForQueryMaster, type FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field, inputClass } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -48,6 +49,16 @@ const filterFields: FilterField[] = [
   },
 ];
 
+export const EVENTS_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field. */
+const EVENT_SORT_FIELD: Record<string, string | undefined> = {
+  is_featured: "is_featured",
+  title: "title",
+  location: "location",
+  starts_at: "start_date",
+};
+
 const slugifyForInput = (text: string) =>
   text
     .toLowerCase()
@@ -55,8 +66,13 @@ const slugifyForInput = (text: string) =>
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9-]+/g, "-");
 
-export function EventsManager({ initialEvents }: { initialEvents: Event[] }) {
-  const [events, setEvents] = useState<Event[]>(initialEvents);
+export function EventsManager({
+  initialEvents,
+  initialMeta,
+}: {
+  initialEvents: Event[];
+  initialMeta: AdminListMeta;
+}) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -177,6 +193,7 @@ export function EventsManager({ initialEvents }: { initialEvents: Event[] }) {
       try {
         await deleteEvent(ev.id);
         setEvents((prev) => prev.filter((e) => e.id !== ev.id));
+        table.refresh();
         setStatus({ type: "success", message: `L'événement "${ev.title}" a été supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Impossible de supprimer cet événement." });
@@ -211,11 +228,13 @@ export function EventsManager({ initialEvents }: { initialEvents: Event[] }) {
           const res = await updateEvent(editingEvent.id, fd);
           const updated = res.data as Event;
           setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+          table.refresh();
           setStatus({ type: "success", message: `L'événement "${title}" a été mis à jour.` });
         } else {
           const res = await createEvent(fd);
           const created = res.data as Event;
           setEvents((prev) => [...prev, created]);
+          table.refresh();
           setStatus({ type: "success", message: `L'événement "${title}" a été créé.` });
         }
         closeModal();
@@ -297,18 +316,20 @@ export function EventsManager({ initialEvents }: { initialEvents: Event[] }) {
     },
   ];
 
-  const table = useDataTable({
-    rows: events,
-    columns,
-    searchKeys: [(e) => e.title, (e) => e.type, (e) => e.location],
-    filterAccessors: {
-      title: (e) => e.title,
-      type: (e) => e.type,
-      location: (e) => e.location,
-      host: (e) => e.host,
+  const table = useServerDataTable<Event>({
+    fetcher: getAdminEventsPaginated,
+    initialData: initialEvents,
+    initialMeta,
+    initialPerPage: EVENTS_PER_PAGE,
+    sortFieldMap: EVENT_SORT_FIELD,
+    buildFilters: (filters) => {
+      const f = { ...serializeFiltersForQueryMaster(filters) };
+      // The "Mise en avant" <select> ships "featured"/"normal" — map to 1/0.
+      if (f.is_featured__eq) f.is_featured__eq = f.is_featured__eq === "featured" ? "1" : "0";
+      return f;
     },
-    matchFilters: { is_featured: (e, f) => f.value === "" || e.is_featured === (f.value === "featured") },
   });
+  const setEvents = table.setItems;
 
   return (
     <PageShell>

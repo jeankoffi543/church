@@ -13,8 +13,17 @@ export const metadata: Metadata = {
     "Découvrez tous les ministères de l'Église MFM Ficgayo — enfants, jeunesse, couples, louange, intercession — et trouvez votre place dans la Maison.",
 };
 
-export default async function MinisteresPage() {
-  const ministries = await getMinistries();
+export default async function MinisteresPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const { page } = await searchParams;
+  const pageNum = page ? Number(page) : 1;
+  const { data: ministries, meta } = await getMinistries({
+    page: pageNum,
+    perPage: 8,
+  });
 
   return (
     <>
@@ -40,17 +49,17 @@ export default async function MinisteresPage() {
           </div>
         </div>
       </section>
-
+ 
       {/* ── Grid ───────────────────────────────────────────── */}
       <section className="px-6 pb-[clamp(72px,9vw,108px)]">
         <div className="mx-auto max-w-[1200px]">
           <div className="mb-8 flex items-center gap-3">
             <span className="text-[13px] font-bold text-faint">
-              {ministries.length} ministères
+              {meta?.total ?? ministries.length} ministères
             </span>
             <span className="h-px flex-1 bg-[rgba(40,25,80,0.1)]" />
           </div>
-          <MinistryGrid ministries={ministries} />
+          <MinistryGrid ministries={ministries} initialMeta={meta} />
         </div>
       </section>
 

@@ -8,6 +8,7 @@ use App\Http\Resources\V1\MinistryResource;
 use App\Models\Ministry;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class MinistryController extends Controller
@@ -17,9 +18,21 @@ class MinistryController extends Controller
     /**
      * All ministries (including inactive) for management.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return MinistryResource::collection(Ministry::query()->with('chef')->ordered()->get());
+        $query = Ministry::query()->with('chef');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->ordered();
+        }
+
+        return MinistryResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     public function store(MinistryRequest $request): JsonResponse

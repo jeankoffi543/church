@@ -10,9 +10,11 @@ import {
   getAdminAlbum,
   uploadAlbumPhotos,
   deleteAlbumPhoto,
+  getAdminAlbumsPaginated,
   type AdminAlbum,
   type AdminAlbumPhoto,
   type AdminEvent,
+  type AdminListMeta,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -21,7 +23,8 @@ import type { FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field, inputClass } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -31,6 +34,16 @@ import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 const MAX_PHOTOS = 50;
 type Pending = { file: File; url: string };
 
+export const GALLERY_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field (category lives on the event relation). */
+const ALBUM_SORT_FIELD: Record<string, string | undefined> = {
+  title: "title",
+  photos_count: "photos_count",
+  date_label: "created_at",
+  category: undefined,
+};
+
 const filterFields: FilterField[] = [
   { id: "title", label: "Titre", type: "text" },
   { id: "category", label: "Catégorie", type: "text" },
@@ -38,12 +51,13 @@ const filterFields: FilterField[] = [
 
 export function GalleryManager({
   initialAlbums,
+  initialMeta,
   events,
 }: {
   initialAlbums: AdminAlbum[];
+  initialMeta: AdminListMeta;
   events: Pick<AdminEvent, "id" | "title">[];
 }) {
-  const [albums, setAlbums] = useState<AdminAlbum[]>(initialAlbums);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -108,10 +122,12 @@ export function GalleryManager({
         if (editing) {
           const res = await updateAlbum(editing.id, payload, coverFile, removeCover);
           setAlbums((prev) => prev.map((a) => (a.id === res.data.id ? res.data : a)));
+          table.refresh();
           setStatus({ type: "success", message: `Album « ${title} » mis à jour.` });
         } else {
           const res = await createAlbum(payload, coverFile);
           setAlbums((prev) => [res.data, ...prev]);
+          table.refresh();
           setStatus({ type: "success", message: `Album « ${title} » créé.` });
         }
         setIsModalOpen(false);
@@ -130,6 +146,7 @@ export function GalleryManager({
       try {
         await deleteAlbum(a.id);
         setAlbums((prev) => prev.filter((x) => x.id !== a.id));
+        table.refresh();
         setStatus({ type: "success", message: `Album « ${a.title} » supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -222,12 +239,14 @@ export function GalleryManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: albums,
-    columns,
-    searchKeys: [(a) => a.title, (a) => a.category],
-    filterAccessors: { title: (a) => a.title, category: (a) => a.category },
+  const table = useServerDataTable<AdminAlbum>({
+    fetcher: getAdminAlbumsPaginated,
+    initialData: initialAlbums,
+    initialMeta,
+    initialPerPage: GALLERY_PER_PAGE,
+    sortFieldMap: ALBUM_SORT_FIELD,
   });
+  const setAlbums = table.setItems;
 
   return (
     <PageShell>

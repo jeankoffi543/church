@@ -1,0 +1,176 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: query-master.spec.ts >> QueryMaster Front-End E2E Tests >> Groupes de Maison (/groupes-de-maison) >> filters groups by search query and badge filters
+- Location: tests/e2e/query-master.spec.ts:79:9
+
+# Error details
+
+```
+Error: apiRequestContext._wrapApiCall: file data stream has unexpected number of bytes
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "MFM Ficgayo — Accueil" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e6]
+          - generic [ref=e7]:
+            - generic [ref=e8]: MFM Ficgayo
+            - generic [ref=e9]: Maison du Feu
+        - navigation [ref=e10]:
+          - navigation "Main" [ref=e11]:
+            - list [ref=e13]:
+              - listitem [ref=e14]:
+                - button "L'Église" [ref=e15]:
+                  - text: L'Église
+                  - img [ref=e16]
+              - listitem [ref=e18]:
+                - button "Communauté" [ref=e19]:
+                  - text: Communauté
+                  - img [ref=e20]
+              - listitem [ref=e22]:
+                - button "Médiathèque" [ref=e23]:
+                  - text: Médiathèque
+                  - img [ref=e24]
+              - listitem [ref=e26]:
+                - link "Agenda" [ref=e27] [cursor=pointer]:
+                  - /url: /agenda
+                  - img [ref=e28]
+                  - text: Agenda
+              - listitem [ref=e30]:
+                - link "Contact" [ref=e31] [cursor=pointer]:
+                  - /url: /contact
+                  - img [ref=e32]
+                  - text: Contact
+        - generic [ref=e34]:
+          - link "HORS LIGNE" [ref=e35] [cursor=pointer]:
+            - /url: /live
+            - text: HORS LIGNE
+          - link "Donner" [ref=e37] [cursor=pointer]:
+            - /url: /dons
+    - main [ref=e38]:
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - generic [ref=e42]: Cellules de Prière
+          - heading "Groupes de maison" [level=1] [ref=e43]
+          - paragraph [ref=e44]: Les cellules de prière sont le cœur battant de la Maison. On y grandit ensemble, en semaine, près de chez soi. Trouvez un groupe et engagez-vous.
+        - button "Vérifier ma candidature" [ref=e46] [cursor=pointer]:
+          - img [ref=e47]
+          - text: Vérifier ma candidature
+        - generic [ref=e51]:
+          - complementary [ref=e52]:
+            - generic [ref=e53]:
+              - generic [ref=e54]:
+                - img [ref=e55]
+                - textbox "Quartier, responsable, rue…" [ref=e58]: Bethel
+                - button [ref=e59] [cursor=pointer]:
+                  - img [ref=e60]
+              - generic [ref=e63]:
+                - button "Toutes zones" [ref=e64] [cursor=pointer]
+                - button "Abobo" [ref=e65] [cursor=pointer]
+                - button "Cité Olympe Promogim" [ref=e66] [cursor=pointer]
+                - button "Cocody" [ref=e67] [cursor=pointer]
+                - button "Fanny" [ref=e68] [cursor=pointer]
+                - button "Ile-Oluji-Okeigbo" [ref=e69] [cursor=pointer]
+                - button "Marcory" [ref=e70] [cursor=pointer]
+                - button "Voir plus (10)" [ref=e71] [cursor=pointer]:
+                  - img [ref=e72]
+                  - text: Voir plus (10)
+              - generic [ref=e77]:
+                - button "Tous les jours" [ref=e78] [cursor=pointer]
+                - button "Jeudi" [ref=e79] [cursor=pointer]
+                - button "Mardi" [active] [ref=e80] [cursor=pointer]
+                - button "Mercredi" [ref=e81] [cursor=pointer]
+                - button "Vendredi" [ref=e82] [cursor=pointer]
+            - generic [ref=e83]:
+              - paragraph [ref=e84]: 0 cellule
+              - generic [ref=e85]:
+                - img [ref=e86]
+                - paragraph [ref=e91]: Aucune cellule trouvée
+                - paragraph [ref=e92]: Essaie une autre zone, un autre jour, ou trouve un groupe près de chez toi.
+            - button "Trouver un groupe près de chez moi" [ref=e94] [cursor=pointer]:
+              - img [ref=e95]
+              - text: Trouver un groupe près de chez moi
+          - generic [ref=e99]:
+            - region "Map" [ref=e100]
+            - generic:
+              - generic [ref=e101]:
+                - button "Zoom in" [ref=e102] [cursor=pointer]
+                - button "Zoom out" [ref=e104] [cursor=pointer]
+              - generic:
+                - button "Toggle attribution" [ref=e107] [cursor=pointer]
+                - link "Mapbox homepage" [ref=e110] [cursor=pointer]:
+                  - /url: https://www.mapbox.com/
+            - generic: Use two fingers to move the map
+            - generic: Use ctrl + scroll to zoom the map
+    - contentinfo [ref=e111]:
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - link "MFM Ficgayo — Accueil" [ref=e114] [cursor=pointer]:
+            - /url: /
+            - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e115]
+            - generic [ref=e116]:
+              - generic [ref=e117]: MFM Ficgayo
+              - generic [ref=e118]: Maison du Feu
+          - paragraph [ref=e119]: Une église chrétienne évangélique de grâce, de feu et de miracles, au cœur d'Abidjan.
+          - generic [ref=e120]:
+            - link "Facebook" [ref=e121] [cursor=pointer]:
+              - /url: https://facebook.com/mfmficgayo
+              - text: f
+            - link "YouTube" [ref=e122] [cursor=pointer]:
+              - /url: https://youtube.com/@mfmficgayo
+              - text: ▶
+            - link "Instagram" [ref=e123] [cursor=pointer]:
+              - /url: https://instagram.com/mfmficgayo
+              - text: "@"
+        - generic [ref=e124]:
+          - generic [ref=e125]: Navigation
+          - generic [ref=e126]:
+            - link "Accueil" [ref=e127] [cursor=pointer]:
+              - /url: /
+            - link "Culte en direct" [ref=e128] [cursor=pointer]:
+              - /url: /live
+            - link "Médiathèque" [ref=e129] [cursor=pointer]:
+              - /url: /mediatheque
+            - link "Ministères" [ref=e130] [cursor=pointer]:
+              - /url: /ministeres
+            - link "L'Église" [ref=e131] [cursor=pointer]:
+              - /url: /eglise
+            - link "Agenda" [ref=e132] [cursor=pointer]:
+              - /url: /agenda
+            - link "Contact" [ref=e133] [cursor=pointer]:
+              - /url: /contact
+        - generic [ref=e134]:
+          - generic [ref=e135]: Nous trouver
+          - generic [ref=e136]:
+            - generic [ref=e137]: Yopougon Ficgayo
+            - generic [ref=e138]: Abidjan, Côte d'Ivoire
+            - text: +225 07 00 00 00 00
+            - text: bonjour@mfm-ficgayo.ci
+          - generic [ref=e139]:
+            - strong [ref=e140]: Cultes
+            - text: · Dim 9h · Mar 18h30 · Ven 22h
+        - generic [ref=e141]:
+          - generic [ref=e142]: Reste connecté
+          - paragraph [ref=e143]: Reçois les actus et les méditations de la semaine.
+          - generic [ref=e144]:
+            - textbox "Ton e-mail" [ref=e145]
+            - button "S'abonner" [ref=e146]: →
+      - generic [ref=e147]:
+        - generic [ref=e148]: © 2026 Église MFM Ficgayo. Tous droits réservés.
+        - generic [ref=e149]: Bâti avec foi · « À Dieu seul la gloire »
+  - button "Open Next.js Dev Tools" [ref=e155] [cursor=pointer]:
+    - img [ref=e156]
+  - alert [ref=e159]
+```

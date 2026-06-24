@@ -1,7 +1,7 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MbMap, Marker as MbMarker, Popup as MbPopup } from "mapbox-gl";
 import {
@@ -33,6 +33,8 @@ import {
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 const MAP_STYLE = "mapbox://styles/mapbox/light-v11";
+// Always offer the whole week as day filters, in calendar order.
+const WEEK_DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
 // Zones shown inline before collapsing the rest behind the "Voir plus" sheet.
 const ZONES_INLINE = 6;
 const ZONE_PAGE_SIZE = 10;
@@ -78,14 +80,22 @@ function popupHtml(group: HomeGroup): string {
  */
 export function HomeGroupsMap({
   groups,
+  allZones = [],
+  allDays = [],
   onJoin,
 }: {
   groups: HomeGroup[];
+  allZones?: string[];
+  allDays?: string[];
   onJoin: (target: JoinTarget) => void;
 }) {
-  const [search, setSearch] = useState("");
-  const [zoneFilter, setZoneFilter] = useState<string | null>(null);
-  const [dayFilter, setDayFilter] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [zoneFilter, setZoneFilter] = useState<string | null>(searchParams.get("zone_name") ?? null);
+  const [dayFilter, setDayFilter] = useState<string | null>(searchParams.get("day") ?? null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [zoneSheetOpen, setZoneSheetOpen] = useState(false);
@@ -104,25 +114,44 @@ export function HomeGroupsMap({
   const onJoinRef = useRef(onJoin);
   const activeIdRef = useRef<number | null>(activeId);
 
-  const zones = useMemo(
-    () => Array.from(new Set(groups.map((g) => g.zone).filter(Boolean))) as string[],
-    [groups]
-  );
-  const days = useMemo(
-    () => Array.from(new Set(groups.map((g) => g.day).filter(Boolean))) as string[],
-    [groups]
-  );
+  // Sync URL params when state changes with a debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (search) {
+        params.set("search", search);
+      } else {
+        params.delete("search");
+      }
+      if (zoneFilter) {
+        params.set("zone_name", zoneFilter);
+      } else {
+        params.delete("zone_name");
+      }
+      if (dayFilter) {
+        params.set("day", dayFilter);
+      } else {
+        params.delete("day");
+      }
+      const nextQueryString = params.toString();
+      if (nextQueryString !== searchParams.toString()) {
+        router.push(`${pathname}?${nextQueryString}`, { scroll: false });
+      }
+    }, 300);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return groups.filter((g) => {
-      const matchesSearch =
-        !q || [g.name, g.leader, g.area, g.zone].some((v) => v?.toLowerCase().includes(q));
-      const matchesZone = !zoneFilter || g.zone === zoneFilter;
-      const matchesDay = !dayFilter || g.day === dayFilter;
-      return matchesSearch && matchesZone && matchesDay;
-    });
-  }, [groups, search, zoneFilter, dayFilter]);
+    return () => clearTimeout(timer);
+  }, [search, zoneFilter, dayFilter, router, pathname, searchParams]);
+
+  const zones = allZones;
+  // The full week, plus any non-standard day actually present in the data.
+  const days = useMemo(() => {
+    const extra = allDays.filter(
+      (d) => !WEEK_DAYS.some((w) => w.toLowerCase() === d.toLowerCase())
+    );
+    return [...WEEK_DAYS, ...extra];
+  }, [allDays]);
+
+  const filtered = groups;
 
   const filteredKey = filtered.map((g) => g.id ?? g.name).join("|");
 

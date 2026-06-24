@@ -5,22 +5,47 @@ import { EventRow } from "@/components/cards/event-card";
 import { Pagination } from "@/app/admins/(panel)/_components/pagination";
 import type { ChurchEvent } from "@/lib/data";
 
-export function AgendaAsymmetricList({ events }: { events: ChurchEvent[] }) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
-  const total = events.length;
-  const pageCount = Math.ceil(total / perPage) || 1;
-  const paginatedEvents = events.slice(
-    (currentPage - 1) * perPage,
-    currentPage * perPage
-  );
+export function AgendaAsymmetricList({
+  events,
+  initialMeta,
+}: {
+  events: ChurchEvent[];
+  initialMeta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const currentPage = initialMeta?.current_page ?? 1;
+  const perPage = initialMeta?.per_page ?? 10;
+  const total = initialMeta?.total ?? events.length;
+  const pageCount = initialMeta?.last_page ?? 1;
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(newPage));
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  const handlePerPageChange = (newPerPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("per_page", String(newPerPage));
+    params.set("page", "1");
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="space-y-8">
       {/* Original Column layout wrapper */}
       <div className="flex flex-col gap-3.5">
-        {paginatedEvents.map((e) => (
+        {events.map((e) => (
           <EventRow key={e.id ?? e.slug} event={e} />
         ))}
       </div>
@@ -34,11 +59,8 @@ export function AgendaAsymmetricList({ events }: { events: ChurchEvent[] }) {
               pageCount={pageCount}
               total={total}
               perPage={perPage}
-              onPageChange={(page) => setCurrentPage(page)}
-              onPerPageChange={(newPerPage) => {
-                setPerPage(newPerPage);
-                setCurrentPage(1);
-              }}
+              onPageChange={handlePageChange}
+              onPerPageChange={handlePerPageChange}
               itemLabel="événements"
             />
           </div>

@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { Loader2, CheckCircle, XCircle, Clock, Inbox, Mail, Phone, MessageCircle, ShieldCheck, User } from "lucide-react";
 
-import type { AdminMe, AdminMinistryApplication } from "@/lib/admin-api";
-import { approveMinistryApplication, rejectMinistryApplication } from "@/lib/admin-api";
+import type { AdminMe, AdminMinistryApplication, AdminListMeta } from "@/lib/admin-api";
+import { approveMinistryApplication, rejectMinistryApplication, getMinistryApplicationsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
+
+export const MINISTRY_APPLICATIONS_PER_PAGE = 10;
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
 
@@ -33,12 +36,15 @@ const STATUS_CONFIG: Record<
 
 export function ApplicationsManager({
   initialApplications,
+  initialMeta,
+  initialPendingCount,
   me,
 }: {
   initialApplications: AdminMinistryApplication[];
+  initialMeta: AdminListMeta;
+  initialPendingCount: number;
   me: AdminMe;
 }) {
-  const [applications, setApplications] = useState(initialApplications);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -46,6 +52,23 @@ export function ApplicationsManager({
 
   const [decisionNote, setDecisionNote] = useState("");
   const [decisionNotePublic, setDecisionNotePublic] = useState(false);
+
+  const table = useServerDataTable<AdminMinistryApplication>({
+    fetcher: getMinistryApplicationsPaginated,
+    initialData: initialApplications,
+    initialMeta,
+    initialPerPage: MINISTRY_APPLICATIONS_PER_PAGE,
+    extraFilters: statusFilter === "all" ? undefined : { status: statusFilter },
+  });
+  const applications = table.view;
+  const setApplications = table.setItems;
+
+  const [pendingCount, setPendingCount] = useState(initialPendingCount);
+  const refreshPending = useCallback(() => {
+    getMinistryApplicationsPaginated({ filters: { status: "pending" }, perPage: 1 })
+      .then((res) => setPendingCount(res.meta.total))
+      .catch(() => {});
+  }, []);
 
   const openApplication = (application: AdminMinistryApplication) => {
     setSelectedId(application.id);
@@ -58,16 +81,13 @@ export function ApplicationsManager({
   const canValidate = (application: AdminMinistryApplication): boolean =>
     isGlobalValidator || me.id === application.ministry?.chef_id;
 
-  const filtered = useMemo(
-    () => applications.filter((a) => (statusFilter === "all" ? true : a.status === statusFilter)),
-    [applications, statusFilter],
-  );
-
   const selected = applications.find((a) => a.id === selectedId) ?? null;
-  const pendingCount = applications.filter((a) => a.status === "pending").length;
 
-  const replaceInList = (updated: AdminMinistryApplication) =>
+  const replaceInList = (updated: AdminMinistryApplication) => {
     setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    table.refresh();
+    refreshPending();
+  };
 
   const handleDecision = (application: AdminMinistryApplication, decision: "approve" | "reject") => {
     setStatus(null);
@@ -150,14 +170,12 @@ export function ApplicationsManager({
     },
   ];
 
-  const table = useDataTable({ rows: filtered, columns });
-
   return (
     <PageShell>
       <PageHeader
         eyebrow="Recrutement"
         title="Candidatures aux ministères"
-        subtitle={`${applications.length} candidature${applications.length > 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""} · ${
+        subtitle={`${table.total} candidature${table.total > 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""} · ${
           isGlobalValidator ? "traitez les demandes de tous les ministères." : "traitez les demandes du ministère que vous dirigez."
         }`}
       />
@@ -169,7 +187,10 @@ export function ApplicationsManager({
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.key}
-            onClick={() => setStatusFilter(f.key)}
+            onClick={() => {
+              setStatusFilter(f.key);
+              table.setPage(1);
+            }}
             className={cn(
               "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
               statusFilter === f.key ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo",

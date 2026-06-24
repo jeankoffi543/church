@@ -17,7 +17,7 @@ import { BrandButton } from "@/components/ui/brand-button";
 import { IMG } from "@/lib/data";
 
 export async function generateStaticParams() {
-  const events = await getEvents();
+  const { data: events } = await getEvents({ perPage: 100 });
   return events.map((e) => ({ slug: e.slug }));
 }
 

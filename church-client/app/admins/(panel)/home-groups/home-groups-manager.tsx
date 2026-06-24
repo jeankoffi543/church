@@ -2,14 +2,16 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Plus, Edit, Trash2, Eye, EyeOff } from "lucide-react";
+import { Plus, Edit, Trash2, Eye, EyeOff, Clock } from "lucide-react";
 
-import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
-import type { FilterField } from "@/components/admin/query-builder";
+import { createHomeGroup, updateHomeGroup, deleteHomeGroup, getAdminHomeGroupsPaginated, type AdminUser, type AdminListMeta } from "@/lib/admin-api";
+import { cn } from "@/lib/utils";
+import { serializeFiltersForQueryMaster, type FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field, inputClass } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -27,16 +29,32 @@ type HomeGroup = {
   latitude: number | null;
   longitude: number | null;
   zone_name: string | null;
+  meeting_day: string | null;
+  meeting_time: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
   is_active: boolean;
 };
 
+export const HOME_GROUPS_PER_PAGE = 10;
+
+/** Days of the week, in calendar order — stored verbatim as `meeting_day`. */
+const WEEK_DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
+
+/** Compose the human-readable schedule the public site shows (e.g. "Mardi · 19h00"). */
+function composeSchedule(day: string, time: string): string {
+  const d = day.trim();
+  const t = time.trim();
+  if (d && t) return `${d} · ${t}`;
+  return d || t;
+}
+
 const filterFields: FilterField[] = [
   { id: "name", label: "Nom", type: "text" },
   { id: "leader", label: "Responsable", type: "text" },
   { id: "address", label: "Quartier / Adresse", type: "text" },
+  { id: "meeting_day", label: "Jour", type: "select", options: WEEK_DAYS.map((d) => ({ value: d, label: d })) },
   {
     id: "is_active",
     label: "Statut",
@@ -50,12 +68,13 @@ const filterFields: FilterField[] = [
 
 export function HomeGroupsManager({
   initialHomeGroups,
+  initialMeta,
   users = [],
 }: {
   initialHomeGroups: HomeGroup[];
+  initialMeta: AdminListMeta;
   users?: AdminUser[];
 }) {
-  const [homeGroups, setHomeGroups] = useState<HomeGroup[]>(initialHomeGroups);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -68,7 +87,8 @@ export function HomeGroupsManager({
   const [leader, setLeader] = useState("");
   const [leaderId, setLeaderId] = useState<number | "">("");
   const [address, setAddress] = useState("");
-  const [schedule, setSchedule] = useState("");
+  const [meetingDay, setMeetingDay] = useState("");
+  const [meetingTime, setMeetingTime] = useState("");
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [zoneName, setZoneName] = useState<string | null>(null);
@@ -83,7 +103,8 @@ export function HomeGroupsManager({
     setLeader("");
     setLeaderId("");
     setAddress("");
-    setSchedule("Mensuel · 1er dimanche");
+    setMeetingDay("");
+    setMeetingTime("");
     setLatitude(null);
     setLongitude(null);
     setZoneName(null);
@@ -98,7 +119,8 @@ export function HomeGroupsManager({
     setLeader(group.leader ?? "");
     setLeaderId(group.leader_id || "");
     setAddress(group.address);
-    setSchedule(group.schedule ?? "");
+    setMeetingDay(group.meeting_day ?? "");
+    setMeetingTime(group.meeting_time ?? "");
     setLatitude(group.latitude ?? null);
     setLongitude(group.longitude ?? null);
     setZoneName(group.zone_name ?? null);
@@ -121,6 +143,7 @@ export function HomeGroupsManager({
       try {
         await deleteHomeGroup(g.id);
         setHomeGroups((prev) => prev.filter((x) => x.id !== g.id));
+        table.refresh();
         setStatus({ type: "success", message: `Le groupe "${g.name}" a été supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Impossible de supprimer ce groupe." });
@@ -143,7 +166,10 @@ export function HomeGroupsManager({
           latitude,
           longitude,
           zone_name: zoneName,
-          schedule: schedule || null,
+          meeting_day: meetingDay || null,
+          meeting_time: meetingTime || null,
+          // Keep `schedule` in sync so the public site's "when" label stays accurate.
+          schedule: composeSchedule(meetingDay, meetingTime) || null,
           sort_order: Number(formSortOrder),
           is_active: isActive,
         };
@@ -152,11 +178,13 @@ export function HomeGroupsManager({
           const res = await updateHomeGroup(editingHomeGroup.id, payload);
           const updated = res.data as HomeGroup;
           setHomeGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+          table.refresh();
           setStatus({ type: "success", message: `Le groupe de maison "${name}" a été mis à jour.` });
         } else {
           const res = await createHomeGroup(payload);
           const created = res.data as HomeGroup;
           setHomeGroups((prev) => [...prev, created]);
+          table.refresh();
           setStatus({ type: "success", message: `Le groupe de maison "${name}" a été créé.` });
         }
         closeModal();
@@ -251,13 +279,18 @@ export function HomeGroupsManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: homeGroups,
-    columns,
-    searchKeys: [(g) => g.name, (g) => g.leader, (g) => g.address],
-    filterAccessors: { name: (g) => g.name, leader: (g) => g.leader, address: (g) => g.address },
-    matchFilters: { is_active: (g, f) => f.value === "" || g.is_active === (f.value === "active") },
+  const table = useServerDataTable<HomeGroup>({
+    fetcher: getAdminHomeGroupsPaginated,
+    initialData: initialHomeGroups,
+    initialMeta,
+    initialPerPage: HOME_GROUPS_PER_PAGE,
+    buildFilters: (filters) => {
+      const f = { ...serializeFiltersForQueryMaster(filters) };
+      if (f.is_active__eq) f.is_active__eq = f.is_active__eq === "active" ? "1" : "0";
+      return f;
+    },
   });
+  const setHomeGroups = table.setItems;
 
   return (
     <PageShell>
@@ -362,7 +395,47 @@ export function HomeGroupsManager({
             />
 
             <Field label="Programme des réunions">
-              <input type="text" value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="ex: Chaque mardi de 19:00 à 20:30" className={inputClass} />
+              <div className="flex flex-col gap-2.5">
+                {/* Day of the week — single, canonical selection (keeps `meeting_day` clean). */}
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEK_DAYS.map((d) => {
+                    const active = meetingDay === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setMeetingDay(active ? "" : d)}
+                        aria-pressed={active}
+                        className={cn(
+                          "cursor-pointer rounded-full px-3 py-1.5 text-[12px] font-bold transition",
+                          active
+                            ? "bg-gradient-to-br from-gold to-gold-dark text-indigo shadow-sm"
+                            : "border border-[rgba(40,25,80,0.12)] bg-white text-body hover:border-gold hover:text-indigo",
+                        )}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 focus-within:border-gold">
+                    <Clock className="size-4 shrink-0 text-faint" />
+                    <input
+                      type="time"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="bg-transparent text-sm text-indigo outline-none [color-scheme:light]"
+                    />
+                  </label>
+                  {(meetingDay || meetingTime) && (
+                    <span className="text-[12px] text-body">
+                      Aperçu&nbsp;:{" "}
+                      <span className="font-bold text-indigo">{composeSchedule(meetingDay, meetingTime) || "—"}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
             </Field>
 
             <div className="grid grid-cols-2 gap-4">

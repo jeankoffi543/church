@@ -15,11 +15,21 @@ class UserController extends Controller
     /**
      * Display a listing of the servants / administrators.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        $users = User::with('roles')->orderBy('name')->get();
+        $query = User::with('roles');
 
-        return UserResource::collection($users);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->orderBy('name');
+        }
+
+        return UserResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     /**

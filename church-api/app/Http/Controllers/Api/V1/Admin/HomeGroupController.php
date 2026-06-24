@@ -7,13 +7,26 @@ use App\Http\Requests\V1\Admin\HomeGroupRequest;
 use App\Http\Resources\V1\HomeGroupResource;
 use App\Models\HomeGroup;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class HomeGroupController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return HomeGroupResource::collection(HomeGroup::query()->ordered()->get());
+        $query = HomeGroup::query();
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->ordered();
+        }
+
+        return HomeGroupResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     public function store(HomeGroupRequest $request): JsonResponse

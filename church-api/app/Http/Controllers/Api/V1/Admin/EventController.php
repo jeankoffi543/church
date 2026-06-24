@@ -7,8 +7,8 @@ use App\Http\Requests\V1\Admin\EventRequest;
 use App\Http\Resources\V1\EventResource;
 use App\Models\Event;
 use App\Traits\HandlesFileUploads;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Str;
 
@@ -16,9 +16,21 @@ class EventController extends Controller
 {
     use HandlesFileUploads;
 
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return EventResource::collection(Event::query()->chronological()->get());
+        $query = Event::query();
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->chronological();
+        }
+
+        return EventResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     public function checkSlug(Request $request): JsonResponse
@@ -51,8 +63,8 @@ class EventController extends Controller
 
     public function show(string $id): EventResource
     {
-        $event = is_numeric($id) 
-            ? Event::findOrFail((int) $id) 
+        $event = is_numeric($id)
+            ? Event::findOrFail((int) $id)
             : Event::where('slug', $id)->firstOrFail();
 
         return new EventResource($event);
@@ -60,8 +72,8 @@ class EventController extends Controller
 
     public function update(EventRequest $request, string $id): EventResource
     {
-        $event = is_numeric($id) 
-            ? Event::findOrFail((int) $id) 
+        $event = is_numeric($id)
+            ? Event::findOrFail((int) $id)
             : Event::where('slug', $id)->firstOrFail();
 
         $data = $request->validated();
@@ -91,8 +103,8 @@ class EventController extends Controller
 
     public function destroy(string $id): JsonResponse
     {
-        $event = is_numeric($id) 
-            ? Event::findOrFail((int) $id) 
+        $event = is_numeric($id)
+            ? Event::findOrFail((int) $id)
             : Event::where('slug', $id)->firstOrFail();
 
         $this->deleteStoredFile($event->image_path);

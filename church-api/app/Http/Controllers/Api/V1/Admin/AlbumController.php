@@ -8,6 +8,7 @@ use App\Http\Resources\V1\AlbumResource;
 use App\Models\Album;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Str;
 
@@ -15,10 +16,20 @@ class AlbumController extends Controller
 {
     use HandlesFileUploads;
 
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
+        $query = Album::query()->with('event')->withCount('photos');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
         return AlbumResource::collection(
-            Album::query()->with('event')->withCount('photos')->latestFirst()->paginate(20)
+            $query->paginate($request->integer('per_page', 20))
         );
     }
 

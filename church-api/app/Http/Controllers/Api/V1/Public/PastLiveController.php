@@ -22,14 +22,29 @@ class PastLiveController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $lives = PastLive::query()
+        $query = PastLive::query()
             ->with('preacher')
-            ->withCount('liveChatMessages')
-            ->when($request->filled('series'), fn ($q) => $q->where('series_name', $request->string('series')))
-            ->latestFirst()
-            ->paginate($request->integer('per_page', 50));
+            ->withCount('liveChatMessages');
 
-        return PastLiveResource::collection($lives);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
+        $lives = $query->paginate($request->integer('per_page', 50));
+
+        $years = PastLive::query()->pluck('broadcasted_at')->map(fn ($d) => $d->format('Y'))->unique()->sortDesc()->values()->all();
+        $series = PastLive::query()->distinct()->pluck('series_name')->filter()->sort()->values()->all();
+
+        return PastLiveResource::collection($lives)->additional([
+            'meta' => [
+                'years' => $years,
+                'series' => $series,
+            ],
+        ]);
     }
 
     /**

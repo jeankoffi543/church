@@ -13,8 +13,18 @@ class BranchController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
+        $query = Branch::query()->with('pastor');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! request()->has('sort')) {
+            $query->orderBy('title');
+        }
+
         return BranchResource::collection(
-            Branch::query()->with('pastor')->orderBy('title')->paginate(20)
+            $query->paginate(request()->integer('per_page', 20))
         );
     }
 
@@ -47,7 +57,7 @@ class BranchController extends Controller
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
-            'slug' => 'required|string|max:255|unique:branches,slug,' . $branch->id,
+            'slug' => 'required|string|max:255|unique:branches,slug,'.$branch->id,
             'description' => 'nullable|string',
             'address' => 'required|string|max:255',
             'phone' => 'required|string|max:255',

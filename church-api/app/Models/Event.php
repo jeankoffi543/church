@@ -2,11 +2,16 @@
 
 namespace App\Models;
 
+use App\Support\QueryFilters;
 use Database\Factories\EventFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
 
 /**
  * @property string $title
@@ -24,7 +29,34 @@ use Illuminate\Support\Carbon;
 class Event extends Model
 {
     /** @use HasFactory<EventFactory> */
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'title' => SearchOperator::LIKE,
+        'description' => SearchOperator::LIKE,
+        'location' => SearchOperator::LIKE,
+        'host' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'title',
+        'start_date',
+        'end_date',
+        'location',
+        'is_featured',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            ...QueryFilters::exact('is_featured'),
+            ...QueryFilters::text('type'),
+            ...QueryFilters::text('location'),
+            ...QueryFilters::text('host'),
+            ...QueryFilters::text('title'),
+        ];
+    }
 
     protected $fillable = [
         'title',

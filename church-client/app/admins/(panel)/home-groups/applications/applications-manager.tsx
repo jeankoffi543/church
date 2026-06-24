@@ -8,16 +8,21 @@ import {
   type AdminHomeGroup,
   type AdminHomeGroupApplication,
   type AdminMe,
+  type AdminListMeta,
   approveHomeGroupApplication,
   rejectHomeGroupApplication,
+  getAdminHomeGroupApplicationsPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
+
+export const HOME_GROUP_APPLICATIONS_PER_PAGE = 10;
 
 const TOOLBAR_INPUT = "h-11 rounded-xl border border-[rgba(40,25,80,0.12)] bg-cream text-sm text-indigo outline-none focus:border-gold";
 
@@ -32,20 +37,34 @@ const STATUS_CONFIG: Record<
 
 export function ApplicationsManager({
   initialApplications,
+  initialMeta,
   homeGroups,
   me,
 }: {
   initialApplications: AdminHomeGroupApplication[];
+  initialMeta: AdminListMeta;
   homeGroups: AdminHomeGroup[];
   me: AdminMe | null;
 }) {
-  const [applications, setApplications] = useState<AdminHomeGroupApplication[]>(initialApplications);
   const [status, setStatus] = useState<Status>(null);
   const [isPending, startTransition] = useTransition();
 
-  const [search, setSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+
+  // Server-side list (search + group + status filters + pagination via QueryMaster).
+  const appFilters: Record<string, string> = {};
+  if (selectedGroupId !== "all") appFilters.home_group_id = selectedGroupId;
+  if (selectedStatus !== "all") appFilters.status = selectedStatus;
+
+  const table = useServerDataTable<AdminHomeGroupApplication>({
+    fetcher: getAdminHomeGroupApplicationsPaginated,
+    initialData: initialApplications,
+    initialMeta,
+    initialPerPage: HOME_GROUP_APPLICATIONS_PER_PAGE,
+    extraFilters: appFilters,
+  });
+  const setApplications = table.setItems;
 
   const [selectedApp, setSelectedApp] = useState<AdminHomeGroupApplication | null>(null);
   const [decisionNote, setDecisionNote] = useState("");
@@ -78,6 +97,7 @@ export function ApplicationsManager({
             ? await approveHomeGroupApplication(application.id, payload)
             : await rejectHomeGroupApplication(application.id, payload);
         setApplications((prev) => prev.map((a) => (a.id === application.id ? res.data : a)));
+        table.refresh();
         setStatus({ type: "success", message: decision === "approve" ? "Demande d'adhésion approuvée." : "Demande d'adhésion rejetée." });
         setSelectedApp(null);
       } catch (err) {
@@ -89,16 +109,6 @@ export function ApplicationsManager({
       }
     });
   };
-
-  const filteredApplications = applications.filter((app) => {
-    const matchesSearch =
-      app.name.toLowerCase().includes(search.toLowerCase()) ||
-      app.email.toLowerCase().includes(search.toLowerCase()) ||
-      app.phone.includes(search);
-    const matchesGroup = selectedGroupId === "all" || app.home_group_id === Number(selectedGroupId);
-    const matchesStatus = selectedStatus === "all" || app.status === selectedStatus;
-    return matchesSearch && matchesGroup && matchesStatus;
-  });
 
   const formatDate = (dateStr: string) => {
     try {
@@ -168,8 +178,6 @@ export function ApplicationsManager({
     },
   ];
 
-  const table = useDataTable({ rows: filteredApplications, columns });
-
   return (
     <PageShell>
       <Link href="/admins/home-groups" className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold tracking-wider text-faint uppercase transition hover:text-indigo">
@@ -179,7 +187,7 @@ export function ApplicationsManager({
       <PageHeader
         eyebrow="Recrutement"
         title="Demandes d’adhésion"
-        subtitle={`${filteredApplications.length} demande${filteredApplications.length > 1 ? "s" : ""} · gérez les fidèles souhaitant rejoindre un groupe de maison.`}
+        subtitle={`${table.total} demande${table.total > 1 ? "s" : ""} · gérez les fidèles souhaitant rejoindre un groupe de maison.`}
       />
 
       <StatusBanner status={status} className="mb-6" />
@@ -191,12 +199,12 @@ export function ApplicationsManager({
           <input
             type="text"
             placeholder="Rechercher par nom, email, téléphone..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={table.search}
+            onChange={(e) => table.setSearch(e.target.value)}
             className={cn(TOOLBAR_INPUT, "w-full pr-4 pl-11 placeholder:text-faint")}
           />
         </div>
-        <select value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)} className={cn(TOOLBAR_INPUT, "min-w-[180px] px-4")}>
+        <select value={selectedGroupId} onChange={(e) => { setSelectedGroupId(e.target.value); table.setPage(1); }} className={cn(TOOLBAR_INPUT, "min-w-[180px] px-4")}>
           <option value="all">Toutes les cellules</option>
           {homeGroups.map((g) => (
             <option key={g.id} value={g.id}>
@@ -204,7 +212,7 @@ export function ApplicationsManager({
             </option>
           ))}
         </select>
-        <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className={cn(TOOLBAR_INPUT, "min-w-[150px] px-4")}>
+        <select value={selectedStatus} onChange={(e) => { setSelectedStatus(e.target.value); table.setPage(1); }} className={cn(TOOLBAR_INPUT, "min-w-[150px] px-4")}>
           <option value="all">Tous les statuts</option>
           <option value="pending">En attente</option>
           <option value="approved">Approuvé</option>

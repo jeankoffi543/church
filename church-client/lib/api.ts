@@ -181,15 +181,114 @@ const mapHomeGroup = (g: ApiHomeGroup): HomeGroup => ({
 
 /* ── Resource fetchers ────────────────────────────────────────────── */
 
-export async function getMinistries(): Promise<Ministry[]> {
-  const json = await apiGet<{ data: ApiMinistry[] }>("/public/ministries", ["ministries"]);
-  return json?.data ? json.data.map(mapMinistry) : MINISTRIES;
+export type GetMinistriesParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  sort?: string;
+  filters?: Record<string, string>;
+};
+
+export async function getMinistries(params?: GetMinistriesParams): Promise<{
+  data: Ministry[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.perPage) query.append("per_page", String(params.perPage));
+  if (params?.search) query.append("search", params.search);
+  if (params?.sort) query.append("sort", params.sort);
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
+
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{
+    data: ApiMinistry[];
+    meta?: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+    };
+  }>(`/public/ministries${queryString}`, ["ministries"]);
+
+  return {
+    data: json?.data ? json.data.map(mapMinistry) : MINISTRIES,
+    meta: json?.meta,
+  };
 }
 
-export async function getSermons(): Promise<Sermon[]> {
-  // Fetch a generous page so the médiathèque can paginate/filter client-side.
-  const json = await apiGet<{ data: ApiSermon[] }>("/public/sermons?per_page=100", ["sermons"]);
-  return json?.data ? json.data.map(mapSermon) : SERMONS;
+export type GetSermonsParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  speaker?: string[];
+  series?: string[];
+  year?: string[];
+  date?: string[];
+  book?: string[];
+  filters?: Record<string, string>;
+};
+
+export async function getSermons(params?: GetSermonsParams): Promise<{
+  data: Sermon[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    speakers: string[];
+    series: string[];
+    years: string[];
+    dates: string[];
+    books: string[];
+  };
+}> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.perPage) query.append("per_page", String(params.perPage));
+  if (params?.search) query.append("search", params.search);
+  if (params?.speaker) params.speaker.forEach((s) => query.append("speaker[]", s));
+  if (params?.series) params.series.forEach((s) => query.append("series[]", s));
+  if (params?.year) params.year.forEach((y) => query.append("year[]", y));
+  if (params?.date) params.date.forEach((d) => query.append("date[]", d));
+  if (params?.book) params.book.forEach((b) => query.append("book[]", b));
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
+
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{
+    data: ApiSermon[];
+    meta?: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+      speakers: string[];
+      series: string[];
+      years: string[];
+      dates: string[];
+      books: string[];
+    };
+  }>(`/public/sermons${queryString}`, ["sermons"]);
+
+  return {
+    data: json?.data ? json.data.map(mapSermon) : SERMONS,
+    meta: json?.meta,
+  };
 }
 
 export type LatestSermon = {
@@ -239,9 +338,52 @@ export async function getLatestSermon(): Promise<LatestSermon> {
   };
 }
 
-export async function getEvents(): Promise<ChurchEvent[]> {
-  const json = await apiGet<{ data: ApiEvent[] }>("/public/events", ["events"]);
-  return json?.data ? json.data.map(mapEvent) : EVENTS;
+export type GetEventsParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  scope?: string;
+  featured?: boolean;
+  filters?: Record<string, string>;
+};
+
+export async function getEvents(params?: GetEventsParams): Promise<{
+  data: ChurchEvent[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.perPage) query.append("per_page", String(params.perPage));
+  if (params?.search) query.append("search", params.search);
+  if (params?.scope) query.append("scope", params.scope);
+  if (params?.featured !== undefined) query.append("featured", params.featured ? "1" : "0");
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
+
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{
+    data: ApiEvent[];
+    meta?: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+    };
+  }>(`/public/events${queryString}`, ["events"]);
+
+  return {
+    data: json?.data ? json.data.map(mapEvent) : EVENTS,
+    meta: json?.meta,
+  };
 }
 
 export async function getEvent(slug: string): Promise<ChurchEvent | undefined> {
@@ -249,9 +391,51 @@ export async function getEvent(slug: string): Promise<ChurchEvent | undefined> {
   return json?.data ? mapEvent(json.data) : getStaticEventBySlug(slug);
 }
 
-export async function getHomeGroups(): Promise<HomeGroup[]> {
-  const json = await apiGet<{ data: ApiHomeGroup[] }>("/public/home-groups", ["home-groups"]);
-  return json?.data ? json.data.map(mapHomeGroup) : HOME_GROUPS;
+export type GetHomeGroupsParams = {
+  search?: string;
+  zone_name?: string;
+  day?: string;
+  filters?: Record<string, string>;
+};
+
+export async function getHomeGroups(params?: GetHomeGroupsParams): Promise<{
+  data: HomeGroup[];
+  meta?: {
+    zones: string[];
+    days: string[];
+  };
+}> {
+  const query = new URLSearchParams();
+  if (params?.search) query.append("search", params.search);
+  if (params?.zone_name) query.append("zone_name", params.zone_name);
+  // Send the day verbatim — the API matches it case-insensitively against the
+  // stored value (e.g. "Mardi"). Upper-casing it here broke the exact match.
+  if (params?.day) {
+    query.append("day", params.day);
+  }
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
+
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{
+    data: ApiHomeGroup[];
+    meta?: {
+      zones: string[];
+      days: string[];
+    };
+  }>(`/public/home-groups${queryString}`, ["home-groups"]);
+
+  return {
+    data: json?.data ? json.data.map(mapHomeGroup) : HOME_GROUPS,
+    meta: json?.meta ?? {
+      zones: Array.from(new Set(HOME_GROUPS.map((g) => g.zone).filter(Boolean))) as string[],
+      days: Array.from(new Set(HOME_GROUPS.map((g) => g.day).filter(Boolean))) as string[],
+    },
+  };
 }
 
 /* ── Settings (key-value groups) ──────────────────────────────────── */
@@ -552,8 +736,11 @@ export type PublicBranch = {
   } | null;
 };
 
-export async function getBranches(): Promise<PublicBranch[]> {
-  const json = await apiGet<{ data: PublicBranch[] }>("/public/branches", ["branches"]);
+export async function getBranches(params?: { search?: string }): Promise<PublicBranch[]> {
+  const query = new URLSearchParams();
+  if (params?.search) query.append("search", params.search);
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{ data: PublicBranch[] }>(`/public/branches${queryString}`, ["branches"]);
   return json?.data || [];
 }
 
@@ -808,9 +995,52 @@ const mapAlbum = (a: ApiAlbum): GalleryAlbum => ({
   photos: (a.photos ?? []).map(mapAlbumPhoto),
 });
 
-export async function getAlbums(): Promise<GalleryAlbum[]> {
-  const json = await apiGet<{ data: ApiAlbum[] }>("/public/albums?per_page=100", ["albums"]);
-  return json?.data ? json.data.map(mapAlbum) : [];
+export type GetAlbumsParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  category?: string;
+  year?: number;
+  filters?: Record<string, string>;
+};
+
+export async function getAlbums(params?: GetAlbumsParams): Promise<{
+  data: GalleryAlbum[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}> {
+  const query = new URLSearchParams();
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.perPage) query.append("per_page", String(params.perPage));
+  if (params?.search) query.append("search", params.search);
+  if (params?.category) query.append("category", params.category);
+  if (params?.year) query.append("year", String(params.year));
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
+
+  const queryString = query.toString() ? `?${query.toString()}` : "";
+  const json = await apiGet<{
+    data: ApiAlbum[];
+    meta?: {
+      current_page: number;
+      last_page: number;
+      per_page: number;
+      total: number;
+    };
+  }>(`/public/albums${queryString}`, ["albums"]);
+
+  return {
+    data: json?.data ? json.data.map(mapAlbum) : [],
+    meta: json?.meta,
+  };
 }
 
 export async function getAlbum(slug: string): Promise<GalleryAlbum | null> {

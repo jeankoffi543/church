@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\QueryFilters;
 use Database\Factories\MinistryFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -9,6 +10,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
 
 /**
  * @property string $name
@@ -21,7 +26,33 @@ use Illuminate\Support\Str;
 class Ministry extends Model
 {
     /** @use HasFactory<MinistryFactory> */
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'name' => SearchOperator::LIKE,
+        'description' => SearchOperator::LIKE,
+        'schedule' => SearchOperator::LIKE,
+        'chef.name' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'name',
+        'schedule',
+        'sort_order',
+        'is_active',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            ...QueryFilters::exact('is_active'),
+            ...QueryFilters::exact('chef_id'),
+            ...QueryFilters::exact('chef_id', 'chef'),
+            ...QueryFilters::text('name'),
+            ...QueryFilters::text('schedule'),
+        ];
+    }
 
     protected $fillable = [
         'name',

@@ -4,15 +4,16 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Plus, Edit, Trash2, X, Eye, EyeOff, ImagePlus } from "lucide-react";
 
-import { createMinistry, updateMinistry, deleteMinistry } from "@/lib/admin-api";
-import type { AdminMinistry, AdminUser } from "@/lib/admin-api";
+import { createMinistry, updateMinistry, deleteMinistry, getAdminMinistriesPaginated } from "@/lib/admin-api";
+import type { AdminMinistry, AdminUser, AdminListMeta } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
-import type { FilterField } from "@/components/admin/query-builder";
+import { serializeFiltersForQueryMaster, type FilterField } from "@/components/admin/query-builder";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataFilters } from "@/components/admin/data/data-filters";
 import { DataTable } from "@/components/admin/data/data-table";
-import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { Field, inputClass } from "@/components/admin/ui/field";
 import { Modal } from "@/components/admin/ui/modal";
@@ -21,6 +22,16 @@ import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 import { SearchableSelect } from "../_components/searchable-select";
 
 type Ministry = AdminMinistry;
+
+export const MINISTRIES_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field (chef is a relation, not sortable). */
+const MINISTRY_SORT_FIELD: Record<string, string | undefined> = {
+  name: "name",
+  schedule: "schedule",
+  is_active: "is_active",
+  chef: undefined,
+};
 
 const filterFields: FilterField[] = [
   { id: "name", label: "Nom", type: "text" },
@@ -39,12 +50,13 @@ const filterFields: FilterField[] = [
 
 export function MinistriesManager({
   initialMinistries,
+  initialMeta,
   staff,
 }: {
   initialMinistries: Ministry[];
+  initialMeta: AdminListMeta;
   staff: AdminUser[];
 }) {
-  const [ministries, setMinistries] = useState<Ministry[]>(initialMinistries);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
 
@@ -125,6 +137,7 @@ export function MinistriesManager({
       try {
         await deleteMinistry(m.id);
         setMinistries((prev) => prev.filter((x) => x.id !== m.id));
+        table.refresh();
         setStatus({ type: "success", message: `Le ministère "${m.name}" a été supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Impossible de supprimer ce ministère." });
@@ -152,11 +165,13 @@ export function MinistriesManager({
           const res = await updateMinistry(editingMinistry.id, payload, imageFile, removeImage);
           const updated = res.data as Ministry;
           setMinistries((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+          table.refresh();
           setStatus({ type: "success", message: `Le ministère "${name}" a été mis à jour.` });
         } else {
           const res = await createMinistry({ ...payload, name }, imageFile);
           const created = res.data as Ministry;
           setMinistries((prev) => [...prev, created]);
+          table.refresh();
           setStatus({ type: "success", message: `Le ministère "${name}" a été créé.` });
         }
         closeModal();
@@ -251,16 +266,19 @@ export function MinistriesManager({
     },
   ];
 
-  const table = useDataTable({
-    rows: ministries,
-    columns,
-    searchKeys: [(m) => m.name, (m) => m.description],
-    filterAccessors: { name: (m) => m.name, schedule: (m) => m.schedule },
-    matchFilters: {
-      chef: (m, f) => f.value === "" || m.chef_id === Number(f.value),
-      is_active: (m, f) => f.value === "" || m.is_active === (f.value === "active"),
+  const table = useServerDataTable<Ministry>({
+    fetcher: getAdminMinistriesPaginated,
+    initialData: initialMinistries,
+    initialMeta,
+    initialPerPage: MINISTRIES_PER_PAGE,
+    sortFieldMap: MINISTRY_SORT_FIELD,
+    buildFilters: (filters) => {
+      const f = { ...serializeFiltersForQueryMaster(filters) };
+      if (f.is_active__eq) f.is_active__eq = f.is_active__eq === "active" ? "1" : "0";
+      return f;
     },
   });
+  const setMinistries = table.setItems;
 
   return (
     <PageShell>

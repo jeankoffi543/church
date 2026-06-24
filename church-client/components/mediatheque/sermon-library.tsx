@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Search, SlidersHorizontal, X, Check, ChevronLeft, ChevronRight, BookOpen, ArrowLeft, CalendarDays } from "lucide-react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 import { cn } from "@/lib/utils";
-import { type Sermon } from "@/lib/data";
+import { type Sermon, SERMONS } from "@/lib/data";
 import { BIBLE_BOOKS, normalizeBook } from "@/lib/constants/bible";
 import { SermonCard } from "@/components/cards/sermon-card";
 import type { AudioTrack } from "@/components/audio/audio-player";
@@ -16,28 +17,60 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 
-const PAGE_SIZE = 8;
 const DETAIL_STEP = 12;
 
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
-const yearOf = (s: Sermon) => s.date.match(/\d{4}/)?.[0] ?? "—";
 
 type Facet = "speaker" | "series" | "year" | "date" | "book";
 
-export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
-  const [search, setSearch] = useState("");
-  const [speakers, setSpeakers] = useState<string[]>([]);
-  const [seriesSel, setSeriesSel] = useState<string[]>([]);
-  const [years, setYears] = useState<string[]>([]);
-  const [dates, setDates] = useState<string[]>([]);
-  const [books, setBooks] = useState<string[]>([]);
+export function SermonLibrary({
+  initialSermons = [],
+  meta,
+  searchParam = "",
+  speakersParam = [],
+  seriesParam = [],
+  yearsParam = [],
+  datesParam = [],
+  booksParam = [],
+  pageParam = 1,
+}: {
+  initialSermons?: Sermon[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    speakers: string[];
+    series: string[];
+    years: string[];
+    dates: string[];
+    books: string[];
+  };
+  searchParam?: string;
+  speakersParam?: string[];
+  seriesParam?: string[];
+  yearsParam?: string[];
+  datesParam?: string[];
+  booksParam?: string[];
+  pageParam?: number;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [search, setSearch] = useState(searchParam);
+  const [speakers, setSpeakers] = useState<string[]>(speakersParam);
+  const [seriesSel, setSeriesSel] = useState<string[]>(seriesParam);
+  const [years, setYears] = useState<string[]>(yearsParam);
+  const [dates, setDates] = useState<string[]>(datesParam);
+  const [books, setBooks] = useState<string[]>(booksParam);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Which facet's dedicated search/pagination sub-sheet is open (if any), plus
   // its search/pagination state (lifted here so it resets cleanly on open).
   const [detailKey, setDetailKey] = useState<Facet | null>(null);
   const [detailQuery, setDetailQuery] = useState("");
   const [detailLimit, setDetailLimit] = useState(DETAIL_STEP);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(pageParam);
 
   const openDetail = (key: Facet) => {
     setDetailKey(key);
@@ -45,35 +78,59 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
     setDetailLimit(DETAIL_STEP);
   };
 
-  const allSpeakers = useMemo(() => uniq(sermons.map((s) => s.speaker)), [sermons]);
-  const allSeries = useMemo(() => uniq(sermons.map((s) => s.serie)), [sermons]);
-  const allYears = useMemo(() => uniq(sermons.map(yearOf)).sort((a, b) => b.localeCompare(a)), [sermons]);
-  // Distinct full dates (label), ordered newest-first via the ISO date.
-  const allDates = useMemo(() => {
-    const byLabel = new Map<string, string>();
-    sermons.forEach((s) => {
-      if (s.date && !byLabel.has(s.date)) byLabel.set(s.date, s.dateISO ?? "");
-    });
-    return [...byLabel.entries()].sort((a, b) => b[1].localeCompare(a[1])).map(([label]) => label);
-  }, [sermons]);
+  // URL Query parameter updates
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (search) {
+        params.set("search", search);
+      } else {
+        params.delete("search");
+      }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return sermons.filter((s) => {
-      const matchesSearch =
-        !q || [s.title, s.speaker, s.serie, s.book].some((v) => v?.toLowerCase().includes(q));
-      const matchesSpeaker = speakers.length === 0 || speakers.includes(s.speaker);
-      const matchesSeries = seriesSel.length === 0 || seriesSel.includes(s.serie);
-      const matchesYear = years.length === 0 || years.includes(yearOf(s));
-      const matchesDate = dates.length === 0 || dates.includes(s.date);
-      const matchesBooks = books.length === 0 || (s.books ?? []).some((b) => books.includes(b));
-      return matchesSearch && matchesSpeaker && matchesSeries && matchesYear && matchesDate && matchesBooks;
-    });
-  }, [sermons, search, speakers, seriesSel, years, dates, books]);
+      params.delete("speaker[]");
+      params.delete("series[]");
+      params.delete("year[]");
+      params.delete("date[]");
+      params.delete("book[]");
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+      speakers.forEach((s) => params.append("speaker[]", s));
+      seriesSel.forEach((s) => params.append("series[]", s));
+      years.forEach((y) => params.append("year[]", y));
+      dates.forEach((d) => params.append("date[]", d));
+      books.forEach((b) => params.append("book[]", b));
+
+      if (page > 1) {
+        params.set("page", String(page));
+      } else {
+        params.delete("page");
+      }
+
+      const nextQueryString = params.toString();
+      if (nextQueryString !== searchParams.toString()) {
+        router.push(`${pathname}?${nextQueryString}`, { scroll: false });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, speakers, seriesSel, years, dates, books, page, router, pathname, searchParams]);
+
+  const fallbackSpeakers = useMemo(() => uniq(SERMONS.map((s) => s.speaker)), []);
+  const fallbackSeries = useMemo(() => uniq(SERMONS.map((s) => s.serie)), []);
+  const fallbackYears = useMemo(() => uniq(SERMONS.map((s) => s.date.match(/\d{4}/)?.[0] ?? "—")).sort((a, b) => b.localeCompare(a)), []);
+  const fallbackDates = useMemo(() => uniq(SERMONS.map((s) => s.date)), []);
+
+  const allSpeakers = meta?.speakers ?? fallbackSpeakers;
+  const allSeries = meta?.series ?? fallbackSeries;
+  const allYears = meta?.years ?? fallbackYears;
+  const allDates = meta?.dates ?? fallbackDates;
+
+  const filtered = initialSermons;
+  const pageCount = meta?.last_page ?? 1;
+  const currentPage = meta?.current_page ?? 1;
+  const paged = initialSermons;
+
+  const totalCount = meta?.total ?? initialSermons.length;
 
   // Queue used for the floating player's prev/next across all audio results.
   const audioQueue = useMemo<AudioTrack[]>(
@@ -114,6 +171,7 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
     setYears([]);
     setDates([]);
     setBooks([]);
+    setSearch("");
     setPage(1);
   };
 
@@ -177,7 +235,7 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
         </div>
       )}
 
-      <div className="mb-5 text-[13px] font-semibold text-faint">{filtered.length} message(s)</div>
+      <div className="mb-5 text-[13px] font-semibold text-faint">{totalCount} message(s)</div>
 
       {/* Grid */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[22px]">
@@ -194,7 +252,7 @@ export function SermonLibrary({ sermons }: { sermons: Sermon[] }) {
       )}
 
       {/* Pagination */}
-      {filtered.length > PAGE_SIZE && (
+      {pageCount > 1 && (
         <div className="mt-10 flex items-center justify-center gap-2">
           <PagerButton onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} aria-label="Précédent">
             <ChevronLeft className="size-4" />

@@ -5,14 +5,25 @@ namespace App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\BranchResource;
 use App\Models\Branch;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class BranchController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
+        $query = Branch::query()->with('pastor');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->orderBy('title');
+        }
+
         return BranchResource::collection(
-            Branch::query()->with('pastor')->orderBy('title')->get()
+            $query->paginate($request->integer('per_page', 20))
         );
     }
 

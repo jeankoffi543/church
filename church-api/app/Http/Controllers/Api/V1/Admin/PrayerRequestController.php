@@ -12,10 +12,19 @@ class PrayerRequestController extends Controller
     /**
      * Display a listing of prayer requests.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $prayers = PrayerRequest::with('assignee')->latest()->get();
-        return response()->json(['data' => $prayers]);
+        $query = PrayerRequest::with('assignee');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latest();
+        }
+
+        return response()->json($query->paginate($request->integer('per_page', 20)));
     }
 
     /**
