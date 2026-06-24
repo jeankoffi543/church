@@ -4,7 +4,6 @@ import React, { useMemo } from "react";
 import { Play, Calendar, Clock, User, ChevronRight, Tv } from "lucide-react";
 import { type Sermon } from "@/lib/data";
 import { usePlayback } from "@/components/layout/playback-context";
-import { BrandButton } from "@/components/ui/brand-button";
 
 export function LivesArchivesView({ sermons }: { sermons: Sermon[] }) {
   const { playVideo } = usePlayback();

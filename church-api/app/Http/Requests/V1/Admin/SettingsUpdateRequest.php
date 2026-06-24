@@ -50,16 +50,16 @@ class SettingsUpdateRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             foreach ($this->input('settings', []) as $index => $setting) {
-                if ($setting['key'] === 'live_embed_url' && !empty($setting['value'])) {
+                if ($setting['key'] === 'live_embed_url' && ! empty($setting['value'])) {
                     $value = $setting['value'];
-                    $isIframeUrl = preg_match('/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)\//', $value);
+                    $isIframeUrl = preg_match('/^(https?:\/\/)?([\w-]+\.)?(youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com|facebook\.com|fb\.watch|fb\.me)\//', $value);
                     $isHlsUrl = str_ends_with($value, '.m3u8');
                     $isLocalhost = str_contains($value, '127.0.0.1') || str_contains($value, 'localhost');
-                    
-                    if (!$isIframeUrl && !$isHlsUrl && !$isLocalhost) {
+
+                    if (! $isIframeUrl && ! $isHlsUrl && ! $isLocalhost) {
                         $validator->errors()->add(
                             "settings.{$index}.value",
-                            "L'URL du flux doit être une URL d'intégration valide (YouTube/Vimeo) ou un flux de streaming HLS (.m3u8)."
+                            "L'URL du flux doit être une URL d'intégration valide (YouTube/Vimeo/Facebook) ou un flux de streaming HLS (.m3u8)."
                         );
                     }
                 }

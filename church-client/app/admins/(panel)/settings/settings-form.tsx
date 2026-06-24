@@ -1,24 +1,34 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { 
-  Plus, 
-  Trash, 
-  Save, 
-  Loader2, 
-  Globe, 
-  Clock, 
-  HeartHandshake, 
-  PhoneCall, 
+import { useEffect, useState, useTransition } from "react";
+import {
+  Plus,
+  Trash,
+  Save,
+  Loader2,
+  Globe,
+  Clock,
+  HeartHandshake,
+  PhoneCall,
   Tv,
   CheckCircle,
   AlertCircle,
   ImagePlus,
+  KeyRound,
+  RefreshCw,
+  Copy,
+  Check,
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { LocationPicker } from "../_components/location-picker";
+
+const SETTING_INPUT =
+  "rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold w-full";
+
+// Base URL of the self-hosted HLS endpoint; the stream key fills in <base>/<key>.m3u8.
+const HLS_BASE = (process.env.NEXT_PUBLIC_HLS_BASE_URL || "http://localhost:8088/hls").replace(/\/+$/, "");
 
 type TabType = "general" | "schedule" | "offerings" | "contact" | "live";
 
@@ -69,6 +79,23 @@ export function SettingsForm({
     (initialSettings.offerings?.offering_currency as string) ?? "FCFA"
   );
 
+  // Editable "pitch" panel beside the donation form (page /dons).
+  const [pitchEyebrow, setPitchEyebrow] = useState<string>(
+    (initialSettings.offerings?.offering_pitch_eyebrow as string) ?? "Générosité"
+  );
+  const [pitchTitle, setPitchTitle] = useState<string>(
+    (initialSettings.offerings?.offering_pitch_title as string) ?? "Semer pour la moisson"
+  );
+  const [pitchQuote, setPitchQuote] = useState<string>(
+    (initialSettings.offerings?.offering_pitch_quote as string) ?? ""
+  );
+  const [pitchReference, setPitchReference] = useState<string>(
+    (initialSettings.offerings?.offering_pitch_reference as string) ?? ""
+  );
+  const [pitchPoints, setPitchPoints] = useState<string[]>(
+    (initialSettings.offerings?.offering_pitch_points as string[]) ?? []
+  );
+
   // Contact state
   const [socials, setSocials] = useState<Array<{ label: string; url: string }>>(
     (initialSettings.contact?.socials as Array<{ label: string; url: string }>) ?? []
@@ -101,6 +128,31 @@ export function SettingsForm({
   );
   const [liveTitle, setLiveTitle] = useState((initialSettings.live?.live_title as string) ?? "");
   const [liveDescription, setLiveDescription] = useState((initialSettings.live?.live_description as string) ?? "");
+  const [streamKey, setStreamKey] = useState((initialSettings.live?.live_stream_key as string) ?? "");
+  const [keyCopied, setKeyCopied] = useState(false);
+
+  // Reflect an externally-ended live (e.g. OBS stopped → auto-archived) by
+  // unchecking the status here without a reload. Only syncs OFF, so it never
+  // clobbers an admin who toggled the live ON before saving.
+  useEffect(() => {
+    if (!liveStatus) return;
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+    const id = setInterval(async () => {
+      if (isPending) return;
+      try {
+        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const live = (await res.json())?.data;
+        if (live && !live.live_status) setLiveStatus(false);
+      } catch {
+        /* network blip — retry next tick */
+      }
+    }, 12_000);
+    return () => clearInterval(id);
+  }, [liveStatus, isPending]);
   const [liveFallbackImage, setLiveFallbackImage] = useState((initialSettings.live?.live_fallback_image as string) ?? "");
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
@@ -270,6 +322,11 @@ export function SettingsForm({
           { key: "offering_presets", value: offeringPresets.map(Number).filter((n) => !isNaN(n)), group: "offerings" },
           { key: "offering_custom_limits", value: { min: Number(customMin), max: Number(customMax) }, group: "offerings" },
           { key: "offering_currency", value: offeringCurrency, group: "offerings" },
+          { key: "offering_pitch_eyebrow", value: pitchEyebrow, group: "offerings" },
+          { key: "offering_pitch_title", value: pitchTitle, group: "offerings" },
+          { key: "offering_pitch_quote", value: pitchQuote, group: "offerings" },
+          { key: "offering_pitch_reference", value: pitchReference, group: "offerings" },
+          { key: "offering_pitch_points", value: pitchPoints.map((p) => p.trim()).filter(Boolean), group: "offerings" },
           
           // Contact
           { key: "socials", value: socials, group: "contact" },
@@ -287,6 +344,7 @@ export function SettingsForm({
           { key: "live_chat_enabled", value: liveChatEnabled, group: "live" },
           { key: "live_title", value: liveTitle, group: "live" },
           { key: "live_description", value: liveDescription, group: "live" },
+          { key: "live_stream_key", value: streamKey, group: "live" },
           { 
             key: "live_fallback_image", 
             value: liveFallbackImage.startsWith("blob:") ? "" : liveFallbackImage, 
@@ -593,6 +651,53 @@ export function SettingsForm({
             <div>
               <h2 className="text-base font-bold text-indigo">Module d’offrandes & dons</h2>
               <p className="text-[13px] text-body">Gérez les montants, les types d’offrandes et les modes de paiement.</p>
+            </div>
+
+            {/* Pitch panel (page /dons) */}
+            <div className="rounded-2xl border border-[rgba(40,25,80,0.1)] bg-white p-5">
+              <h3 className="mb-1 text-sm font-bold text-indigo">Panneau de présentation (page Dons)</h3>
+              <p className="mb-4 text-[12.5px] text-body">Le bloc visuel affiché à côté du formulaire de don.</p>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Sur-titre</span>
+                  <input value={pitchEyebrow} onChange={(e) => setPitchEyebrow(e.target.value)} className={SETTING_INPUT} placeholder="ex: Générosité" />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Référence biblique</span>
+                  <input value={pitchReference} onChange={(e) => setPitchReference(e.target.value)} className={SETTING_INPUT} placeholder="ex: 2 Corinthiens 9.7" />
+                </label>
+              </div>
+
+              <label className="mt-4 flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Titre</span>
+                <input value={pitchTitle} onChange={(e) => setPitchTitle(e.target.value)} className={SETTING_INPUT} placeholder="ex: Semer pour la moisson" />
+              </label>
+
+              <label className="mt-4 flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Citation</span>
+                <textarea value={pitchQuote} onChange={(e) => setPitchQuote(e.target.value)} rows={2} className={cn(SETTING_INPUT, "resize-none leading-relaxed")} placeholder="« Que chacun donne… »" />
+              </label>
+
+              <div className="mt-4 flex flex-col gap-2">
+                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Points de réassurance</span>
+                {pitchPoints.map((point, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      value={point}
+                      onChange={(e) => setPitchPoints(pitchPoints.map((p, i) => (i === idx ? e.target.value : p)))}
+                      className={cn(SETTING_INPUT, "flex-1")}
+                      placeholder="ex: Reçu envoyé automatiquement par e-mail"
+                    />
+                    <button type="button" onClick={() => setPitchPoints(pitchPoints.filter((_, i) => i !== idx))} className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-live/15 text-live transition hover:bg-live/10">
+                      <Trash className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setPitchPoints([...pitchPoints, ""])} className="flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(40,25,80,0.12)] px-3 py-1.5 text-[12px] font-bold text-indigo transition hover:border-gold hover:text-gold-dark">
+                  <Plus className="size-3.5" /> Ajouter un point
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -930,14 +1035,64 @@ export function SettingsForm({
             </label>
 
             <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">URL du flux vidéo (YouTube / Vimeo embed)</span>
+              <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">URL du flux vidéo (YouTube / Facebook / HLS .m3u8)</span>
               <input
                 value={liveEmbedUrl}
                 onChange={(e) => setLiveEmbedUrl(e.target.value)}
                 className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold"
-                placeholder="ex: https://www.youtube.com/embed/live_stream?channel=YOUR_CHANNEL_ID"
+                placeholder="ex: https://www.youtube.com/watch?v=… · https://stream.mfm.ci/hls/<clé>.m3u8"
               />
             </label>
+
+            {/* Clé de streaming (serveur RTMP souverain) */}
+            <div className="rounded-2xl border border-[rgba(40,25,80,0.1)] bg-cream/50 p-5">
+              <div className="mb-1 flex items-center gap-2">
+                <KeyRound className="size-4 text-gold-dark" />
+                <h3 className="text-sm font-bold text-indigo">Clé de streaming (OBS → serveur souverain)</h3>
+              </div>
+              <p className="mb-3 text-[12.5px] text-body">
+                Pousse le flux depuis OBS vers <code className="rounded bg-indigo/5 px-1">rtmp://&lt;serveur&gt;:1935/live</code> avec cette clé.
+                Elle est secrète : elle n’est jamais exposée sur le site public.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={streamKey}
+                  onChange={(e) => setStreamKey(e.target.value)}
+                  placeholder="Génère ou colle une clé…"
+                  className="min-w-[200px] flex-1 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2.5 font-mono text-[13px] text-indigo outline-none focus:border-gold"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const key = crypto.randomUUID().replace(/-/g, "");
+                    setStreamKey(key);
+                    // Auto-fill the stream URL with the matching HLS playlist.
+                    setLiveEmbedUrl(`${HLS_BASE}/${key}.m3u8`);
+                    setKeyCopied(false);
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-indigo/20 bg-lilac/30 px-3.5 py-2.5 text-xs font-bold text-indigo transition hover:border-indigo"
+                >
+                  <RefreshCw className="size-3.5" /> Générer
+                </button>
+                <button
+                  type="button"
+                  disabled={!streamKey}
+                  onClick={() => {
+                    navigator.clipboard.writeText(streamKey).then(() => {
+                      setKeyCopied(true);
+                      setTimeout(() => setKeyCopied(false), 2000);
+                    });
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2.5 text-xs font-bold text-body transition hover:border-gold disabled:opacity-40"
+                >
+                  {keyCopied ? <Check className="size-3.5 text-online" /> : <Copy className="size-3.5" />}
+                  {keyCopied ? "Copiée" : "Copier"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11.5px] text-faint">
+                « Générer » remplit aussi l’URL du flux ci-dessus (<code className="rounded bg-indigo/5 px-1">{HLS_BASE}/{streamKey || "<clé>"}.m3u8</code>). Pense à enregistrer.
+              </p>
+            </div>
 
             {/* Sermon Notes Section */}
             <div className="border-t border-[rgba(40,25,80,0.06)] pt-6 flex flex-col gap-4">

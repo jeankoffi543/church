@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { extractYouTubeId, extractVimeoId, formatTime } from "@/lib/media";
 import { MEDIA_EVENTS, emitMedia, onMedia } from "@/lib/media-bus";
 import { loadYouTubeApi, type YTPlayer } from "@/lib/youtube";
+import { HlsPlayer } from "@/components/live/hls-player";
 import type { SermonMediaType } from "@/lib/data";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2] as const;
@@ -53,6 +54,7 @@ export function CustomVideoPlayer({
   title,
   autoPlay = false,
   onEnded,
+  onTime,
   resumeKey,
 }: {
   mediaType: SermonMediaType;
@@ -60,6 +62,8 @@ export function CustomVideoPlayer({
   title?: string;
   autoPlay?: boolean;
   onEnded?: () => void;
+  /** Playback position in seconds, emitted ~1×/s — drives time-synced replay. */
+  onTime?: (seconds: number) => void;
   /** When set, playback position is saved/restored via localStorage. */
   resumeKey?: string;
 }) {
@@ -67,15 +71,46 @@ export function CustomVideoPlayer({
 
   const ytId = mediaType === "video_url" && src ? extractYouTubeId(src) : null;
   const vimeoId = mediaType === "video_url" && src ? extractVimeoId(src) : null;
+  const hlsSrc = mediaType === "video_url" && src && /\.m3u8(\?|$)/i.test(src) ? src : null;
+  const fbSrc =
+    mediaType === "video_url" && src && /facebook\.com|fb\.watch|fb\.me/.test(src) ? src : null;
   const fileSrc =
-    mediaType === "video_file" ? src : mediaType === "video_url" && !ytId && !vimeoId ? src : null;
+    mediaType === "video_file"
+      ? src
+      : mediaType === "video_url" && !ytId && !vimeoId && !hlsSrc && !fbSrc
+        ? src
+        : null;
 
-  if (error || (!ytId && !vimeoId && !fileSrc)) {
+  if (error || (!ytId && !vimeoId && !hlsSrc && !fbSrc && !fileSrc)) {
     return <VideoError />;
   }
 
   if (ytId) {
-    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onError={() => setError(true)} resumeKey={resumeKey} />;
+    return <YouTubeEmbed videoId={ytId} title={title} onEnded={onEnded} onTime={onTime} onError={() => setError(true)} resumeKey={resumeKey} />;
+  }
+
+  if (hlsSrc) {
+    return (
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
+        <HlsPlayer src={hlsSrc} title={title} onTime={onTime} />
+      </div>
+    );
+  }
+
+  if (fbSrc) {
+    const embed = fbSrc.includes("plugins/video.php")
+      ? fbSrc
+      : `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(fbSrc)}&show_text=false`;
+    return (
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black shadow-2xl [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:size-full">
+        <iframe
+          src={embed}
+          title={title ?? "Vidéo"}
+          allow="autoplay; encrypted-media; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    );
   }
 
   if (vimeoId) {
@@ -98,6 +133,7 @@ export function CustomVideoPlayer({
       autoPlay={autoPlay}
       title={title}
       onEnded={onEnded}
+      onTime={onTime}
       onError={() => setError(true)}
       resumeKey={resumeKey}
     />
@@ -122,21 +158,30 @@ function YouTubeEmbed({
   videoId,
   title,
   onEnded,
+  onTime,
   onError,
   resumeKey,
 }: {
   videoId: string;
   title?: string;
   onEnded?: () => void;
+  onTime?: (seconds: number) => void;
   onError?: () => void;
   resumeKey?: string;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
+  const onTimeRef = useRef(onTime);
+
+  // Keep the latest callback without re-creating the player.
+  useEffect(() => {
+    onTimeRef.current = onTime;
+  });
 
   useEffect(() => {
     let cancelled = false;
     let saveTimer: ReturnType<typeof setInterval> | null = null;
+    let timeTimer: ReturnType<typeof setInterval> | null = null;
     const resumeAt = readResume(resumeKey);
 
     (async () => {
@@ -181,11 +226,24 @@ function YouTubeEmbed({
           }
         }, 5000);
       }
+
+      // Drive time-synced replay (chat reveal) without leaking the interval.
+      if (onTimeRef.current) {
+        timeTimer = setInterval(() => {
+          try {
+            const p = playerRef.current;
+            if (p) onTimeRef.current?.(p.getCurrentTime());
+          } catch {
+            /* player not ready */
+          }
+        }, 1000);
+      }
     })();
 
     return () => {
       cancelled = true;
       if (saveTimer) clearInterval(saveTimer);
+      if (timeTimer) clearInterval(timeTimer);
       try {
         playerRef.current?.destroy();
       } catch {
@@ -222,6 +280,7 @@ function FileVideoPlayer({
   autoPlay,
   title,
   onEnded,
+  onTime,
   onError,
   resumeKey,
 }: {
@@ -229,6 +288,7 @@ function FileVideoPlayer({
   autoPlay?: boolean;
   title?: string;
   onEnded?: () => void;
+  onTime?: (seconds: number) => void;
   onError?: () => void;
   resumeKey?: string;
 }) {
@@ -357,6 +417,7 @@ function FileVideoPlayer({
         onPause={() => setIsPlaying(false)}
         onTimeUpdate={(e) => {
           setProgress(e.currentTarget.currentTime);
+          onTime?.(e.currentTarget.currentTime);
           saveResume(resumeKey, e.currentTarget.currentTime, e.currentTarget.duration);
         }}
         onProgress={onProgress}

@@ -417,6 +417,7 @@ export function PastorWordForm({ pastorWord, churchPresentationBanner, pastorLon
 
                   <div className="relative group overflow-hidden rounded-xl border border-[rgba(40,25,80,0.12)] bg-cream aspect-[3/4] flex items-center justify-center mb-4">
                     {currentPreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- dynamic blob/remote preview URL; next/image breaks object-preview blobs
                       <img
                         src={currentPreview}
                         alt="Aperçu photo pastorale"

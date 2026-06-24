@@ -18,6 +18,14 @@ const nextConfig: NextConfig = {
     // uploads (up to 50 images) aren't truncated at the 10MB default.
     proxyClientMaxBodySize: '500mb',
   },
+  // URL normalisation: legacy snake_case admin route → kebab-case, with a
+  // permanent (308) redirect so existing bookmarks keep working.
+  async redirects() {
+    return [
+      { source: "/admins/home_groups", destination: "/admins/home-groups", permanent: true },
+      { source: "/admins/home_groups/:path*", destination: "/admins/home-groups/:path*", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

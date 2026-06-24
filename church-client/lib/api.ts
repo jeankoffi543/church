@@ -42,11 +42,13 @@ const REVALIDATE = 60;
 /**
  * GET a JSON endpoint, returning `null` on any failure (network, non-2xx…).
  */
-async function apiGet<T>(path: string, tags?: string[]): Promise<T | null> {
+async function apiGet<T>(path: string, tags?: string[], opts?: { noStore?: boolean }): Promise<T | null> {
   try {
     const res = await fetch(`${API_URL}${path}`, {
       headers: { Accept: "application/json" },
-      next: { revalidate: REVALIDATE, tags },
+      // Some views (e.g. the lives archive, updated by the live engine outside
+      // Next's cache) must always reflect the latest server state.
+      ...(opts?.noStore ? { cache: "no-store" as const } : { next: { revalidate: REVALIDATE, tags } }),
     });
     if (!res.ok) return null;
     return (await res.json()) as T;
@@ -518,11 +520,32 @@ export async function getContactInfo(): Promise<ContactInfo> {
   };
 }
 
+export type OfferingPitch = {
+  eyebrow: string;
+  title: string;
+  quote: string;
+  reference: string;
+  points: string[];
+};
+
 export type OfferingConfig = {
   purposes: DonationPurpose[];
   presets: number[];
   methods: string[];
   currency: string;
+  pitch: OfferingPitch;
+};
+
+const DEFAULT_PITCH: OfferingPitch = {
+  eyebrow: "Générosité",
+  title: "Semer pour la moisson",
+  quote: "« Que chacun donne comme il l'a résolu dans son cœur, avec joie. »",
+  reference: "2 Corinthiens 9.7",
+  points: [
+    "Transactions chiffrées & 100% sécurisées",
+    "Reçu envoyé automatiquement par e-mail",
+    "Gestion transparente, rapport annuel public",
+  ],
 };
 
 export async function getOfferingConfig(): Promise<OfferingConfig> {
@@ -542,6 +565,13 @@ export async function getOfferingConfig(): Promise<OfferingConfig> {
         "Wave",
       ],
     currency: (offerings?.offering_currency as string) ?? "FCFA",
+    pitch: {
+      eyebrow: (offerings?.offering_pitch_eyebrow as string) ?? DEFAULT_PITCH.eyebrow,
+      title: (offerings?.offering_pitch_title as string) ?? DEFAULT_PITCH.title,
+      quote: (offerings?.offering_pitch_quote as string) ?? DEFAULT_PITCH.quote,
+      reference: (offerings?.offering_pitch_reference as string) ?? DEFAULT_PITCH.reference,
+      points: (offerings?.offering_pitch_points as string[] | undefined) ?? DEFAULT_PITCH.points,
+    },
   };
 }
 
@@ -1036,6 +1066,8 @@ type ApiPastLive = {
   month_label: string | null;
   media_type: SermonMediaType | null;
   media_src: string | null;
+  has_chat?: boolean;
+  source_type?: "live_archive" | "upload";
 };
 
 export type PastLive = {
@@ -1052,6 +1084,9 @@ export type PastLive = {
   monthLabel: string;
   mediaType: SermonMediaType | null;
   mediaSrc: string | null;
+  youtubeId: string | null;
+  hasChat: boolean;
+  fromLive: boolean;
 };
 
 const mapPastLive = (l: ApiPastLive): PastLive => ({
@@ -1069,65 +1104,19 @@ const mapPastLive = (l: ApiPastLive): PastLive => ({
   mediaType: l.media_type,
   // Files come back as a relative stream route; resolve to the API origin.
   mediaSrc: l.media_type === "video_file" ? assetUrl(l.media_src) : l.media_src,
+  youtubeId: l.youtube_id,
+  hasChat: Boolean(l.has_chat),
+  fromLive: l.source_type === "live_archive",
 });
 
-export type GetPastLivesParams = {
-  page?: number;
-  perPage?: number;
-  search?: string;
-  series?: string[];
-  year?: string[];
-  filters?: Record<string, string>;
-};
-
-export async function getPastLives(params?: GetPastLivesParams): Promise<{
-  data: PastLive[];
-  meta?: {
-    current_page: number;
-    last_page: number;
-    per_page: number;
-    total: number;
-    years: string[];
-    series: string[];
-  };
-}> {
-  const query = new URLSearchParams();
-  if (params?.page) query.append("page", String(params.page));
-  if (params?.perPage) query.append("per_page", String(params.perPage));
-  if (params?.search) query.append("search", params.search);
-  if (params?.series) {
-    params.series.forEach((s) => query.append("series[]", s));
-  }
-  if (params?.year) {
-    params.year.forEach((y) => query.append("year[]", y));
-  }
-
-  if (params?.filters) {
-    Object.entries(params.filters).forEach(([key, val]) => {
-      query.append(key, val);
-    });
-  }
-
-  const queryString = query.toString() ? `?${query.toString()}` : "";
-  const json = await apiGet<{
-    data: ApiPastLive[];
-    meta?: {
-      current_page: number;
-      last_page: number;
-      per_page: number;
-      total: number;
-      years: string[];
-      series: string[];
-    };
-  }>(`/public/past-lives${queryString}`, ["past-lives"]);
-
-  return {
-    data: json?.data ? json.data.map(mapPastLive) : [],
-    meta: json?.meta,
-  };
+export async function getPastLives(): Promise<PastLive[]> {
+  // Fetch the whole archive so the client can group by month, filter by series /
+  // year and "load more" without extra round-trips.
+  const json = await apiGet<{ data: ApiPastLive[] }>("/public/past-lives?per_page=500", ["past-lives"], { noStore: true });
+  return json?.data ? json.data.map(mapPastLive) : [];
 }
 
 export async function getLatestPastLive(): Promise<PastLive | null> {
-  const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"]);
+  const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"], { noStore: true });
   return json?.data ? mapPastLive(json.data) : null;
 }

@@ -99,19 +99,15 @@ it('validates ministry creation', function () {
 it('auto-generates a unique slug for events', function () {
     actingAsSuperAdmin();
 
-    $first = $this->postJson('/api/v1/admin/events', [
+    $payload = [
         'title' => 'Maison de Feu',
-        'description' => 'Description test',
-        'location' => 'Lieu test',
+        'description' => 'Veillée de combat spirituel.',
+        'location' => 'Temple principal',
         'start_date' => '2026-07-11 09:00:00',
-    ])->assertCreated();
+    ];
 
-    $second = $this->postJson('/api/v1/admin/events', [
-        'title' => 'Maison de Feu',
-        'description' => 'Description test',
-        'location' => 'Lieu test',
-        'start_date' => '2026-07-12 09:00:00',
-    ])->assertCreated();
+    $first = $this->postJson('/api/v1/admin/events', $payload)->assertCreated();
+    $second = $this->postJson('/api/v1/admin/events', [...$payload, 'start_date' => '2026-07-12 09:00:00'])->assertCreated();
 
     expect($first->json('data.slug'))->toBe('maison-de-feu');
     expect($second->json('data.slug'))->toBe('maison-de-feu-2');
@@ -129,4 +125,26 @@ it('bulk updates settings', function () {
 
     expect(Setting::get('live_status'))->toBeTrue();
     expect(Setting::get('hero_title'))->toBe('Nouvelle saison');
+});
+
+it('accepts a Facebook live URL as the stream source', function () {
+    actingAsSuperAdmin();
+
+    $this->putJson('/api/v1/admin/settings', [
+        'settings' => [
+            ['key' => 'live_embed_url', 'value' => 'https://www.facebook.com/MFMFicgayo/videos/123456789', 'group' => 'live'],
+        ],
+    ])->assertOk();
+
+    expect(Setting::get('live_embed_url'))->toBe('https://www.facebook.com/MFMFicgayo/videos/123456789');
+});
+
+it('rejects a non-embeddable stream URL', function () {
+    actingAsSuperAdmin();
+
+    $this->putJson('/api/v1/admin/settings', [
+        'settings' => [
+            ['key' => 'live_embed_url', 'value' => 'https://example.com/whatever', 'group' => 'live'],
+        ],
+    ])->assertStatus(422)->assertJsonValidationErrors('settings.0.value');
 });

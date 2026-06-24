@@ -1,27 +1,18 @@
 "use client";
 
 import { useCallback, useState, useTransition } from "react";
-import {
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-  Clock,
-  Inbox,
-  Mail,
-  Phone,
-  MessageCircle,
-  ShieldCheck,
-  User,
-} from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Clock, Inbox, Mail, Phone, MessageCircle, ShieldCheck, User } from "lucide-react";
 
 import type { AdminMe, AdminMinistryApplication, AdminListMeta } from "@/lib/admin-api";
 import { approveMinistryApplication, rejectMinistryApplication, getMinistryApplicationsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { Pagination } from "../../_components/pagination";
-import { useServerList } from "../../_components/use-server-list";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { DataTable } from "@/components/admin/data/data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
 export const MINISTRY_APPLICATIONS_PER_PAGE = 10;
 
@@ -57,28 +48,20 @@ export function ApplicationsManager({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [status, setStatus] = useState<Status>(null);
 
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(MINISTRY_APPLICATIONS_PER_PAGE);
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionNotePublic, setDecisionNotePublic] = useState(false);
 
-  // Server-side list (status filter + pagination via QueryMaster).
-  const {
-    items: applications,
-    setItems: setApplications,
-    meta,
-    isLoading,
-    refresh,
-  } = useServerList<AdminMinistryApplication>({
+  const table = useServerDataTable<AdminMinistryApplication>({
     fetcher: getMinistryApplicationsPaginated,
-    params: {
-      page,
-      perPage,
-      filters: statusFilter === "all" ? {} : { status: statusFilter },
-    },
     initialData: initialApplications,
     initialMeta,
+    initialPerPage: MINISTRY_APPLICATIONS_PER_PAGE,
+    extraFilters: statusFilter === "all" ? undefined : { status: statusFilter },
   });
+  const applications = table.view;
+  const setApplications = table.setItems;
 
   const [pendingCount, setPendingCount] = useState(initialPendingCount);
   const refreshPending = useCallback(() => {
@@ -86,11 +69,6 @@ export function ApplicationsManager({
       .then((res) => setPendingCount(res.meta.total))
       .catch(() => {});
   }, []);
-
-  // Optional decision note (motif) recorded with an approve/reject, and whether
-  // it is shared with the candidate in the public status lookup.
-  const [decisionNote, setDecisionNote] = useState("");
-  const [decisionNotePublic, setDecisionNotePublic] = useState(false);
 
   const openApplication = (application: AdminMinistryApplication) => {
     setSelectedId(application.id);
@@ -100,47 +78,28 @@ export function ApplicationsManager({
   };
 
   const isGlobalValidator = me.is_super_admin || me.roles.includes("Pasteur");
-
-  /** Whether the current admin may act on a given application's ministry. */
-  const canValidate = (application: AdminMinistryApplication): boolean => {
-    if (isGlobalValidator) return true;
-    return me.id === application.ministry?.chef_id;
-  };
-
-  // The API already returns the filtered page; render it directly.
-  const paged = applications;
-  const total = meta.total;
-  const pageCount = Math.max(1, meta.last_page);
-  const currentPage = meta.current_page;
+  const canValidate = (application: AdminMinistryApplication): boolean =>
+    isGlobalValidator || me.id === application.ministry?.chef_id;
 
   const selected = applications.find((a) => a.id === selectedId) ?? null;
 
   const replaceInList = (updated: AdminMinistryApplication) => {
     setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    refresh();
+    table.refresh();
     refreshPending();
   };
 
-  const handleDecision = (
-    application: AdminMinistryApplication,
-    decision: "approve" | "reject"
-  ) => {
+  const handleDecision = (application: AdminMinistryApplication, decision: "approve" | "reject") => {
     setStatus(null);
     startTransition(async () => {
       try {
-        const payload = {
-          decision_note: decisionNote.trim() || null,
-          decision_note_public: decisionNotePublic,
-        };
+        const payload = { decision_note: decisionNote.trim() || null, decision_note_public: decisionNotePublic };
         const res =
           decision === "approve"
             ? await approveMinistryApplication(application.id, payload)
             : await rejectMinistryApplication(application.id, payload);
         replaceInList(res.data);
-        setStatus({
-          type: "success",
-          message: decision === "approve" ? "Candidature approuvée." : "Candidature rejetée.",
-        });
+        setStatus({ type: "success", message: decision === "approve" ? "Candidature approuvée." : "Candidature rejetée." });
         setSelectedId(null);
       } catch (err) {
         const message = (err as Error).message;
@@ -157,184 +116,125 @@ export function ApplicationsManager({
 
   const whatsappUrl = (application: AdminMinistryApplication) => {
     const phone = application.phone.replace(/[^0-9]/g, "");
-    const text = encodeURIComponent(
-      `Bonjour ${application.name}, merci pour votre candidature au ministère « ${application.ministry?.name ?? ""} » à MFM Ficgayo.`
-    );
+    const text = encodeURIComponent(`Bonjour ${application.name}, merci pour votre candidature au ministère « ${application.ministry?.name ?? ""} » à MFM Ficgayo.`);
     return `https://wa.me/${phone}?text=${text}`;
   };
 
-  return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up">
-      {/* Header */}
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
-            Recrutement
+  const columns: Column<AdminMinistryApplication>[] = [
+    {
+      id: "candidate",
+      header: "Candidat",
+      cell: (a) => (
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-xs font-bold text-indigo">
+            {a.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold">{a.name}</p>
+            <p className="text-[11px] text-faint">{a.phone}</p>
+            <p className="truncate text-[11px] text-faint">{a.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "ministry",
+      header: "Ministère",
+      cell: (a) => <span className="rounded-full bg-indigo/5 px-2.5 py-1 text-[11px] font-bold text-indigo">{a.ministry?.name ?? "—"}</span>,
+    },
+    {
+      id: "motivation",
+      header: "Motivation",
+      className: "max-w-[260px]",
+      cell: (a) => <p className="truncate text-xs text-body">{a.motivation}</p>,
+    },
+    {
+      id: "status",
+      header: "Statut",
+      cell: (a) => {
+        const cfg = STATUS_CONFIG[a.status];
+        return (
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold", cfg.bg, cfg.text)}>
+            <span className={cn("size-1.5 rounded-full", cfg.dot, cfg.pulse && "animate-pulse")} />
+            {cfg.label}
           </span>
-          <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
-            Candidatures aux ministères
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {applications.length}
-              {pendingCount > 0 && (
-                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-gold text-[10px] font-black text-indigo">
-                  {pendingCount}
-                </span>
-              )}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-body">
-            {isGlobalValidator
-              ? "Traitez les demandes de recrutement de tous les ministères."
-              : "Traitez les demandes de recrutement du ministère que vous dirigez."}
-          </p>
-        </div>
-      </header>
+        );
+      },
+    },
+    {
+      id: "created_at",
+      header: "Date",
+      className: "font-mono text-xs font-semibold text-faint",
+      cell: (a) =>
+        a.created_at ? new Date(a.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }) : "—",
+    },
+  ];
 
-      {status && (
-        <div
-          className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
-            status.type === "success"
-              ? "border-online/20 bg-online/5 text-body-strong"
-              : "border-live/20 bg-live/5 text-live"
-          )}
-        >
-          {status.type === "success" ? (
-            <CheckCircle className="size-5 shrink-0 text-online" />
-          ) : (
-            <AlertCircle className="size-5 shrink-0 text-live" />
-          )}
-          <p className="font-semibold">{status.message}</p>
-        </div>
-      )}
+  return (
+    <PageShell>
+      <PageHeader
+        eyebrow="Recrutement"
+        title="Candidatures aux ministères"
+        subtitle={`${table.total} candidature${table.total > 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""} · ${
+          isGlobalValidator ? "traitez les demandes de tous les ministères." : "traitez les demandes du ministère que vous dirigez."
+        }`}
+      />
 
-      {/* Filters */}
-      <div className="mb-6 flex items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)] w-fit">
+      <StatusBanner status={status} className="mb-6" />
+
+      {/* Status filter pills */}
+      <div className="mb-6 flex w-fit items-center gap-1.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.key}
             onClick={() => {
               setStatusFilter(f.key);
-              setPage(1);
+              table.setPage(1);
             }}
             className={cn(
               "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
-              statusFilter === f.key ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo"
+              statusFilter === f.key ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo",
             )}
           >
             {f.label}
             {f.key === "pending" && pendingCount > 0 && (
-              <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-gold text-[9px] font-black text-indigo">
-                {pendingCount}
-              </span>
+              <span className="ml-1.5 inline-flex size-4 items-center justify-center rounded-full bg-gold text-[9px] font-black text-indigo">{pendingCount}</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
-          <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
-              <tr>
-                <th className="px-6 py-4">Candidat</th>
-                <th className="px-6 py-4">Ministère</th>
-                <th className="px-6 py-4">Motivation</th>
-                <th className="px-6 py-4">Statut</th>
-                <th className="px-6 py-4">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {paged.map((application) => {
-                const cfg = STATUS_CONFIG[application.status];
-                return (
-                  <tr
-                    key={application.id}
-                    onClick={() => openApplication(application)}
-                    className={cn(
-                      "cursor-pointer transition-colors hover:bg-cream/40",
-                      selectedId === application.id && "bg-gold/5"
-                    )}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-xs font-bold text-indigo">
-                          {application.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold">{application.name}</p>
-                          <p className="text-[11px] text-faint">{application.phone}</p>
-                          <p className="truncate text-[11px] text-faint">{application.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="rounded-full bg-indigo/5 px-2.5 py-1 text-[11px] font-bold text-indigo">
-                        {application.ministry?.name ?? "—"}
-                      </span>
-                    </td>
-                    <td className="max-w-[260px] px-6 py-4">
-                      <p className="truncate text-xs text-body">{application.motivation}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
-                          cfg.bg,
-                          cfg.text
-                        )}
-                      >
-                        <span className={cn("size-1.5 rounded-full", cfg.dot, cfg.pulse && "animate-pulse")} />
-                        {cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-xs font-semibold text-faint">
-                      {application.created_at
-                        ? new Date(application.created_at).toLocaleDateString("fr-FR", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
-                        : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
+      <DataTable
+        columns={columns}
+        rows={table.view}
+        getKey={(a) => a.id}
+        sortBy={table.sortBy}
+        sortDir={table.sortDir}
+        onSort={table.toggleSort}
+        onRowClick={openApplication}
+        rowClassName={(a) => (selectedId === a.id ? "bg-gold/5" : undefined)}
+        empty={
+          <div className="flex flex-col items-center gap-3 py-8">
+            <Inbox className="size-10 text-gold/40" />
+            <p className="text-sm font-semibold text-body-strong">Aucune candidature</p>
+            <p className="max-w-xs text-xs text-body">Les nouvelles demandes de recrutement apparaîtront ici.</p>
+          </div>
+        }
+        pagination={{
+          page: table.page,
+          pageCount: table.pageCount,
+          total: table.total,
+          perPage: table.perPage,
+          onPageChange: table.setPage,
+          onPerPageChange: (n) => {
+            table.setPerPage(n);
+            table.setPage(1);
+          },
+          itemLabel: "candidatures",
+        }}
+      />
 
-              {paged.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <Inbox className="size-10 text-gold/40" />
-                      <p className="text-sm font-semibold text-body-strong">Aucune candidature</p>
-                      <p className="max-w-xs text-xs text-body">
-                        Les nouvelles demandes de recrutement apparaîtront ici.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {total > 0 && (
-          <Pagination
-            page={currentPage}
-            pageCount={pageCount}
-            total={total}
-            perPage={perPage}
-            onPageChange={setPage}
-            onPerPageChange={(n) => {
-              setPerPage(n);
-              setPage(1);
-            }}
-            itemLabel="candidatures"
-          />
-        )}
-      </div>
-
-      {/* Processing modal */}
+      {/* Processing modal (bespoke) */}
       <Dialog open={selected !== null} onOpenChange={(open) => !open && setSelectedId(null)}>
         {selected && (
           <DialogContent
@@ -343,20 +243,10 @@ export function ApplicationsManager({
           >
             <div className="flex items-center justify-between border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
               <div>
-                <span className="text-[10px] font-bold tracking-[0.18em] text-gold-dark uppercase">
-                  Demande d'adhésion - {selected.ministry?.name ?? "—"}
-                </span>
-                <h2 className="mt-0.5 font-display text-xl font-bold text-indigo italic">
-                  {selected.name}
-                </h2>
+                <span className="text-[10px] font-bold tracking-[0.18em] text-gold-dark uppercase">Demande d’adhésion - {selected.ministry?.name ?? "—"}</span>
+                <h2 className="mt-0.5 font-display text-xl font-bold text-indigo italic">{selected.name}</h2>
               </div>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold",
-                  STATUS_CONFIG[selected.status].bg,
-                  STATUS_CONFIG[selected.status].text
-                )}
-              >
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold", STATUS_CONFIG[selected.status].bg, STATUS_CONFIG[selected.status].text)}>
                 {selected.status === "pending" && <Clock className="size-3" />}
                 {selected.status === "approved" && <CheckCircle className="size-3" />}
                 {selected.status === "rejected" && <XCircle className="size-3" />}
@@ -365,41 +255,29 @@ export function ApplicationsManager({
             </div>
 
             <div className="space-y-5 px-6 py-6">
-              {/* Grille d'informations */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Nom complet */}
-                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="flex items-center gap-3 rounded-xl border border-[rgba(40,25,80,0.1)] bg-muted/10 px-3.5 py-2.5">
                   <User className="size-4 text-faint" />
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold text-faint uppercase">Nom complet</div>
-                    <div className="text-sm font-semibold text-indigo truncate">{selected.name}</div>
+                    <div className="truncate text-sm font-semibold text-indigo">{selected.name}</div>
                   </div>
                 </div>
 
-                {/* Email */}
-                <a
-                  href={`mailto:${selected.email}`}
-                  className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10 transition hover:border-gold hover:bg-cream"
-                >
+                <a href={`mailto:${selected.email}`} className="flex items-center gap-3 rounded-xl border border-[rgba(40,25,80,0.1)] bg-muted/10 px-3.5 py-2.5 transition hover:border-gold hover:bg-cream">
                   <Mail className="size-4 text-faint" />
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold text-faint uppercase">Email</div>
-                    <div className="text-sm font-semibold text-indigo truncate">{selected.email}</div>
+                    <div className="truncate text-sm font-semibold text-indigo">{selected.email}</div>
                   </div>
                 </a>
 
-                {/* Téléphone et WhatsApp */}
-                <div className="flex items-center justify-between gap-2 rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2 bg-muted/10">
-                  <div className="flex gap-3 items-center min-w-0">
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-[rgba(40,25,80,0.1)] bg-muted/10 px-3.5 py-2">
+                  <div className="flex min-w-0 items-center gap-3">
                     <Phone className="size-4 text-faint" />
                     <div className="min-w-0">
                       <div className="text-[10px] font-bold text-faint uppercase">Téléphone</div>
-                      <a
-                        href={`tel:${selected.phone}`}
-                        className="text-sm font-semibold text-indigo hover:underline truncate"
-                      >
-                        {selected.phone}
-                      </a>
+                      <a href={`tel:${selected.phone}`} className="truncate text-sm font-semibold text-indigo hover:underline">{selected.phone}</a>
                     </div>
                   </div>
                   <a
@@ -413,57 +291,43 @@ export function ApplicationsManager({
                   </a>
                 </div>
 
-                {/* Ministère visé */}
-                <div className="flex gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.1)] px-3.5 py-2.5 bg-muted/10">
+                <div className="flex items-center gap-3 rounded-xl border border-[rgba(40,25,80,0.1)] bg-muted/10 px-3.5 py-2.5">
                   <ShieldCheck className="size-4 text-faint" />
                   <div className="min-w-0">
                     <div className="text-[10px] font-bold text-faint uppercase">Ministère visé</div>
-                    <div className="text-sm font-semibold text-indigo truncate">
-                      {selected.ministry?.name || "Non spécifié"}
-                    </div>
+                    <div className="truncate text-sm font-semibold text-indigo">{selected.ministry?.name || "Non spécifié"}</div>
                   </div>
                 </div>
               </div>
 
-              {/* Bloc de Motivation */}
               <section className="space-y-2">
                 <h3 className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">Motivation</h3>
-                <p className="rounded-lg bg-muted/50 p-4 text-sm leading-relaxed text-body-strong whitespace-pre-line">
-                  {selected.motivation}
-                </p>
+                <p className="rounded-lg bg-muted/50 p-4 text-sm leading-relaxed whitespace-pre-line text-body-strong">{selected.motivation}</p>
               </section>
             </div>
 
-            {/* Footer actions */}
             <div className="space-y-4 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
               {canValidate(selected) ? (
                 <>
                   <div className="space-y-2">
                     <label className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">
-                      Motif de la décision{" "}
-                      <span className="font-normal normal-case tracking-normal text-faint">(optionnel)</span>
+                      Motif de la décision <span className="font-normal normal-case tracking-normal text-faint">(optionnel)</span>
                     </label>
                     <textarea
                       value={decisionNote}
                       onChange={(e) => setDecisionNote(e.target.value)}
                       rows={2}
                       placeholder="Ajoutez un motif (ex. raison du refus, équipe assignée…)"
-                      className="w-full resize-none rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-sm leading-relaxed text-indigo outline-none transition placeholder:text-faint focus:border-gold"
+                      className="w-full resize-none rounded-xl border border-[rgba(40,25,80,0.12)] bg-cream px-3.5 py-2.5 text-sm leading-relaxed text-indigo outline-none transition placeholder:text-faint focus:border-gold"
                     />
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-[rgba(40,25,80,0.1)] bg-cream/50 px-3.5 py-2.5">
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-indigo">Visible par le candidat</p>
                         <p className="text-[11px] text-body">
-                          {decisionNotePublic
-                            ? "Le motif sera affiché lors du suivi de sa candidature."
-                            : "Le motif reste interne (non visible par le candidat)."}
+                          {decisionNotePublic ? "Le motif sera affiché lors du suivi de sa candidature." : "Le motif reste interne (non visible par le candidat)."}
                         </p>
                       </div>
-                      <Switch
-                        checked={decisionNotePublic}
-                        onCheckedChange={setDecisionNotePublic}
-                        label="Partager le motif avec le candidat"
-                      />
+                      <Switch checked={decisionNotePublic} onCheckedChange={setDecisionNotePublic} label="Partager le motif avec le candidat" />
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -489,12 +353,8 @@ export function ApplicationsManager({
                 <>
                   {selected.decision_note && (
                     <div className="space-y-1.5">
-                      <p className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">
-                        Motif de la décision
-                      </p>
-                      <p className="rounded-xl bg-cream p-3 text-sm leading-relaxed text-body-strong">
-                        {selected.decision_note}
-                      </p>
+                      <p className="text-[11px] font-bold tracking-[0.15em] text-gold-dark uppercase">Motif de la décision</p>
+                      <p className="rounded-xl bg-cream p-3 text-sm leading-relaxed text-body-strong">{selected.decision_note}</p>
                     </div>
                   )}
                   <div className="flex items-center justify-center gap-2 rounded-xl bg-cream/60 px-4 py-3 text-xs font-semibold text-body">
@@ -507,6 +367,6 @@ export function ApplicationsManager({
           </DialogContent>
         )}
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

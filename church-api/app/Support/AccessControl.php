@@ -101,6 +101,10 @@ final class AccessControl
                 ['name' => 'manage_church_vision', 'label' => 'Modifier la vision, les piliers de foi et la composition de l’équipe pastorale'],
 
             ],
+            'Finances & Générosité' => [
+                ['name' => 'view_finances', 'label' => 'Consulter le livre de caisse des dons, dîmes et offrandes'],
+                ['name' => 'export_finances', 'label' => 'Exporter les rapports financiers et reçus fiscaux'],
+            ],
             'Gestion Territoriale' => [
                 ['name' => 'view_branches', 'label' => 'Consulter la liste des campus et branches annexes'],
                 ['name' => 'manage_branches', 'label' => 'Créer, modifier et supprimer les branches et affecter les pasteurs'],
@@ -205,6 +209,11 @@ final class AccessControl
             'Média/Régie' => [
                 'view_gallery',
                 'manage_gallery',
+                'view_dashboard',
+            ],
+            'Trésorerie/Comptabilité' => [
+                'view_finances',
+                'export_finances',
                 'view_dashboard',
             ],
         ];

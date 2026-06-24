@@ -1,52 +1,25 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import {
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  Plus,
-  Pencil,
-  Trash2,
-  Save,
-  Users as UsersIcon,
-  Mail,
-  ShieldCheck,
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
-  SlidersHorizontal,
-  Search,
-  X,
-} from "lucide-react";
+import { useState, useTransition } from "react";
+import { Plus, Pencil, Trash2, Mail, ShieldCheck, Users as UsersIcon } from "lucide-react";
 
 import type { AdminServant, AdminListMeta } from "@/lib/admin-api";
-import {
-  createServant,
-  updateServant,
-  deleteServant,
-  getServantsPaginated,
-} from "@/lib/admin-api";
+import { createServant, updateServant, deleteServant, getServantsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { serializeFiltersForQueryMaster, type FilterField } from "@/components/admin/query-builder";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { DataFilters } from "@/components/admin/data/data-filters";
+import { DataTable } from "@/components/admin/data/data-table";
+import { type Column } from "@/components/admin/data/use-data-table";
+import { useServerDataTable } from "@/components/admin/data/use-server-data-table";
+import { Button } from "@/components/admin/ui/button";
+import { Field, inputClass } from "@/components/admin/ui/field";
+import { Modal } from "@/components/admin/ui/modal";
+import { ConfirmDialog } from "@/components/admin/ui/confirm-dialog";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 import { MultiSelect } from "../_components/multi-select";
 import { groupStyle } from "../_components/group-style";
-import { Pagination } from "../_components/pagination";
-import { useServerList } from "../_components/use-server-list";
-import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
-
-export const USERS_PER_PAGE = 10;
-
-/** UI sort columns → QueryMaster sortable model fields (roles is a relation, not sortable). */
-const SERVANT_SORT_FIELD: Record<string, string | undefined> = {
-  name: "name",
-  is_active: "is_active",
-  roles: undefined,
-};
-
-type Feedback = { type: "success" | "error"; message: string } | null;
 
 type FormState = {
   name: string;
@@ -56,12 +29,15 @@ type FormState = {
   roles: string[];
 };
 
-const EMPTY_FORM: FormState = {
-  name: "",
-  email: "",
-  password: "",
-  is_active: true,
-  roles: [],
+const EMPTY_FORM: FormState = { name: "", email: "", password: "", is_active: true, roles: [] };
+
+export const USERS_PER_PAGE = 10;
+
+/** UI column id → QueryMaster sortable field (roles is a relation, not sortable). */
+const SERVANT_SORT_FIELD: Record<string, string | undefined> = {
+  name: "name",
+  is_active: "is_active",
+  roles: undefined,
 };
 
 export function UsersManager({
@@ -76,57 +52,17 @@ export function UsersManager({
   currentUserId: number;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<Feedback>(null);
+  const [status, setStatus] = useState<Status>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminServant | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<AdminServant | null>(null);
 
-  // Search, sorting, filtering states
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"name" | "roles" | "is_active" | null>(null);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
-
-  // Pagination
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(USERS_PER_PAGE);
-
-  // Server-side list (search / filters / sort / pagination via QueryMaster).
-  const servantFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
-  if (servantFilters.is_active__eq) {
-    servantFilters.is_active__eq = servantFilters.is_active__eq === "active" ? "1" : "0";
-  }
-  const servantSort = sortBy ? SERVANT_SORT_FIELD[sortBy] : undefined;
-
-  const {
-    items: servants,
-    setItems: setServants,
-    meta,
-    isLoading,
-    refresh,
-  } = useServerList<AdminServant>({
-    fetcher: getServantsPaginated,
-    params: {
-      page,
-      perPage,
-      search,
-      sort: servantSort && sortOrder ? { field: servantSort, dir: sortOrder } : null,
-      filters: servantFilters,
-    },
-    initialData: initialServants,
-    initialMeta,
-  });
-
-  const filterFields: FilterField[] = useMemo(() => [
+  const filterFields: FilterField[] = [
     { id: "name", label: "Nom", type: "text" },
     { id: "email", label: "Email", type: "text" },
-    {
-      id: "role",
-      label: "Département",
-      type: "select",
-      options: roleNames.map((role) => ({ value: role, label: role })),
-    },
+    { id: "role", label: "Département", type: "select", options: roleNames.map((role) => ({ value: role, label: role })) },
     {
       id: "is_active",
       label: "Statut",
@@ -136,50 +72,9 @@ export function UsersManager({
         { value: "suspended", label: "Suspendu" },
       ],
     },
-  ], [roleNames]);
+  ];
 
-  const clearAllFilters = () => {
-    setActiveFilters([]);
-    setSearch("");
-    setPage(1);
-  };
-
-  const handleSort = (column: "name" | "roles" | "is_active") => {
-    setPage(1);
-    if (sortBy !== column) {
-      setSortBy(column);
-      setSortOrder("asc");
-    } else {
-      if (sortOrder === "asc") {
-        setSortOrder("desc");
-      } else if (sortOrder === "desc") {
-        setSortBy(null);
-        setSortOrder(null);
-      } else {
-        setSortOrder("asc");
-      }
-    }
-  };
-
-  const renderSortChevron = (column: "name" | "roles" | "is_active") => {
-    if (sortBy !== column) {
-      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
-    }
-    if (sortOrder === "asc") {
-      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
-    }
-    if (sortOrder === "desc") {
-      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
-    }
-    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
-  };
-
-  // The API already returns the filtered + sorted page; render it directly.
-  const paged = servants;
-  const sorted = servants;
-  const total = meta.total;
-  const pageCount = Math.max(1, meta.last_page);
-  const currentPage = meta.current_page;
+  const patchForm = (patch: Partial<FormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
   const openCreate = () => {
     setEditing(null);
@@ -190,19 +85,10 @@ export function UsersManager({
 
   const openEdit = (servant: AdminServant) => {
     setEditing(servant);
-    setForm({
-      name: servant.name,
-      email: servant.email,
-      password: "",
-      is_active: servant.is_active,
-      roles: servant.roles,
-    });
+    setForm({ name: servant.name, email: servant.email, password: "", is_active: servant.is_active, roles: servant.roles });
     setStatus(null);
     setModalOpen(true);
   };
-
-  const patchForm = (patch: Partial<FormState>) =>
-    setForm((prev) => ({ ...prev, ...patch }));
 
   const handleSubmit = () => {
     if (!form.name.trim() || !form.email.trim()) {
@@ -224,10 +110,8 @@ export function UsersManager({
             roles: form.roles,
             ...(form.password.trim() ? { password: form.password.trim() } : {}),
           });
-          setServants((prev) =>
-            prev.map((s) => (s.id === editing.id ? res.data : s))
-          );
-          refresh();
+          setServants((prev) => prev.map((s) => (s.id === editing.id ? res.data : s)));
+          table.refresh();
           setStatus({ type: "success", message: "Serviteur mis à jour." });
         } else {
           const res = await createServant({
@@ -238,425 +122,262 @@ export function UsersManager({
             roles: form.roles,
           });
           setServants((prev) => [...prev, res.data]);
-          refresh();
+          table.refresh();
           setStatus({ type: "success", message: "Serviteur ajouté." });
         }
         setModalOpen(false);
       } catch (err) {
-        setStatus({
-          type: "error",
-          message: (err as Error).message || "Opération impossible.",
-        });
+        setStatus({ type: "error", message: (err as Error).message || "Opération impossible." });
       }
     });
   };
 
   const handleToggleActive = (servant: AdminServant) => {
     const next = !servant.is_active;
-    // optimistic
-    setServants((prev) =>
-      prev.map((s) => (s.id === servant.id ? { ...s, is_active: next } : s))
-    );
+    setServants((prev) => prev.map((s) => (s.id === servant.id ? { ...s, is_active: next } : s)));
     startTransition(async () => {
       try {
         const res = await updateServant(servant.id, { is_active: next });
-        setServants((prev) =>
-          prev.map((s) => (s.id === servant.id ? res.data : s))
-        );
-        refresh();
-        setStatus({
-          type: "success",
-          message: next ? "Accès réactivé." : "Accès suspendu.",
-        });
+        setServants((prev) => prev.map((s) => (s.id === servant.id ? res.data : s)));
+        table.refresh();
+        setStatus({ type: "success", message: next ? "Accès réactivé." : "Accès suspendu." });
       } catch (err) {
-        setServants((prev) =>
-          prev.map((s) => (s.id === servant.id ? servant : s))
-        );
-        setStatus({
-          type: "error",
-          message: (err as Error).message || "Impossible de changer le statut.",
-        });
+        setServants((prev) => prev.map((s) => (s.id === servant.id ? servant : s)));
+        setStatus({ type: "error", message: (err as Error).message || "Impossible de changer le statut." });
       }
     });
   };
 
-  const handleDelete = (servant: AdminServant) => {
-    if (!confirm(`Supprimer définitivement le compte de « ${servant.name} » ?`)) {
-      return;
-    }
+  const confirmDelete = () => {
+    const servant = deleteTarget;
+    if (!servant) return;
+    setDeleteTarget(null);
     setServants((prev) => prev.filter((s) => s.id !== servant.id));
     startTransition(async () => {
       try {
         await deleteServant(servant.id);
-        refresh();
+        table.refresh();
         setStatus({ type: "success", message: "Serviteur supprimé." });
       } catch (err) {
-        setServants((prev) =>
-          [...prev, servant].sort((a, b) => a.name.localeCompare(b.name))
-        );
-        setStatus({
-          type: "error",
-          message: (err as Error).message || "Suppression impossible.",
-        });
+        setServants((prev) => [...prev, servant].sort((a, b) => a.name.localeCompare(b.name)));
+        setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
       }
     });
   };
 
-  const activeCount = servants.filter((s) => s.is_active).length;
+  const columns: Column<AdminServant>[] = [
+    {
+      id: "name",
+      header: "Serviteur",
+      sortable: true,
+      sortValue: (s) => s.name,
+      cell: (s) => (
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-sm font-bold text-indigo">
+            {s.name.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <p className="flex items-center gap-1.5 font-semibold">
+              {s.name}
+              {s.id === currentUserId && (
+                <span className="rounded-full bg-gold/15 px-1.5 py-0.5 text-[9px] font-bold text-gold-dark uppercase">Vous</span>
+              )}
+            </p>
+            <p className="flex items-center gap-1 text-[11px] text-faint">
+              <Mail className="size-3" />
+              {s.email}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "roles",
+      header: "Départements",
+      sortable: true,
+      sortValue: (s) => s.roles.join(", "),
+      cell: (s) => (
+        <div className="flex flex-wrap gap-1.5">
+          {s.roles.length === 0 && <span className="text-xs italic text-faint">Aucun</span>}
+          {s.roles.map((role) => {
+            const style = groupStyle(role);
+            return (
+              <span
+                key={role}
+                className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset", style.bg, style.text, style.ring)}
+              >
+                {role === "Super Admin" && <ShieldCheck className="size-3" />}
+                <span className={cn("size-1.5 rounded-full", style.dot)} />
+                {role}
+              </span>
+            );
+          })}
+        </div>
+      ),
+    },
+    {
+      id: "is_active",
+      header: "Accès",
+      sortable: true,
+      sortValue: (s) => (s.is_active ? "active" : "inactive"),
+      cell: (s) => (
+        <div className="flex items-center gap-2.5">
+          <Switch
+            checked={s.is_active}
+            disabled={s.id === currentUserId || isPending}
+            onCheckedChange={() => handleToggleActive(s)}
+            label={`Accès de ${s.name}`}
+          />
+          <span className={cn("text-[11px] font-bold", s.is_active ? "text-online" : "text-faint")}>
+            {s.is_active ? "Actif" : "Suspendu"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      cell: (s) => {
+        const isSelf = s.id === currentUserId;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <button onClick={() => openEdit(s)} className="cursor-pointer rounded-lg p-2 text-faint transition hover:bg-cream hover:text-indigo" title="Modifier">
+              <Pencil className="size-4" />
+            </button>
+            <button
+              onClick={() => setDeleteTarget(s)}
+              disabled={isSelf}
+              className="cursor-pointer rounded-lg p-2 text-faint transition hover:bg-live/10 hover:text-live disabled:cursor-not-allowed disabled:opacity-30"
+              title={isSelf ? "Vous ne pouvez pas vous supprimer" : "Supprimer"}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const table = useServerDataTable<AdminServant>({
+    fetcher: getServantsPaginated,
+    initialData: initialServants,
+    initialMeta,
+    initialPerPage: USERS_PER_PAGE,
+    sortFieldMap: SERVANT_SORT_FIELD,
+    buildFilters: (filters) => {
+      const f = { ...serializeFiltersForQueryMaster(filters) };
+      // The "Statut" <select> ships "active"/"suspended" — map to 1/0.
+      if (f.is_active__eq) f.is_active__eq = f.is_active__eq === "active" ? "1" : "0";
+      return f;
+    },
+  });
+  const setServants = table.setItems;
 
   return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up">
-      {/* Header */}
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
-            Serviteurs
-          </span>
-          <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
-            Comptes &amp; Accès
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {total}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-body">
-            {activeCount} actif{activeCount > 1 ? "s" : ""} · gérez les serviteurs et leurs
-            départements.
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-indigo px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-mid"
-        >
-          <Plus className="size-4" />
-          Nouveau serviteur
-        </button>
-      </header>
+    <PageShell>
+      <PageHeader
+        eyebrow="Serviteurs"
+        title="Comptes & Accès"
+        subtitle={`${table.total} compte${table.total > 1 ? "s" : ""} · gérez les serviteurs et leurs départements.`}
+        actions={
+          <Button icon={<Plus className="size-4" />} onClick={openCreate}>
+            Nouveau serviteur
+          </Button>
+        }
+      />
 
-      {status && (
-        <div
-          className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
-            status.type === "success"
-              ? "border-online/20 bg-online/5 text-body-strong"
-              : "border-live/20 bg-live/5 text-live"
-          )}
-        >
-          {status.type === "success" ? (
-            <CheckCircle className="size-5 shrink-0 text-online" />
-          ) : (
-            <AlertCircle className="size-5 shrink-0 text-live" />
-          )}
-          <p className="font-semibold">{status.message}</p>
-        </div>
-      )}
+      <StatusBanner status={status} className="mb-6" />
 
-      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
-      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
-        <div className="flex flex-1 items-center gap-3 flex-wrap">
-          {/* Main search bar */}
-          <div className="flex flex-1 min-w-[220px] max-w-sm items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3.5 py-2">
-            <Search className="size-4 text-faint" />
+      <DataFilters
+        search={table.search}
+        onSearch={table.setSearch}
+        placeholder="Rechercher par nom ou email…"
+        fields={filterFields}
+        filters={table.filters}
+        onFilters={table.setFilters}
+        onReset={table.resetFilters}
+      />
+
+      <DataTable
+        columns={columns}
+        rows={table.view}
+        getKey={(s) => s.id}
+        sortBy={table.sortBy}
+        sortDir={table.sortDir}
+        onSort={table.toggleSort}
+        empty={
+          <div className="flex flex-col items-center gap-3 py-6">
+            <UsersIcon className="size-10 text-gold/40" />
+            <p className="text-sm font-semibold text-body-strong">Aucun serviteur trouvé</p>
+          </div>
+        }
+        pagination={{
+          page: table.page,
+          pageCount: table.pageCount,
+          total: table.total,
+          perPage: table.perPage,
+          onPageChange: table.setPage,
+          onPerPageChange: (n) => {
+            table.setPerPage(n);
+            table.setPage(1);
+          },
+          itemLabel: "serviteurs",
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+        title="Supprimer le serviteur ?"
+        message={`Le compte de « ${deleteTarget?.name ?? ""} » sera définitivement supprimé.`}
+        confirmLabel="Supprimer"
+        loading={isPending}
+        onConfirm={confirmDelete}
+      />
+
+      <Modal open={modalOpen} onOpenChange={setModalOpen} title={editing ? "Modifier le serviteur" : "Nouveau serviteur"}>
+        <div className="space-y-5 px-6 py-6">
+          <Field label="Nom complet">
+            <input type="text" value={form.name} onChange={(e) => patchForm({ name: e.target.value })} placeholder="Ex : Frère Jean Koffi" className={inputClass} />
+          </Field>
+          <Field label="Adresse email">
+            <input type="email" value={form.email} onChange={(e) => patchForm({ email: e.target.value })} placeholder="serviteur@mfm-ficgayo.ci" className={inputClass} />
+          </Field>
+          <Field label="Mot de passe" hint={editing ? "Laisser vide pour conserver l'actuel." : undefined}>
             <input
-              type="text"
-              placeholder="Rechercher par nom ou email..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+              type="password"
+              value={form.password}
+              onChange={(e) => patchForm({ password: e.target.value })}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              className={inputClass}
             />
-          </div>
+          </Field>
+          <Field label="Départements">
+            <MultiSelect options={roleNames} selected={form.roles} onChange={(roles) => patchForm({ roles })} />
+          </Field>
 
-          {/* Reusable Query Builder containing inline chips & sliders filter button */}
-          <QueryBuilder
-            fields={filterFields}
-            activeFilters={activeFilters}
-            onChange={(nextFilters) => {
-              setActiveFilters(nextFilters);
-              setPage(1);
-            }}
-          />
+          <div className="flex items-center justify-between rounded-xl border border-[rgba(40,25,80,0.1)] bg-cream/50 px-4 py-3">
+            <div>
+              <p className="text-sm font-bold text-indigo">Accès autorisé</p>
+              <p className="text-xs text-body">Désactivez pour suspendre la connexion de ce serviteur.</p>
+            </div>
+            <Switch checked={form.is_active} onCheckedChange={(v) => patchForm({ is_active: v })} label="Accès autorisé" />
+          </div>
         </div>
 
-        {activeFilters.length > 0 && (
-          <button
-            onClick={clearAllFilters}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
-          >
-            <X className="size-3.5" />
-            Effacer les filtres actifs
-          </button>
-        )}
-      </div>
-
-      {/* Table (Set z-10 relative for correct stacking context) */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
-          <table className="w-full text-left text-sm text-indigo">
-            <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
-              <tr>
-                <th
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("name")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Serviteur</span>
-                    {renderSortChevron("name")}
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("roles")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Départements</span>
-                    {renderSortChevron("roles")}
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("is_active")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Accès</span>
-                    {renderSortChevron("is_active")}
-                  </div>
-                </th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {paged.map((servant) => {
-                const isSelf = servant.id === currentUserId;
-                return (
-                  <tr key={servant.id} className="transition-colors hover:bg-cream/40">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-indigo/5 text-sm font-bold text-indigo">
-                          {servant.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="flex items-center gap-1.5 font-semibold">
-                            {servant.name}
-                            {isSelf && (
-                              <span className="rounded-full bg-gold/15 px-1.5 py-0.5 text-[9px] font-bold text-gold-dark uppercase">
-                                Vous
-                              </span>
-                            )}
-                          </p>
-                          <p className="flex items-center gap-1 text-[11px] text-faint">
-                            <Mail className="size-3" />
-                            {servant.email}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {servant.roles.length === 0 && (
-                          <span className="text-xs italic text-faint">Aucun</span>
-                        )}
-                        {servant.roles.map((role) => {
-                          const style = groupStyle(role);
-                          return (
-                            <span
-                              key={role}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset",
-                                style.bg,
-                                style.text,
-                                style.ring
-                              )}
-                            >
-                              {role === "Super Admin" && (
-                                <ShieldCheck className="size-3" />
-                              )}
-                              <span className={cn("size-1.5 rounded-full", style.dot)} />
-                              {role}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2.5">
-                        <Switch
-                          checked={servant.is_active}
-                          disabled={isSelf || isPending}
-                          onCheckedChange={() => handleToggleActive(servant)}
-                          label={`Accès de ${servant.name}`}
-                        />
-                        <span
-                          className={cn(
-                            "text-[11px] font-bold",
-                            servant.is_active ? "text-online" : "text-faint"
-                          )}
-                        >
-                          {servant.is_active ? "Actif" : "Suspendu"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(servant)}
-                          className="cursor-pointer rounded-lg p-2 text-faint transition hover:bg-cream hover:text-indigo"
-                          title="Modifier"
-                        >
-                          <Pencil className="size-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(servant)}
-                          disabled={isSelf}
-                          className="cursor-pointer rounded-lg p-2 text-faint transition hover:bg-live/10 hover:text-live disabled:cursor-not-allowed disabled:opacity-30"
-                          title={isSelf ? "Vous ne pouvez pas vous supprimer" : "Supprimer"}
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {sorted.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <UsersIcon className="size-10 text-gold/40" />
-                      <p className="text-sm font-semibold text-body-strong">
-                        Aucun serviteur trouvé
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setModalOpen(false)}>
+            Annuler
+          </Button>
+          <Button type="button" size="sm" loading={isPending} onClick={handleSubmit}>
+            {editing ? "Enregistrer" : "Créer le serviteur"}
+          </Button>
         </div>
-        {sorted.length > 0 && (
-          <Pagination
-            page={currentPage}
-            pageCount={pageCount}
-            total={total}
-            perPage={perPage}
-            onPageChange={setPage}
-            onPerPageChange={(n) => {
-              setPerPage(n);
-              setPage(1);
-            }}
-            itemLabel="serviteurs"
-          />
-        )}
-      </div>
-
-      {/* Add / edit modal */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent
-          showCloseButton
-          className="w-[95vw] max-w-lg rounded-2xl bg-white p-0 gap-0 border-0 outline-none max-h-[92vh] overflow-y-auto"
-        >
-          <div className="border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
-            <h2 className="font-display text-lg font-bold text-indigo italic">
-              {editing ? "Modifier le serviteur" : "Nouveau serviteur"}
-            </h2>
-          </div>
-
-          <div className="space-y-5 px-6 py-6">
-            <label className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
-                Nom complet
-              </span>
-              <input
-                type="text"
-                value={form.name}
-                onChange={(e) => patchForm({ name: e.target.value })}
-                placeholder="Ex : Frère Jean Koffi"
-                className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
-                Adresse email
-              </span>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => patchForm({ email: e.target.value })}
-                placeholder="serviteur@mfm-ficgayo.ci"
-                className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
-                Mot de passe{" "}
-                {editing && (
-                  <span className="font-normal normal-case text-faint">
-                    (laisser vide pour conserver)
-                  </span>
-                )}
-              </span>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => patchForm({ password: e.target.value })}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
-                Départements
-              </span>
-              <MultiSelect
-                options={roleNames}
-                selected={form.roles}
-                onChange={(roles) => patchForm({ roles })}
-              />
-            </div>
-
-            <div className="flex items-center justify-between rounded-xl border border-[rgba(40,25,80,0.1)] bg-cream/50 px-4 py-3">
-              <div>
-                <p className="text-sm font-bold text-indigo">Accès autorisé</p>
-                <p className="text-xs text-body">
-                  Désactivez pour suspendre la connexion de ce serviteur.
-                </p>
-              </div>
-              <Switch
-                checked={form.is_active}
-                onCheckedChange={(v) => patchForm({ is_active: v })}
-                label="Accès autorisé"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
-            <button
-              onClick={() => setModalOpen(false)}
-              className="cursor-pointer rounded-xl px-4 py-2.5 text-xs font-bold text-body transition hover:bg-cream"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isPending}
-              className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo shadow-md transition hover:brightness-105 disabled:opacity-50"
-            >
-              {isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Save className="size-3.5" />
-              )}
-              {editing ? "Enregistrer" : "Créer le serviteur"}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+      </Modal>
+    </PageShell>
   );
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Enums\VideoSourceType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\PastLiveRequest;
 use App\Http\Resources\V1\PastLiveResource;
@@ -35,9 +36,44 @@ class PastLiveController extends Controller
 
     public function store(PastLiveRequest $request): JsonResponse
     {
-        $live = PastLive::create($this->payload($request));
+        // Admin-created broadcasts are manual uploads (badge "Upload"); live
+        // captures are created by the mfm:archive-live command as "live_archive".
+        $live = PastLive::create([
+            ...$this->payload($request),
+            'source_type' => VideoSourceType::Upload,
+        ]);
 
         return (new PastLiveResource($live->load('preacher')))->response()->setStatusCode(201);
+    }
+
+    /**
+     * Engagement metrics for the broadcast's "Impressions" dashboard: unique
+     * views, total chat volume, the snapshotted reaction tallies, and the chat
+     * retention curve bucketed in 5-minute slices of the broadcast timeline.
+     */
+    public function analytics(PastLive $pastLive): JsonResponse
+    {
+        $offsets = $pastLive->liveChatMessages()
+            ->where('is_moderated', false)
+            ->pluck('time_offset_seconds');
+
+        $timeline = $offsets
+            ->groupBy(fn ($seconds) => intdiv((int) $seconds, 300))
+            ->map(fn ($group, $bucket) => [
+                'minute' => (int) $bucket * 5,
+                'count' => $group->count(),
+            ])
+            ->sortBy('minute')
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'views_count' => $pastLive->views_count,
+                'messages_count' => $offsets->count(),
+                'reactions' => $pastLive->reaction_stats ?? [],
+                'chat_timeline' => $timeline,
+            ],
+        ]);
     }
 
     public function show(PastLive $pastLive): PastLiveResource

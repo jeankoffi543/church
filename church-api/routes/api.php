@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
+use App\Http\Controllers\Api\V1\Webhooks;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -59,8 +60,31 @@ Route::prefix('v1')->group(function (): void {
         Route::get('past-lives', [Public\PastLiveController::class, 'index'])->name('past-lives.index');
         Route::get('past-lives/latest', [Public\PastLiveController::class, 'latest'])->name('past-lives.latest');
         Route::get('past-lives/{pastLive}/stream', [Public\PastLiveController::class, 'stream'])->name('past-lives.stream');
+        Route::post('past-lives/{pastLive}/view', [Public\PastLiveController::class, 'recordView'])->name('past-lives.view');
         Route::get('past-lives/{pastLive:slug}', [Public\PastLiveController::class, 'show'])->name('past-lives.show');
+
+        // Dons (Paystack) — open a transaction & poll its accounting status.
+        Route::post('donations/initialize', [Public\DonationController::class, 'initialize'])->name('donations.initialize');
+        Route::get('donations/{reference}/status', [Public\DonationController::class, 'status'])->name('donations.status');
+
+        // Live engine (Reverb realtime) — audience, chat & reactions.
+        Route::get('live/chat', [Public\LiveController::class, 'messages'])->name('live.messages');
+        Route::post('live/chat', [Public\LiveController::class, 'chat'])->name('live.chat');
+        Route::post('live/react', [Public\LiveController::class, 'react'])->name('live.react');
+        Route::post('live/presence', [Public\LiveController::class, 'presence'])->name('live.presence');
+        Route::post('live/leave', [Public\LiveController::class, 'leave'])->name('live.leave');
+        // Time-synced chat replay for an archived broadcast.
+        Route::get('past-lives/{pastLive:slug}/chat', [Public\LiveController::class, 'archivedChat'])->name('past-lives.chat');
+
+        // Self-hosted RTMP→HLS: Nginx `on_publish` stream-key authorization, and
+        // `on_publish_done` end-of-stream auto-archival.
+        Route::post('rtmp/auth', [Public\RtmpController::class, 'authorizePublish'])->name('rtmp.auth');
+        Route::post('rtmp/done', [Public\RtmpController::class, 'publishDone'])->name('rtmp.done');
+        Route::post('rtmp/recorded', [Public\RtmpController::class, 'recorded'])->name('rtmp.recorded');
     });
+
+    // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────
+    Route::post('webhooks/paystack', [Webhooks\PaystackWebhookController::class, 'handle'])->name('webhooks.paystack');
 
     // ── Admin authentication ──────────────────────────────────────────
     Route::prefix('admin')->name('api.v1.admin.')->group(function (): void {
@@ -105,6 +129,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('albums', [Admin\AlbumController::class, 'index'])->name('albums.index');
                 Route::get('albums/{album}', [Admin\AlbumController::class, 'show'])->name('albums.show');
                 Route::get('past-lives', [Admin\PastLiveController::class, 'index'])->name('past-lives.index');
+                Route::get('past-lives/{pastLive}/analytics', [Admin\PastLiveController::class, 'analytics'])->name('past-lives.analytics');
                 Route::get('past-lives/{pastLive}', [Admin\PastLiveController::class, 'show'])->name('past-lives.show');
             });
             Route::middleware('permission:manage_gallery')->group(function (): void {
@@ -119,6 +144,18 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('past-lives', [Admin\PastLiveController::class, 'store'])->name('past-lives.store');
                 Route::match(['put', 'patch'], 'past-lives/{pastLive}', [Admin\PastLiveController::class, 'update'])->name('past-lives.update');
                 Route::delete('past-lives/{pastLive}', [Admin\PastLiveController::class, 'destroy'])->name('past-lives.destroy');
+            });
+
+            // Finances — livre de caisse des dons + journal des webhooks.
+            Route::middleware('permission:view_finances')->group(function (): void {
+                Route::get('donations', [Admin\DonationController::class, 'index'])->name('donations.index');
+                Route::get('donations/stats', [Admin\DonationController::class, 'stats'])->name('donations.stats');
+                Route::get('donations/export', [Admin\DonationController::class, 'export'])->name('donations.export');
+                Route::post('donations/sync', [Admin\DonationController::class, 'sync'])->name('donations.sync');
+                Route::patch('donations/{donation}/status', [Admin\DonationController::class, 'updateStatus'])->name('donations.status');
+
+                Route::get('webhook-events', [Admin\WebhookEventController::class, 'index'])->name('webhook-events.index');
+                Route::post('webhook-events/{webhookEvent}/replay', [Admin\WebhookEventController::class, 'replay'])->name('webhook-events.replay');
             });
 
             // Agenda / événements

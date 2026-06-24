@@ -28,6 +28,7 @@ class PastLiveFactory extends Factory
             'video_path' => null,
             'thumbnail_path' => 'https://images.unsplash.com/photo-1507692049790-de58290a4334?w=1200&q=80',
             'series_name' => fake()->randomElement(['Vivre par la foi', 'Combats spirituels', 'Intimité', null]),
+            'source_type' => fake()->randomElement(['live_archive', 'upload']),
             'preacher_id' => User::factory(),
             'views_count' => fake()->numberBetween(0, 5000),
             'duration' => fake()->numberBetween(28, 95).' min',

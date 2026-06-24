@@ -29,6 +29,7 @@ class DatabaseSeeder extends Seeder
             EventSeeder::class,
             HomeGroupSeeder::class,
             GallerySeeder::class,
+            DonationSeeder::class,
             DemoSeeder::class,
             BranchSeeder::class,
             PrayerAndContactSeeder::class,

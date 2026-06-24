@@ -7,12 +7,8 @@ export const metadata: Metadata = {
   description: "Géolocalisation et informations de nos différents campus et églises de quartier.",
 };
 
-export default async function BranchesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ search?: string }>;
-}) {
-  const { search } = await searchParams;
-  const branches = await getBranches({ search });
-  return <BranchesSplitScreen initialBranches={branches} searchParam={search} />;
+export default async function BranchesPage() {
+  // The split-screen view filters client-side, so load the full set once.
+  const branches = await getBranches();
+  return <BranchesSplitScreen initialBranches={branches} />;
 }

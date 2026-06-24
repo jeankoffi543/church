@@ -1,20 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import {
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  Save,
-  ShieldCheck,
-  Plus,
-  Pencil,
-  Trash2,
-  Users,
-  Lock,
-  ArrowLeftRight,
-  Info,
-} from "lucide-react";
+import { CheckCircle, Save, ShieldCheck, Plus, Pencil, Trash2, Users, Lock, ArrowLeftRight, Info } from "lucide-react";
 
 import type { AdminRole, AdminPermissionCategory } from "@/lib/admin-api";
 import {
@@ -24,9 +11,14 @@ import {
   syncRolePermissions,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { groupStyle } from "../_components/group-style";
 import { Pagination } from "../_components/pagination";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { Button } from "@/components/admin/ui/button";
+import { Field, inputClass } from "@/components/admin/ui/field";
+import { Modal } from "@/components/admin/ui/modal";
+import { ConfirmDialog } from "@/components/admin/ui/confirm-dialog";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
 const SUPER_ADMIN = "Super Admin";
 
@@ -55,8 +47,6 @@ const SHORT_LABELS: Record<string, string> = {
   validate_ministry_applications: "Candidatures",
 };
 
-type Feedback = { type: "success" | "error"; message: string } | null;
-
 export function RolesManager({
   initialRoles,
   catalog,
@@ -66,7 +56,8 @@ export function RolesManager({
 }) {
   const [roles, setRoles] = useState<AdminRole[]>(initialRoles);
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<Feedback>(null);
+  const [status, setStatus] = useState<Status>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminRole | null>(null);
 
   // Matrix working copy: roleId -> Set<permissionName>. Tracks unsaved edits.
   const [matrix, setMatrix] = useState<Record<number, Set<string>>>(() =>
@@ -215,10 +206,10 @@ export function RolesManager({
     });
   };
 
-  const handleDelete = (role: AdminRole) => {
-    if (!confirm(`Supprimer le groupe « ${role.name} » ? Les membres seront détachés.`)) {
-      return;
-    }
+  const confirmDelete = () => {
+    const role = deleteTarget;
+    if (!role) return;
+    setDeleteTarget(null);
     startTransition(async () => {
       try {
         await deleteRole(role.id);
@@ -243,49 +234,19 @@ export function RolesManager({
   const totalPermissions = flatPermissions.length;
 
   return (
-    <div className="mx-auto max-w-[1180px] animate-fade-up">
-      {/* Header */}
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
-            Sécurité &amp; accès
-          </span>
-          <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
-            Groupes &amp; Départements
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {roles.length}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-body">
-            Définissez les départements de l&apos;église et distribuez leurs privilèges.
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-indigo px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-mid"
-        >
-          <Plus className="size-4" />
-          Nouveau groupe
-        </button>
-      </header>
+    <PageShell>
+      <PageHeader
+        eyebrow="Sécurité & accès"
+        title="Groupes & Départements"
+        subtitle={`${roles.length} groupe${roles.length > 1 ? "s" : ""} · définissez les départements de l'église et distribuez leurs privilèges.`}
+        actions={
+          <Button icon={<Plus className="size-4" />} onClick={openCreate}>
+            Nouveau groupe
+          </Button>
+        }
+      />
 
-      {status && (
-        <div
-          className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
-            status.type === "success"
-              ? "border-online/20 bg-online/5 text-body-strong"
-              : "border-live/20 bg-live/5 text-live"
-          )}
-        >
-          {status.type === "success" ? (
-            <CheckCircle className="size-5 shrink-0 text-online" />
-          ) : (
-            <AlertCircle className="size-5 shrink-0 text-live" />
-          )}
-          <p className="font-semibold">{status.message}</p>
-        </div>
-      )}
+      <StatusBanner status={status} className="mb-6" />
 
       {/* Groups summary */}
       <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -330,7 +291,7 @@ export function RolesManager({
                     <Pencil className="size-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(role)}
+                    onClick={() => setDeleteTarget(role)}
                     className="cursor-pointer rounded-lg p-2 text-faint transition hover:bg-live/10 hover:text-live"
                     title="Supprimer"
                   >
@@ -376,18 +337,9 @@ export function RolesManager({
               Défilez horizontalement pour voir toutes les catégories
             </span>
           </div>
-          <button
-            onClick={handleSaveMatrix}
-            disabled={isPending || !dirty}
-            className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo shadow-md transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Save className="size-3.5" />
-            )}
+          <Button size="sm" icon={<Save className="size-3.5" />} loading={isPending} disabled={!dirty} onClick={handleSaveMatrix}>
             Enregistrer les privilèges
-          </button>
+          </Button>
         </div>
 
         <div className="relative max-h-[68vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[rgba(40,25,80,0.22)] hover:[&::-webkit-scrollbar-thumb]:bg-[rgba(40,25,80,0.35)] [&::-webkit-scrollbar-track]:bg-cream/40 [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5">
@@ -498,57 +450,43 @@ export function RolesManager({
         </div>
       </div>
 
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+        title="Supprimer le groupe ?"
+        message={`Le groupe « ${deleteTarget?.name ?? ""} » sera supprimé et ses membres détachés.`}
+        confirmLabel="Supprimer"
+        loading={isPending}
+        onConfirm={confirmDelete}
+      />
+
       {/* Create / rename modal */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent
-          showCloseButton
-          className="w-[95vw] max-w-md rounded-2xl bg-white p-0 gap-0 border-0 outline-none"
-        >
-          <div className="border-b border-[rgba(40,25,80,0.08)] px-6 py-4">
-            <h2 className="font-display text-lg font-bold text-indigo italic">
-              {editingRole ? "Renommer le groupe" : "Nouveau groupe"}
-            </h2>
-          </div>
-          <div className="px-6 py-6">
-            <label className="flex flex-col gap-2">
-              <span className="text-xs font-bold text-body-strong uppercase tracking-wide">
-                Nom du groupe / département
-              </span>
-              <input
-                type="text"
-                value={roleName}
-                onChange={(e) => setRoleName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSubmitRole();
-                }}
-                placeholder="Ex : Huissier, Louange, Protocole…"
-                autoFocus
-                className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-              />
-            </label>
-          </div>
-          <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
-            <button
-              onClick={() => setModalOpen(false)}
-              className="cursor-pointer rounded-xl px-4 py-2.5 text-xs font-bold text-body transition hover:bg-cream"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handleSubmitRole}
-              disabled={isPending || !roleName.trim()}
-              className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo shadow-md transition hover:brightness-105 disabled:opacity-50"
-            >
-              {isPending ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Save className="size-3.5" />
-              )}
-              {editingRole ? "Renommer" : "Créer le groupe"}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <Modal open={modalOpen} onOpenChange={setModalOpen} title={editingRole ? "Renommer le groupe" : "Nouveau groupe"} size="sm">
+        <div className="px-6 py-6">
+          <Field label="Nom du groupe / département">
+            <input
+              type="text"
+              value={roleName}
+              onChange={(e) => setRoleName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmitRole();
+              }}
+              placeholder="Ex : Huissier, Louange, Protocole…"
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setModalOpen(false)}>
+            Annuler
+          </Button>
+          <Button type="button" size="sm" icon={<Save className="size-3.5" />} loading={isPending} disabled={!roleName.trim()} onClick={handleSubmitRole}>
+            {editingRole ? "Renommer" : "Créer le groupe"}
+          </Button>
+        </div>
+      </Modal>
+    </PageShell>
   );
 }
