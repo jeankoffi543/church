@@ -102,6 +102,7 @@ export default async function PresentationPage() {
               {/* Photo / Initials badge fallback */}
               {pastor.preacher_photo_path ? (
                 <div className="relative size-14 shrink-0 overflow-hidden rounded-full border border-[rgba(40,25,80,0.1)] shadow-md">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic remote photo URL from API; next/image needs remotePatterns config */}
                   <img
                     src={pastor.preacher_photo_path}
                     alt={pastor.preacher_name || "Prédicateur"}

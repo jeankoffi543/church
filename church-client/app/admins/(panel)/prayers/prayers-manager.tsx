@@ -4,13 +4,11 @@ import { useState, useTransition, useCallback, useEffect, useMemo } from "react"
 import {
   Loader2,
   CheckCircle,
-  AlertCircle,
   Trash2,
   MessageCircle,
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
-  SlidersHorizontal,
   Search,
   X,
   Save,
@@ -32,6 +30,8 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Pagination } from "../_components/pagination";
 import { QueryBuilder } from "@/components/admin/query-builder";
 import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
 /* ── Constants ───────────────────────────────────────────────────── */
 
@@ -121,10 +121,7 @@ export function PrayersManager({
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
+  const [status, setStatus] = useState<Status>(null);
 
   // Panel-local form state
   const [panelNotes, setPanelNotes] = useState("");
@@ -742,53 +739,14 @@ export function PrayersManager({
   /* ── Render ───────────────────────────────────────────────── */
 
   return (
-    <div className="relative mx-auto max-w-[1100px] animate-fade-up">
-      {/* ── Header ──────────────────────────────────────────── */}
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
-            Intercession
-          </span>
-          <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
-            Requêtes de Prière
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {prayers.length}
-              {newCount > 0 && (
-                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-live text-[10px] font-black text-white animate-pulse">
-                  {newCount}
-                </span>
-              )}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-body">
-            Gérez les demandes de prière, assignez les intercesseurs et suivez les exaucements.
-          </p>
-        </div>
-      </header>
+    <PageShell className="relative">
+      <PageHeader
+        eyebrow="Intercession"
+        title="Requêtes de Prière"
+        subtitle={`${prayers.length} requête${prayers.length > 1 ? "s" : ""}${newCount > 0 ? ` · ${newCount} nouvelle${newCount > 1 ? "s" : ""}` : ""} · assignez les intercesseurs et suivez les exaucements.`}
+      />
 
-      {/* ── Status feedback ─────────────────────────────────── */}
-      {status && (
-        <div
-          className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
-            status.type === "success"
-              ? "border-online/20 bg-online/5 text-body-strong"
-              : "border-live/20 bg-live/5 text-live",
-          )}
-        >
-          {status.type === "success" ? (
-            <CheckCircle className="size-5 shrink-0 text-online" />
-          ) : (
-            <AlertCircle className="size-5 shrink-0 text-live" />
-          )}
-          <div>
-            <p className="font-bold">
-              {status.type === "success" ? "Succès" : "Erreur"}
-            </p>
-            <p className="mt-0.5 text-xs text-body">{status.message}</p>
-          </div>
-        </div>
-      )}
+      <StatusBanner status={status} className="mb-6" />
 
       {/* Tabs */}
       <div className="mb-6 flex gap-2 border-b border-[rgba(40,25,80,0.08)] pb-px">
@@ -1574,6 +1532,6 @@ export function PrayersManager({
           </DialogContent>
         )}
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

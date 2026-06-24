@@ -58,6 +58,7 @@ export function PastoralTeamList({ title, intro, pastors }: PastoralTeamListProp
               {/* Photo or Initials Badge */}
               <div className="mb-4">
                 {pastor.photo_path ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- dynamic remote photo URL from API; next/image needs remotePatterns config
                   <img
                     src={pastor.photo_path}
                     alt={pastor.name}

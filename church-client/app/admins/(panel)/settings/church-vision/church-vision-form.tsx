@@ -16,8 +16,7 @@ import {
   HelpCircle,
   Users,
   Camera,
-  X,
-  Compass
+  X
 } from "lucide-react";
 import { updateAdminChurchVision, type AdminChurchVision, type AdminUserOption } from "@/lib/admin-api";
 import { Input } from "@/components/ui/input";
@@ -43,7 +42,7 @@ const CURATED_ICONS = [
 ];
 
 function IconPreview({ name, className }: { name: string; className?: string }) {
-  const IconComp = (Lucide as any)[name];
+  const IconComp = (Lucide as unknown as Record<string, React.ComponentType<{ className?: string }>>)[name];
   if (!IconComp) return <Lucide.HelpCircle className={className} />;
   return <IconComp className={className} />;
 }
@@ -743,6 +742,7 @@ export function ChurchVisionForm({
                             {/* Avatar visual preview circle */}
                             <div className="relative group/avatar size-11 shrink-0">
                               {hasAvatar ? (
+                                // eslint-disable-next-line @next/next/no-img-element -- dynamic remote/blob avatar URL; next/image needs remotePatterns + fixed dims and breaks blob previews
                                 <img
                                   src={finalAvatarUrl || ""}
                                   alt={pastor.name}

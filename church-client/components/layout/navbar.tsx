@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Home, Quote } from "lucide-react";
+import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Quote } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";

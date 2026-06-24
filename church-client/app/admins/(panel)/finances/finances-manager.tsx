@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Search, Download, Wallet, HandCoins, PiggyBank, TrendingUp, Loader2, RefreshCw, ShieldCheck, ShieldX, Webhook, ListChecks, RotateCw, CheckCircle, AlertCircle } from "lucide-react";
+import { Search, Download, Wallet, HandCoins, PiggyBank, TrendingUp, Loader2, RefreshCw, ShieldCheck, ShieldX, Webhook, ListChecks, RotateCw } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatFcfa } from "@/lib/data";
@@ -15,7 +15,11 @@ import {
   type AdminWebhookEvent,
   type DonationStatus,
 } from "@/lib/admin-api";
-import { Pagination } from "../_components/pagination";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { DataTable } from "@/components/admin/data/data-table";
+import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { Button } from "@/components/admin/ui/button";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
 const PURPOSE_LABELS: Record<string, string> = {
   dime: "Dîme",
@@ -56,24 +60,17 @@ export function FinancesManager({
   const [, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toast, setToast] = useState<Status>(null);
 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | DonationStatus>("");
   const [purpose, setPurpose] = useState("");
   const [year, setYear] = useState("");
   const [month, setMonth] = useState("");
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
   const [exporting, setExporting] = useState(false);
-
-  const [wPage, setWPage] = useState(1);
-  const [wPerPage, setWPerPage] = useState(10);
 
   const years = useMemo(() => uniq(donations.map((d) => yearOf(d.created_at))).sort((a, b) => b.localeCompare(a)), [donations]);
   const purposes = useMemo(() => uniq(donations.map((d) => d.purpose_key)), [donations]);
-
-  const resetPage = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setPage(1); };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -99,13 +96,78 @@ export function FinancesManager({
     };
   }, [filtered]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const donationColumns: Column<AdminDonation>[] = [
+    { id: "reference", header: "Référence", className: "font-mono text-xs font-semibold text-faint", cell: (d) => d.reference },
+    {
+      id: "donor",
+      header: "Donateur",
+      cell: (d) => (
+        <div>
+          <p className="font-semibold">{d.donor_name}</p>
+          <p className="text-xs text-faint">{d.donor_email}</p>
+        </div>
+      ),
+    },
+    {
+      id: "purpose",
+      header: "Affectation",
+      cell: (d) => <span className="rounded-md border border-gold/20 bg-gold/10 px-2.5 py-1 text-[11px] font-bold whitespace-nowrap text-gold-dark">{purposeLabel(d.purpose_key)}</span>,
+    },
+    { id: "amount", header: "Montant", align: "right", className: "font-bold whitespace-nowrap", cell: (d) => formatFcfa(d.amount) },
+    { id: "date", header: "Date", className: "font-mono text-xs whitespace-nowrap text-faint", cell: (d) => d.date_label },
+    {
+      id: "status",
+      header: "Statut",
+      cell: (d) => <span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap", STATUS_META[d.status].className)}>{STATUS_META[d.status].label}</span>,
+    },
+  ];
 
-  const wPageCount = Math.max(1, Math.ceil(webhooks.length / wPerPage));
-  const wCurrentPage = Math.min(wPage, wPageCount);
-  const wPaged = webhooks.slice((wCurrentPage - 1) * wPerPage, wCurrentPage * wPerPage);
+  const webhookColumns: Column<AdminWebhookEvent>[] = [
+    { id: "date", header: "Reçu le", className: "font-mono text-xs whitespace-nowrap text-faint", cell: (h) => h.date_label },
+    { id: "event", header: "Événement", className: "font-semibold whitespace-nowrap", cell: (h) => h.event ?? "—" },
+    { id: "reference", header: "Référence", className: "font-mono text-xs text-faint", cell: (h) => h.reference ?? "—" },
+    {
+      id: "signature",
+      header: "Signature",
+      cell: (h) =>
+        h.signature_valid ? (
+          <span className="inline-flex items-center gap-1 text-[12px] font-bold text-online"><ShieldCheck className="size-3.5" /> Valide</span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[12px] font-bold text-live"><ShieldX className="size-3.5" /> Invalide</span>
+        ),
+    },
+    {
+      id: "hstatus",
+      header: "Traitement",
+      cell: (h) => <span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap", HOOK_STATUS_META[h.status] ?? "bg-indigo/5 text-indigo")}>{h.status}</span>,
+    },
+    {
+      id: "action",
+      header: "Action",
+      align: "right",
+      cell: (h) => (
+        <button
+          onClick={() => replay(h)}
+          disabled={busyId === h.id}
+          title="Rejouer ce webhook"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(40,25,80,0.12)] px-3 py-1.5 text-[12px] font-bold text-indigo transition hover:border-gold hover:text-gold-dark disabled:opacity-50"
+        >
+          {busyId === h.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+          Rejouer
+        </button>
+      ),
+    },
+  ];
+
+  const dTable = useDataTable({ rows: filtered, columns: donationColumns });
+  const wTable = useDataTable({ rows: webhooks, columns: webhookColumns });
+
+  const resetPage =
+    <T,>(setter: (v: T) => void) =>
+    (v: T) => {
+      setter(v);
+      dTable.setPage(1);
+    };
 
   const refresh = async () => {
     const [d, w] = await Promise.all([getAdminDonations(), getAdminWebhookEvents()]);
@@ -113,8 +175,6 @@ export function FinancesManager({
     setWebhooks(w);
   };
 
-  // Pull missed transactions from Paystack (recovers gifts whose webhook never
-  // reached us — e.g. the tunnel/server was down).
   const handleSync = () => {
     setSyncing(true);
     setToast(null);
@@ -171,33 +231,26 @@ export function FinancesManager({
   };
 
   return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">Finances</span>
-          <h1 className="mt-1 font-display text-[34px] font-semibold text-indigo italic">Livre de caisse</h1>
-          <p className="mt-1 text-sm text-body">Suivi des dons, réconciliation Paystack et journal des webhooks.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button onClick={handleSync} disabled={syncing} title="Récupérer les transactions manquées depuis Paystack" className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_8px_22px_rgba(200,144,46,0.25)] transition hover:brightness-105 disabled:opacity-50">
-            {syncing ? <Loader2 className="size-4 animate-spin" /> : <RotateCw className="size-4" />}
-            Synchroniser Paystack
-          </button>
-          {tab === "donations" && (
-            <button onClick={handleExport} disabled={exporting} className="flex cursor-pointer items-center gap-2 rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-5 py-3 text-sm font-bold text-indigo shadow-sm transition hover:border-gold hover:text-gold-dark disabled:opacity-50">
-              {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-              Exporter (CSV)
-            </button>
-          )}
-        </div>
-      </header>
+    <PageShell>
+      <PageHeader
+        eyebrow="Finances"
+        title="Livre de caisse"
+        subtitle="Suivi des dons, réconciliation Paystack et journal des webhooks."
+        actions={
+          <>
+            <Button loading={syncing} icon={<RotateCw className="size-4" />} onClick={handleSync} title="Récupérer les transactions manquées depuis Paystack">
+              Synchroniser Paystack
+            </Button>
+            {tab === "donations" && (
+              <Button variant="secondary" loading={exporting} icon={<Download className="size-4" />} onClick={handleExport}>
+                Exporter (CSV)
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      {toast && (
-        <div className={cn("mb-6 flex items-start gap-3 rounded-xl border p-4 text-sm", toast.type === "success" ? "border-online/20 bg-online/5 text-body-strong" : "border-live/20 bg-live/5 text-live")}>
-          {toast.type === "success" ? <CheckCircle className="size-5 shrink-0 text-online" /> : <AlertCircle className="size-5 shrink-0 text-live" />}
-          <p className="font-semibold">{toast.message}</p>
-        </div>
-      )}
+      <StatusBanner status={toast} className="mb-6" />
 
       {/* Tabs */}
       <div className="mb-6 inline-flex rounded-xl border border-[rgba(40,25,80,0.1)] bg-white p-1">
@@ -227,99 +280,52 @@ export function FinancesManager({
             <Select value={year} onChange={resetPage(setYear)} options={[["", "Toutes années"], ...years.map((y) => [y, y] as [string, string])]} />
           </div>
 
-          <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-indigo">
-                <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
-                  <tr>
-                    <th className="px-6 py-4">Référence</th>
-                    <th className="px-6 py-4">Donateur</th>
-                    <th className="px-6 py-4">Affectation</th>
-                    <th className="px-6 py-4 text-right">Montant</th>
-                    <th className="px-6 py-4">Date</th>
-                    <th className="px-6 py-4">Statut</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-                  {paged.map((d) => (
-                    <tr key={d.id} className="hover:bg-cream/40 transition-colors">
-                      <td className="px-6 py-3 font-mono text-xs font-semibold text-faint">{d.reference}</td>
-                      <td className="px-6 py-3">
-                        <p className="font-semibold">{d.donor_name}</p>
-                        <p className="text-xs text-faint">{d.donor_email}</p>
-                      </td>
-                      <td className="px-6 py-3"><span className="rounded-md border border-gold/20 bg-gold/10 px-2.5 py-1 text-[11px] font-bold whitespace-nowrap text-gold-dark">{purposeLabel(d.purpose_key)}</span></td>
-                      <td className="px-6 py-3 text-right font-bold whitespace-nowrap">{formatFcfa(d.amount)}</td>
-                      <td className="px-6 py-3 text-xs font-mono whitespace-nowrap text-faint">{d.date_label}</td>
-                      <td className="px-6 py-3"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap", STATUS_META[d.status].className)}>{STATUS_META[d.status].label}</span></td>
-                    </tr>
-                  ))}
-                  {filtered.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-10 text-center text-xs text-body">Aucun don ne correspond à ces filtres.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {filtered.length > 0 && (
-              <Pagination page={currentPage} pageCount={pageCount} total={filtered.length} perPage={perPage} onPageChange={setPage} onPerPageChange={(n) => { setPerPage(n); setPage(1); }} itemLabel="dons" />
-            )}
-          </div>
+          <DataTable
+            columns={donationColumns}
+            rows={dTable.view}
+            getKey={(d) => d.id}
+            sortBy={dTable.sortBy}
+            sortDir={dTable.sortDir}
+            onSort={dTable.toggleSort}
+            emptyLabel="Aucun don ne correspond à ces filtres."
+            pagination={{
+              page: dTable.page,
+              pageCount: dTable.pageCount,
+              total: dTable.total,
+              perPage: dTable.perPage,
+              onPageChange: dTable.setPage,
+              onPerPageChange: (n) => {
+                dTable.setPerPage(n);
+                dTable.setPage(1);
+              },
+              itemLabel: "dons",
+            }}
+          />
         </>
       ) : (
-        <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-indigo">
-              <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase">
-                <tr>
-                  <th className="px-6 py-4">Reçu le</th>
-                  <th className="px-6 py-4">Événement</th>
-                  <th className="px-6 py-4">Référence</th>
-                  <th className="px-6 py-4">Signature</th>
-                  <th className="px-6 py-4">Traitement</th>
-                  <th className="px-6 py-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-                {wPaged.map((h) => (
-                  <tr key={h.id} className="hover:bg-cream/40 transition-colors">
-                    <td className="px-6 py-3 text-xs font-mono whitespace-nowrap text-faint">{h.date_label}</td>
-                    <td className="px-6 py-3 font-semibold whitespace-nowrap">{h.event ?? "—"}</td>
-                    <td className="px-6 py-3 font-mono text-xs text-faint">{h.reference ?? "—"}</td>
-                    <td className="px-6 py-3">
-                      {h.signature_valid ? (
-                        <span className="inline-flex items-center gap-1 text-[12px] font-bold text-online"><ShieldCheck className="size-3.5" /> Valide</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[12px] font-bold text-live"><ShieldX className="size-3.5" /> Invalide</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-3"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap", HOOK_STATUS_META[h.status] ?? "bg-indigo/5 text-indigo")}>{h.status}</span></td>
-                    <td className="px-6 py-3 text-right">
-                      <button
-                        onClick={() => replay(h)}
-                        disabled={busyId === h.id}
-                        title="Rejouer ce webhook"
-                        className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-[rgba(40,25,80,0.12)] px-3 py-1.5 text-[12px] font-bold text-indigo transition hover:border-gold hover:text-gold-dark disabled:opacity-50"
-                      >
-                        {busyId === h.id ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                        Rejouer
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {webhooks.length === 0 && (
-                  <tr><td colSpan={6} className="px-6 py-10 text-center text-xs text-body">Aucun webhook reçu pour l’instant.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {webhooks.length > 0 && (
-            <Pagination page={wCurrentPage} pageCount={wPageCount} total={webhooks.length} perPage={wPerPage} onPageChange={setWPage} onPerPageChange={(n) => { setWPerPage(n); setWPage(1); }} itemLabel="webhooks" />
-          )}
-        </div>
+        <DataTable
+          columns={webhookColumns}
+          rows={wTable.view}
+          getKey={(h) => h.id}
+          sortBy={wTable.sortBy}
+          sortDir={wTable.sortDir}
+          onSort={wTable.toggleSort}
+          emptyLabel="Aucun webhook reçu pour l’instant."
+          pagination={{
+            page: wTable.page,
+            pageCount: wTable.pageCount,
+            total: wTable.total,
+            perPage: wTable.perPage,
+            onPageChange: wTable.setPage,
+            onPerPageChange: (n) => {
+              wTable.setPerPage(n);
+              wTable.setPage(1);
+            },
+            itemLabel: "webhooks",
+          }}
+        />
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -330,7 +336,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
       onClick={onClick}
       className={cn(
         "flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
-        active ? "bg-gradient-to-br from-gold to-gold-dark text-indigo shadow-sm" : "text-body hover:text-indigo"
+        active ? "bg-gradient-to-br from-gold to-gold-dark text-indigo shadow-sm" : "text-body hover:text-indigo",
       )}
     >
       {icon} {label}
@@ -352,7 +358,11 @@ function KpiCard({ icon, label, value, sub, highlight = false }: { icon: React.R
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.12)] bg-white px-3 py-2.5 text-[13px] font-semibold text-indigo outline-none transition hover:border-gold focus:border-gold">
-      {options.map(([val, label]) => (<option key={val} value={val}>{label}</option>))}
+      {options.map(([val, label]) => (
+        <option key={val} value={val}>
+          {label}
+        </option>
+      ))}
     </select>
   );
 }

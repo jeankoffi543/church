@@ -88,7 +88,9 @@ export function BranchesSplitScreen({ initialBranches }: BranchesSplitScreenProp
   
   const [search, setSearch] = useState("");
   const [activeBranchId, setActiveBranchId] = useState<string | number | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapError, setMapError] = useState<string | null>(
+    MAPBOX_TOKEN ? null : "Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant).",
+  );
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Map backend API data to visual SplitScreenBranch structure, fallback to static defaults
@@ -129,14 +131,10 @@ export function BranchesSplitScreen({ initialBranches }: BranchesSplitScreenProp
   }, [branchesList, search]);
 
   useEffect(() => {
-    if (!MAPBOX_TOKEN) {
-      setMapError("Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant).");
-      return;
-    }
-
+    if (!MAPBOX_TOKEN) return;
     if (!containerRef.current) return;
     let cancelled = false;
-    let mapboxgl: any;
+    let mapboxgl: typeof import("mapbox-gl")["default"];
 
     const markersList: { marker: MbMarker; popup: MbPopup }[] = [];
 

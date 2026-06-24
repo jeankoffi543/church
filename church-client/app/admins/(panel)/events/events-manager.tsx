@@ -1,28 +1,21 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Loader2, 
-  Star, 
-  CheckCircle, 
-  AlertCircle,
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
-  SlidersHorizontal,
-  X
-} from "lucide-react";
+import { useState, useTransition, useEffect } from "react";
+import { Plus, Edit, Trash2, Star } from "lucide-react";
+
 import { createEvent, updateEvent, deleteEvent, checkEventSlug } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { assetUrl } from "@/lib/asset-url";
-import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import type { FilterField } from "@/components/admin/query-builder";
+import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
+import { DataFilters } from "@/components/admin/data/data-filters";
+import { DataTable } from "@/components/admin/data/data-table";
+import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
+import { Button } from "@/components/admin/ui/button";
+import { Field, inputClass } from "@/components/admin/ui/field";
+import { Modal } from "@/components/admin/ui/modal";
+import { ConfirmDialog } from "@/components/admin/ui/confirm-dialog";
+import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 
 type Event = {
   id: number;
@@ -44,40 +37,32 @@ const filterFields: FilterField[] = [
   { id: "type", label: "Type", type: "text" },
   { id: "location", label: "Lieu", type: "text" },
   { id: "host", label: "Hôte", type: "text" },
-  { 
-    id: "is_featured", 
-    label: "Mise en avant", 
-    type: "select", 
+  {
+    id: "is_featured",
+    label: "Mise en avant",
+    type: "select",
     options: [
       { value: "featured", label: "Mis en avant" },
-      { value: "normal", label: "Normal" }
-    ] 
-  }
+      { value: "normal", label: "Normal" },
+    ],
+  },
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
+const slugifyForInput = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9-]+/g, "-");
 
-export function EventsManager({
-  initialEvents,
-}: {
-  initialEvents: Event[];
-}) {
+export function EventsManager({ initialEvents }: { initialEvents: Event[] }) {
   const [events, setEvents] = useState<Event[]>(initialEvents);
-  const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [status, setStatus] = useState<Status>(null);
 
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Event | null>(null);
 
   // Form states
   const [title, setTitle] = useState("");
@@ -91,69 +76,32 @@ export function EventsManager({
   const [highlightsInput, setHighlightsInput] = useState("");
   const [isFeatured, setIsFeatured] = useState(false);
 
-  // Image upload states
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const [removeImage, setRemoveImage] = useState(false);
 
-  // Sorting and Filtering states
-  const [sortBy, setSortBy] = useState<"is_featured" | "title" | "location" | "starts_at" | null>(null);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
-  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
-
-  // Pagination states
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
-
-  // Validation & helper states
   const [slugError, setSlugError] = useState<string | null>(null);
   const [isCheckingSlug, setIsCheckingSlug] = useState(false);
 
-  const slugify = (text: string) => {
-    return text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // remove accent marks
-      .replace(/[^a-z0-9]+/g, "-") // replace non-alphanumeric with hyphens
-      .replace(/(^-|-$)+/g, ""); // remove leading/trailing hyphens
-  };
-
-  const slugifyForInput = (text: string) => {
-    return text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // remove accent marks
-      .replace(/[^a-z0-9-]+/g, "-"); // replace non-alphanumeric (except hyphen) with hyphens, allow trailing hyphens
-  };
-
   useEffect(() => {
-    if (!slug.trim()) {
-      setSlugError(null);
-      return;
-    }
-
     const cleanedSlug = slug.trim().replace(/(^-|-$)+/g, "");
-    if (!cleanedSlug) {
-      setSlugError(null);
-      return;
-    }
-
+    // All state updates run inside the debounce, never synchronously in the
+    // effect body (avoids cascading-render lint + needless work).
     const timer = setTimeout(async () => {
+      if (!cleanedSlug) {
+        setSlugError(null);
+        return;
+      }
       setIsCheckingSlug(true);
       try {
         const res = await checkEventSlug(cleanedSlug, editingEvent?.id);
-        if (res.exists) {
-          setSlugError("Ce slug est déjà utilisé par un autre événement.");
-        } else {
-          setSlugError(null);
-        }
+        setSlugError(res.exists ? "Ce slug est déjà utilisé par un autre événement." : null);
       } catch (err) {
         console.error("Error checking slug uniqueness:", err);
       } finally {
         setIsCheckingSlug(false);
       }
     }, 300);
-
     return () => clearTimeout(timer);
   }, [slug, editingEvent]);
 
@@ -165,28 +113,21 @@ export function EventsManager({
     setDescription("");
     setLocation("");
     setHost("MFM Ficgayo");
-    
+
     const now = new Date();
-    // Default starts_at to next Sunday 09:00 local time
-    const nextSunday = new Date(now.setDate(now.getDate() + (7 - now.getDay()) % 7));
+    const nextSunday = new Date(now.setDate(now.getDate() + ((7 - now.getDay()) % 7)));
     nextSunday.setHours(9, 0, 0, 0);
     const tzoffset = nextSunday.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(nextSunday.getTime() - tzoffset)).toISOString().slice(0, 16);
-    
-    setStartsAt(localISOTime);
+    setStartsAt(new Date(nextSunday.getTime() - tzoffset).toISOString().slice(0, 16));
     setEndsAt("");
     setHighlightsInput("");
     setIsFeatured(false);
-    
-    // Clear image upload states
     setImageFile(null);
     setImagePreview("");
     setRemoveImage(false);
-    
     setSlugError(null);
     setIsCheckingSlug(false);
     setStatus(null);
-    
     setIsModalOpen(true);
   };
 
@@ -198,30 +139,25 @@ export function EventsManager({
     setDescription(event.description ?? "");
     setLocation(event.location ?? "");
     setHost(event.host ?? "");
-    
-    // Format dates for datetime-local input (YYYY-MM-DDTHH:MM)
+
     const formatDateTime = (dtStr: string | null) => {
       if (!dtStr) return "";
       const d = new Date(dtStr);
       if (isNaN(d.getTime())) return "";
       const tzoffset = d.getTimezoneOffset() * 60000;
-      return (new Date(d.getTime() - tzoffset)).toISOString().slice(0, 16);
+      return new Date(d.getTime() - tzoffset).toISOString().slice(0, 16);
     };
 
     setStartsAt(formatDateTime(event.starts_at));
     setEndsAt(formatDateTime(event.ends_at));
     setHighlightsInput(event.highlights ? event.highlights.join("\n") : "");
     setIsFeatured(event.is_featured);
-    
-    // Initialize image upload states
     setImageFile(null);
     setImagePreview(event.image ? (assetUrl(event.image) ?? "") : "");
     setRemoveImage(false);
-    
     setSlugError(null);
     setIsCheckingSlug(false);
     setStatus(null);
-    
     setIsModalOpen(true);
   };
 
@@ -232,18 +168,18 @@ export function EventsManager({
     setIsCheckingSlug(false);
   };
 
-  const handleDelete = async (id: number, title: string) => {
-    if (!confirm(`Voulez-vous vraiment supprimer l'événement "${title}" ?`)) return;
-
+  const confirmDelete = () => {
+    const ev = deleteTarget;
+    if (!ev) return;
+    setDeleteTarget(null);
     setStatus(null);
     startTransition(async () => {
       try {
-        await deleteEvent(id);
-        setEvents(events.filter((e) => e.id !== id));
-        setStatus({ type: "success", message: `L'événement "${title}" a été supprimé.` });
+        await deleteEvent(ev.id);
+        setEvents((prev) => prev.filter((e) => e.id !== ev.id));
+        setStatus({ type: "success", message: `L'événement "${ev.title}" a été supprimé.` });
       } catch (err) {
-        const error = err as Error;
-        setStatus({ type: "error", message: error.message || "Impossible de supprimer cet événement." });
+        setStatus({ type: "error", message: (err as Error).message || "Impossible de supprimer cet événement." });
       }
     });
   };
@@ -255,10 +191,7 @@ export function EventsManager({
     setStatus(null);
     startTransition(async () => {
       try {
-        const highlights = highlightsInput
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean);
+        const highlights = highlightsInput.split("\n").map((line) => line.trim()).filter(Boolean);
 
         const fd = new FormData();
         fd.append("title", title.trim());
@@ -268,558 +201,304 @@ export function EventsManager({
         fd.append("location", location.trim());
         fd.append("host", host || "");
         fd.append("start_date", startsAt);
-        if (endsAt) {
-          fd.append("end_date", endsAt);
-        }
+        if (endsAt) fd.append("end_date", endsAt);
         fd.append("is_featured", isFeatured ? "1" : "0");
-        
-        highlights.forEach((h, idx) => {
-          fd.append(`highlights[${idx}]`, h);
-        });
-
-        if (imageFile) {
-          fd.append("image", imageFile);
-        }
-        if (removeImage) {
-          fd.append("remove_image", "1");
-        }
+        highlights.forEach((h, idx) => fd.append(`highlights[${idx}]`, h));
+        if (imageFile) fd.append("image", imageFile);
+        if (removeImage) fd.append("remove_image", "1");
 
         if (editingEvent) {
           const res = await updateEvent(editingEvent.id, fd);
           const updated = res.data as Event;
-          setEvents(events.map((e) => (e.id === updated.id ? updated : e)));
+          setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
           setStatus({ type: "success", message: `L'événement "${title}" a été mis à jour.` });
         } else {
           const res = await createEvent(fd);
           const created = res.data as Event;
-          setEvents([...events, created]);
+          setEvents((prev) => [...prev, created]);
           setStatus({ type: "success", message: `L'événement "${title}" a été créé.` });
         }
         closeModal();
       } catch (err) {
-        const error = err as Error;
-        setStatus({ type: "error", message: error.message || "Erreur de validation ou de connexion." });
+        setStatus({ type: "error", message: (err as Error).message || "Erreur de validation ou de connexion." });
       }
     });
   };
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
-    setPage(1);
-    setStatus(null);
-  };
+  const columns: Column<Event>[] = [
+    {
+      id: "is_featured",
+      header: "Featured",
+      sortable: true,
+      sortValue: (e) => (e.is_featured ? 1 : 0),
+      cell: (e) =>
+        e.is_featured ? (
+          <span className="inline-flex size-7 items-center justify-center rounded-full bg-gold/20 text-gold-dark" title="Mis en avant">
+            <Star className="size-4 fill-gold-dark" />
+          </span>
+        ) : (
+          <span className="font-semibold text-faint/30">—</span>
+        ),
+    },
+    {
+      id: "title",
+      header: "Titre / Type",
+      sortable: true,
+      sortValue: (e) => e.title,
+      cell: (e) => (
+        <div>
+          <p className="font-semibold">{e.title}</p>
+          {e.type && <p className="mt-0.5 text-xs font-medium tracking-wider text-gold-dark uppercase">{e.type}</p>}
+        </div>
+      ),
+    },
+    {
+      id: "location",
+      header: "Lieu / Hôte",
+      sortable: true,
+      sortValue: (e) => e.location ?? "",
+      cell: (e) => (
+        <div className="text-xs">
+          <p className="font-semibold text-indigo">{e.location ?? "—"}</p>
+          {e.host && <p className="text-faint">{e.host}</p>}
+        </div>
+      ),
+    },
+    {
+      id: "starts_at",
+      header: "Date de début",
+      sortable: true,
+      sortValue: (e) => e.starts_at,
+      className: "font-mono text-xs font-semibold text-faint",
+      cell: (e) => e.starts_at.replace("T", " ").substring(0, 16),
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "right",
+      cell: (e) => (
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => openEditModal(e)}
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(40,25,80,0.1)] text-indigo transition-colors hover:border-gold hover:bg-gold/5"
+            title="Modifier"
+          >
+            <Edit className="size-3.5" />
+          </button>
+          <button
+            onClick={() => setDeleteTarget(e)}
+            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-live/10 text-live transition-colors hover:bg-live/10"
+            title="Supprimer"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
-  const hasActiveFilters = activeFilters.length > 0;
-
-  const clearAllFilters = () => {
-    setActiveFilters([]);
-    setSearch("");
-    setPage(1);
-  };
-
-  const handleSort = (column: "is_featured" | "title" | "location" | "starts_at") => {
-    if (sortBy !== column) {
-      setSortBy(column);
-      setSortOrder("asc");
-    } else {
-      if (sortOrder === "asc") {
-        setSortOrder("desc");
-      } else if (sortOrder === "desc") {
-        setSortBy(null);
-        setSortOrder(null);
-      } else {
-        setSortOrder("asc");
-      }
-    }
-  };
-
-  const renderSortChevron = (column: "is_featured" | "title" | "location" | "starts_at") => {
-    if (sortBy !== column) {
-      return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
-    }
-    if (sortOrder === "asc") {
-      return <ChevronUp className="size-3 text-gold-dark shrink-0" />;
-    }
-    if (sortOrder === "desc") {
-      return <ChevronDown className="size-3 text-gold-dark shrink-0" />;
-    }
-    return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
-  };
-
-  // Processed Events (combined filters + sorting)
-  const processedEvents = useMemo(() => {
-    let result = events.filter((e) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = e.title.toLowerCase().includes(q);
-        const typeMatch = e.type ? e.type.toLowerCase().includes(q) : false;
-        const locMatch = e.location ? e.location.toLowerCase().includes(q) : false;
-        if (!titleMatch && !typeMatch && !locMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.title, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "type") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.type ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "location") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.location ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "host") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.host ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "is_featured") {
-          if (filter.value === "") continue;
-          const targetFeatured = filter.value === "featured";
-          if (e.is_featured !== targetFeatured) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "location") {
-          valA = a.location ?? "";
-          valB = b.location ?? "";
-        } else if (sortBy === "starts_at") {
-          valA = a.starts_at;
-          valB = b.starts_at;
-        } else if (sortBy === "is_featured") {
-          const numA = a.is_featured ? 1 : 0;
-          const numB = b.is_featured ? 1 : 0;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [events, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedEvents.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paginatedEvents = processedEvents.slice((currentPage - 1) * perPage, currentPage * perPage);
+  const table = useDataTable({
+    rows: events,
+    columns,
+    searchKeys: [(e) => e.title, (e) => e.type, (e) => e.location],
+    filterAccessors: {
+      title: (e) => e.title,
+      type: (e) => e.type,
+      location: (e) => e.location,
+      host: (e) => e.host,
+    },
+    matchFilters: { is_featured: (e, f) => f.value === "" || e.is_featured === (f.value === "featured") },
+  });
 
   return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-gold-dark uppercase">
-            Ressources
-          </span>
-          <h1 className="mt-1 font-display text-[34px] font-semibold text-indigo italic">
-            Gestion de l’Agenda
-          </h1>
-          <p className="mt-1 text-sm text-body">
-            Gérez les cultes spéciaux, conférences, séminaires et veillées de l’église.
-          </p>
-        </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Ressources"
+        title="Gestion de l’Agenda"
+        subtitle="Gérez les cultes spéciaux, conférences, séminaires et veillées de l’église."
+        actions={
+          <Button icon={<Plus className="size-4" />} onClick={openCreateModal}>
+            Nouvel Événement
+          </Button>
+        }
+      />
 
-        <button
-          onClick={openCreateModal}
-          className="flex cursor-pointer items-center gap-2 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-3 text-sm font-bold text-indigo shadow-[0_12px_30px_rgba(200,144,46,0.25)] transition hover:-translate-y-0.5 hover:brightness-105"
-        >
-          <Plus className="size-4" /> Nouvel Événement
-        </button>
-      </header>
+      <StatusBanner status={status} className="mb-6" />
 
-      {status && (
-        <div
-          className={cn(
-            "mb-6 flex items-start gap-3.5 rounded-xl border p-4 text-sm",
-            status.type === "success" ? "border-online/20 bg-online/5 text-body-strong" : "border-live/20 bg-live/5 text-live"
-          )}
-        >
-          {status.type === "success" ? (
-            <CheckCircle className="size-5 shrink-0 text-online" />
-          ) : (
-            <AlertCircle className="size-5 shrink-0 text-live" />
-          )}
-          <div>
-            <p className="font-bold">{status.type === "success" ? "Succès" : "Erreur"}</p>
-            <p className="mt-0.5 text-xs text-body">{status.message}</p>
-          </div>
-        </div>
-      )}
+      <DataFilters
+        search={table.search}
+        onSearch={table.setSearch}
+        placeholder="Rechercher un événement…"
+        fields={filterFields}
+        filters={table.filters}
+        onFilters={table.setFilters}
+        onReset={table.resetFilters}
+      />
 
-      {/* Filter and search bar row (Set z-20 relative for correct stacking context) */}
-      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap z-20 relative">
-        <div className="flex flex-1 items-center gap-3 flex-wrap">
-          {/* Main search bar */}
-          <div className="flex flex-1 min-w-[220px] max-w-md items-center gap-2.5 rounded-xl border border-[rgba(40,25,80,0.1)] bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(22,15,51,0.02)]">
-            <Search className="size-4 text-faint" />
+      <DataTable
+        columns={columns}
+        rows={table.view}
+        getKey={(e) => e.id}
+        sortBy={table.sortBy}
+        sortDir={table.sortDir}
+        onSort={table.toggleSort}
+        emptyLabel="Aucun événement trouvé."
+        pagination={{
+          page: table.page,
+          pageCount: table.pageCount,
+          total: table.total,
+          perPage: table.perPage,
+          onPageChange: table.setPage,
+          onPerPageChange: (n) => {
+            table.setPerPage(n);
+            table.setPage(1);
+          },
+          itemLabel: "événements",
+        }}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => {
+          if (!o) setDeleteTarget(null);
+        }}
+        title="Supprimer l’événement ?"
+        message={`L'événement « ${deleteTarget?.title ?? ""} » sera définitivement supprimé.`}
+        confirmLabel="Supprimer"
+        loading={isPending}
+        onConfirm={confirmDelete}
+      />
+
+      <Modal
+        open={isModalOpen}
+        onOpenChange={(o) => (o ? setIsModalOpen(true) : closeModal())}
+        title={editingEvent ? "Modifier l’événement" : "Créer un événement"}
+        description="Remplissez le formulaire ci-dessous pour configurer l’événement."
+      >
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 px-6 py-6 sm:grid-cols-2">
+          <Field className="sm:col-span-2" label="Titre de l’événement" required>
             <input
               type="text"
-              placeholder="Rechercher un événement..."
-              value={search}
-              onChange={handleSearchChange}
-              className="w-full text-[14px] text-indigo outline-none placeholder:text-faint bg-transparent border-none"
+              required
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setSlug(slugifyForInput(e.target.value));
+              }}
+              placeholder="ex: Veillée de combat spirituel"
+              className={inputClass}
             />
-          </div>
+          </Field>
 
-          {/* Reusable Query Builder containing inline chips & sliders filter button */}
-          <QueryBuilder
-            fields={filterFields}
-            activeFilters={activeFilters}
-            onChange={(nextFilters) => {
-              setActiveFilters(nextFilters);
-              setPage(1);
-            }}
-          />
-        </div>
+          <Field label="Slug unique (URL)" required error={slugError ?? undefined}>
+            <input
+              type="text"
+              required
+              value={slug}
+              onChange={(e) => setSlug(slugifyForInput(e.target.value))}
+              placeholder="ex: veillee-combat-2026"
+              className={cn(inputClass, slugError && "border-live focus:border-live")}
+            />
+          </Field>
 
-        {hasActiveFilters && (
-          <button
-            onClick={clearAllFilters}
-            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-live/15 bg-live/5 px-3.5 py-2 text-xs font-semibold text-live transition hover:bg-live/10"
-          >
-            <X className="size-3.5" />
-            Effacer les filtres actifs
-          </button>
-        )}
-      </div>
+          <Field label="Type d’événement">
+            <input type="text" value={type} onChange={(e) => setType(e.target.value)} placeholder="ex: Conférence, Veillée, Séminaire" className={inputClass} />
+          </Field>
 
-      {/* Table grid (z-10 relative) */}
-      <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-indigo">
-            <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
-              <tr>
-                <th 
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("is_featured")}
+          <Field label="Date & Heure de début" required>
+            <input type="datetime-local" required value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className={inputClass} />
+          </Field>
+
+          <Field label="Date & Heure de fin">
+            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inputClass} />
+          </Field>
+
+          <Field label="Lieu / Emplacement" required>
+            <input type="text" required value={location} onChange={(e) => setLocation(e.target.value)} placeholder="ex: Temple principal MFM Ficgayo" className={inputClass} />
+          </Field>
+
+          <Field label="Hôte / Invité">
+            <input type="text" value={host} onChange={(e) => setHost(e.target.value)} placeholder="ex: Pasteur David Okonkwo" className={inputClass} />
+          </Field>
+
+          <Field label="Mise en avant">
+            <label className="flex h-[42px] cursor-pointer items-center gap-2">
+              <input type="checkbox" checked={isFeatured} onChange={(e) => setIsFeatured(e.target.checked)} className="size-4 cursor-pointer accent-gold" />
+              <span className="text-[13px] font-semibold text-indigo">Événement majeur (Hero Agenda)</span>
+            </label>
+          </Field>
+
+          <Field className="sm:col-span-2" label="Affiche / Flyer de l'événement">
+            {imagePreview ? (
+              <div className="group relative max-w-[200px] overflow-hidden rounded-xl border border-[rgba(40,25,80,0.12)] bg-cream">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imagePreview} alt="Affiche" className="h-auto max-h-36 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageFile(null);
+                    setImagePreview("");
+                    setRemoveImage(true);
+                  }}
+                  className="absolute top-2 right-2 rounded-full bg-live p-2 text-white shadow-md transition-transform hover:scale-110"
+                  title="Supprimer l'affiche"
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span>Featured</span>
-                    {renderSortChevron("is_featured")}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("title")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Titre / Type</span>
-                    {renderSortChevron("title")}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("location")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Lieu / Hôte</span>
-                    {renderSortChevron("location")}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-4 cursor-pointer transition hover:text-gold-dark"
-                  onClick={() => handleSort("starts_at")}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Date de début</span>
-                    {renderSortChevron("starts_at")}
-                  </div>
-                </th>
-                <th className="px-6 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
-              {paginatedEvents.map((event) => (
-                <tr key={event.id} className="hover:bg-cream/40 transition-colors">
-                  <td className="px-6 py-4">
-                    {event.is_featured ? (
-                      <span className="inline-flex size-7 items-center justify-center rounded-full bg-gold/20 text-gold-dark" title="Mis en avant">
-                        <Star className="size-4 fill-gold-dark" />
-                      </span>
-                    ) : (
-                      <span className="text-faint/30 font-semibold">—</span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-semibold">{event.title}</p>
-                      {event.type && (
-                        <p className="mt-0.5 text-xs text-gold-dark font-medium uppercase tracking-wider">{event.type}</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-medium text-body-soft">
-                    <div>
-                      <p className="font-semibold text-indigo">{event.location ?? "—"}</p>
-                      {event.host && <p className="text-faint">{event.host}</p>}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-mono font-semibold text-faint">
-                    {event.starts_at.replace("T", " ").substring(0, 16)}
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => openEditModal(event)}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-[rgba(40,25,80,0.1)] text-indigo hover:border-gold hover:bg-gold/5 transition-colors"
-                        title="Modifier"
-                      >
-                        <Edit className="size-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(event.id, event.title)}
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-live/10 text-live hover:bg-live/10 transition-colors"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {paginatedEvents.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-xs text-body">
-                    Aucun événement trouvé.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {processedEvents.length > 0 && (
-          <Pagination
-            page={currentPage}
-            pageCount={pageCount}
-            total={processedEvents.length}
-            perPage={perPage}
-            onPageChange={(page) => {
-              setPage(page);
-              setStatus(null);
-            }}
-            onPerPageChange={(newPerPage) => {
-              setPerPage(newPerPage);
-              setPage(1);
-              setStatus(null);
-            }}
-            itemLabel="événements"
-          />
-        )}
-      </div>
-
-      {/* Replaced raw backdrop and centered wrappers with native Radix Dialog */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="w-[95vw] md:max-w-2xl max-h-[85vh] overflow-y-auto p-6 bg-white border-0 outline-none">
-          <div className="mb-1">
-            <DialogTitle className="font-display text-xl font-bold text-indigo italic">
-              {editingEvent ? "Modifier l’événement" : "Créer un événement"}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-body mt-0.5">
-              Remplissez le formulaire ci-dessous pour configurer l’événement.
-            </DialogDescription>
-          </div>
-
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-            <label className="sm:col-span-2 flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Titre de l’événement *</span>
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => {
-                  setTitle(e.target.value);
-                  setSlug(slugifyForInput(e.target.value));
-                }}
-                placeholder="ex: Veillée de combat spirituel"
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Slug unique (URL)</span>
-              <input
-                type="text"
-                required
-                value={slug}
-                onChange={(e) => setSlug(slugifyForInput(e.target.value))}
-                placeholder="ex: veillee-combat-2026"
-                className={cn(
-                  "rounded-xl border bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold",
-                  slugError ? "border-live focus:border-live" : "border-[rgba(40,25,80,0.12)]"
-                )}
-              />
-              {slugError && (
-                <span className="text-xs text-live font-semibold flex items-center gap-1 mt-0.5">
-                  <AlertCircle className="size-3.5" />
-                  {slugError}
-                </span>
-              )}
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Type d’événement</span>
-              <input
-                type="text"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                placeholder="ex: Conférence, Veillée, Séminaire"
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de début *</span>
-              <input
-                type="datetime-local"
-                required
-                value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Date & Heure de fin</span>
-              <input
-                type="datetime-local"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Lieu / Emplacement *</span>
-              <input
-                type="text"
-                required
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="ex: Temple principal MFM Ficgayo"
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Hôte / Invité</span>
-              <input
-                type="text"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                placeholder="ex: Pasteur David Okonkwo"
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold"
-              />
-            </label>
-
-            <div className="flex flex-col gap-2.5 justify-center">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Mise en avant</span>
-              <label className="flex cursor-pointer items-center gap-2">
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[rgba(40,25,80,0.15)] bg-cream p-5 transition hover:bg-cream/45">
+                <Plus className="mb-1 size-5 text-faint" />
+                <span className="text-xs font-semibold text-indigo">Téléverser une image d’affiche</span>
+                <span className="mt-0.5 text-[9px] text-faint">JPEG, PNG, WebP (max. 2 Mo)</span>
                 <input
-                  type="checkbox"
-                  checked={isFeatured}
-                  onChange={(e) => setIsFeatured(e.target.checked)}
-                  className="size-4 accent-gold cursor-pointer"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setImageFile(file);
+                      setImagePreview(URL.createObjectURL(file));
+                      setRemoveImage(false);
+                    }
+                  }}
+                  className="hidden"
                 />
-                <span className="text-[13px] font-semibold text-indigo">Événement majeur (Hero Agenda)</span>
               </label>
-            </div>
+            )}
+          </Field>
 
-            {/* Affiche/Flyer Image Upload Field with preview & delete */}
-            <div className="sm:col-span-2 flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Affiche / Flyer de l'événement</span>
-              {imagePreview ? (
-                <div className="relative group max-w-[200px] rounded-xl overflow-hidden border border-[rgba(40,25,80,0.12)] bg-cream">
-                  <img src={imagePreview} alt="Affiche" className="w-full h-auto object-cover max-h-36" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview("");
-                      setRemoveImage(true);
-                    }}
-                    className="absolute top-2 right-2 bg-live text-white p-2 rounded-full shadow-md transition-transform hover:scale-110"
-                    title="Supprimer l'affiche"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-[rgba(40,25,80,0.15)] rounded-xl p-5 bg-[#faf8f4] hover:bg-cream/45 cursor-pointer transition">
-                  <Plus className="size-5 text-faint mb-1" />
-                  <span className="text-xs font-semibold text-indigo">Téléverser une image d'affiche</span>
-                  <span className="text-[9px] text-faint mt-0.5">JPEG, PNG, WebP (max. 2 Mo)</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setImageFile(file);
-                        setImagePreview(URL.createObjectURL(file));
-                        setRemoveImage(false);
-                      }
-                    }}
-                    className="hidden"
-                  />
-                </label>
-              )}
-            </div>
+          <Field className="sm:col-span-2" label="Points clés / Highlights (Un par ligne)">
+            <textarea
+              value={highlightsInput}
+              onChange={(e) => setHighlightsInput(e.target.value)}
+              rows={2}
+              placeholder={"ex: Temps fort d’intercession\nEntrée libre et gratuite"}
+              className={cn(inputClass, "resize-none leading-relaxed")}
+            />
+          </Field>
 
-            <label className="sm:col-span-2 flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Points clés / Highlights (Un par ligne)</span>
-              <textarea
-                value={highlightsInput}
-                onChange={(e) => setHighlightsInput(e.target.value)}
-                rows={2}
-                placeholder="ex: Temps fort d’intercession&#10;Entrée libre et gratuite"
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
-              />
-            </label>
+          <Field className="sm:col-span-2" label="Description exhaustive" required>
+            <textarea
+              required
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="Objectif et descriptif complet de la rencontre..."
+              className={cn(inputClass, "resize-none leading-relaxed")}
+            />
+          </Field>
 
-            <label className="sm:col-span-2 flex flex-col gap-1.5">
-              <span className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Description exhaustive *</span>
-              <textarea
-                required
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder="Objectif et descriptif complet de la rencontre..."
-                className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 text-[14px] text-indigo outline-none focus:border-gold resize-none leading-relaxed"
-              />
-            </label>
-
-            <div className="sm:col-span-2 mt-2 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4">
-              <button
-                type="button"
-                onClick={closeModal}
-                className="cursor-pointer rounded-xl border border-[rgba(40,25,80,0.1)] px-4 py-2.5 text-xs font-bold text-body hover:bg-cream transition"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                disabled={isPending || !!slugError || isCheckingSlug}
-                className="flex cursor-pointer items-center gap-1.5 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-5 py-2.5 text-xs font-bold text-indigo transition hover:brightness-105 disabled:opacity-50"
-              >
-                {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                Enregistrer
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+          <div className="mt-2 flex justify-end gap-3 border-t border-[rgba(40,25,80,0.06)] pt-4 sm:col-span-2">
+            <Button type="button" variant="secondary" size="sm" onClick={closeModal}>
+              Annuler
+            </Button>
+            <Button type="submit" size="sm" loading={isPending} disabled={!!slugError || isCheckingSlug}>
+              Enregistrer
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </PageShell>
   );
 }

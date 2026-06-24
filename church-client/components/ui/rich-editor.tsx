@@ -17,7 +17,6 @@ import {
   Code as CodeIcon,
   Quote as QuoteIcon,
   Flame as FlameIcon,
-  Sparkles as SparklesIcon,
   HelpCircle as HelpCircleIcon,
   AlignLeft as AlignLeftIcon,
   WrapText as WrapTextIcon,
@@ -179,10 +178,14 @@ export function RichEditor({ value, onChange }: RichEditorProps) {
     }
   });
 
-  // Sync editor when value prop changes externally
+  // Sync editor when value prop changes externally (e.g. form load/reset).
+  // The `value !== editor.getHTML()` guard makes this self-terminating: once the
+  // editor matches the prop the effect no-ops, so it cannot cascade. The
+  // setCodeValue keeps the code-view textarea mirror in sync with that change.
   useEffect(() => {
     if (editor && value !== editor.getHTML()) {
       editor.commands.setContent(value);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCodeValue(value);
     }
   }, [value, editor]);

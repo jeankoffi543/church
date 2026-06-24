@@ -816,7 +816,7 @@ export async function approveHomeGroupApplication(
     method: "POST",
     body: JSON.stringify(decision),
   });
-  revalidatePath("/admins/home_groups/applications");
+  revalidatePath("/admins/home-groups/applications");
   return result;
 }
 
@@ -828,7 +828,7 @@ export async function rejectHomeGroupApplication(
     method: "POST",
     body: JSON.stringify(decision),
   });
-  revalidatePath("/admins/home_groups/applications");
+  revalidatePath("/admins/home-groups/applications");
   return result;
 }
 

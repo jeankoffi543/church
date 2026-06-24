@@ -16,6 +16,10 @@ export type FilterOperator = "contains" | "equals" | "starts_with" | "ends_with"
 export interface ActiveFilter {
   fieldId: string;
   operator: FilterOperator;
+  // Filter values are intentionally polymorphic: managers compare them as
+  // strings (`roles.includes(f.value)`), numbers (`Number(f.value)`), etc.
+  // Keeping a single `any` here avoids rippling a union through all 8 managers.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value: any;
 }
 
@@ -63,7 +67,7 @@ export function QueryBuilder({
     onChange(next);
   };
 
-  const handleValueChange = (fieldId: string, value: any) => {
+  const handleValueChange = (fieldId: string, value: string | number) => {
     const next = activeFilters.map((f) =>
       f.fieldId === fieldId ? { ...f, value } : f
     );
@@ -266,7 +270,7 @@ export function QueryBuilder({
                     onClick={() => {
                       const operators = getOperatorsForType(field.type);
                       const defaultOp = operators[0].value;
-                      let defaultVal: any = "";
+                      let defaultVal: string | number = "";
                       if (field.type === "select" && field.options && field.options.length > 0) {
                         defaultVal = field.options[0].value;
                       }

@@ -26,9 +26,9 @@ class EventFactory extends Factory
             'description' => fake()->paragraph(),
             'location' => fake()->city(),
             'host' => fake()->name(),
-            'starts_at' => $start,
-            'ends_at' => (clone $start)->modify('+3 hours'),
-            'image' => fake()->imageUrl(),
+            'start_date' => $start,
+            'end_date' => (clone $start)->modify('+3 hours'),
+            'image_path' => fake()->imageUrl(),
             'highlights' => fake()->sentences(3),
             'is_featured' => false,
         ];
