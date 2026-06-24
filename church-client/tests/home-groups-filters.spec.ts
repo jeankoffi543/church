@@ -1,9 +1,35 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Validation du QueryBuilder et de l'alignement QueryMaster", () => {
-  test.beforeEach(async ({ page }) => {
-    // On intercepte l'authentification ou on simule une session si nécessaire.
-    // Ici, on se concentre sur l'interception des requêtes de l'API pour valider les query params.
+  test.beforeEach(async ({ page, context }) => {
+    // 1. Simuler une session NextAuth active pour contourner l'écran de connexion
+    await page.route("**/api/auth/session", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: {
+            id: 1,
+            name: "Admin Test",
+            email: "admin@mfmficgayo.org",
+            role: "admin",
+          },
+          expires: "2050-01-01T00:00:00.000Z",
+        }),
+      });
+    });
+
+    // 2. Injecter un cookie de session fictif au besoin
+    await context.addCookies([
+      {
+        name: "next-auth.session-token",
+        value: "mock-session-token",
+        domain: "localhost",
+        path: "/",
+      },
+    ]);
+
+    // 3. Intercepter l'appel API de récupération des groupes de maison
     await page.route("**/api/v1/public/home-groups*", async (route) => {
       await route.fulfill({
         status: 200,
@@ -36,21 +62,19 @@ test.describe("Validation du QueryBuilder et de l'alignement QueryMaster", () =>
   test("1. Opérateur 'equals' (eq) - Doit envoyer le suffixe __eq", async ({ page }) => {
     await page.goto("http://localhost:3000/admins/home_groups");
 
-    // Attendre que le bouton d'ajout de filtre soit visible
+    // Attendre que le bouton d'ajout de filtre soit visible et cliquer dessus
     const addFilterButton = page.locator('button[title="Ajouter un filtre"]');
     await expect(addFilterButton).toBeVisible();
     await addFilterButton.click();
 
-    // Sélectionner le champ "Nom" ou "Zone" (selon les champs disponibles)
-    // On clique sur l'option correspondante dans le menu déroulant
+    // Sélectionner le champ "Nom" ou "Zone"
     await page.locator("button:has-text('Nom'), button:has-text('Zone')").first().click();
 
-    // Par défaut, l'opérateur pour un champ texte peut être "contains".
-    // On change l'opérateur pour "Est égal à" (equals)
+    // Changer l'opérateur pour "Est égal à" (equals)
     const operatorSelect = page.locator("select").first();
     await operatorSelect.selectOption("equals");
 
-    // On prépare l'interception de la prochaine requête réseau déclenchée par la saisie
+    // Préparer l'interception de la requête réseau de filtrage
     const nextRequestPromise = page.waitForRequest((request) => 
       request.url().includes("/public/home-groups") || request.url().includes("/home-groups")
     );
@@ -63,11 +87,10 @@ test.describe("Validation du QueryBuilder et de l'alignement QueryMaster", () =>
     const request = await nextRequestPromise;
     const url = new URL(request.url());
     
-    // On vérifie que le paramètre d'URL contient bien le suffixe __eq
+    // Vérifier la présence du suffixe __eq
     const hasEq = Array.from(url.searchParams.keys()).some(key => key.endsWith("__eq"));
     expect(hasEq).toBe(true);
     
-    // Exemple précis : name__eq=Groupe Ficgayo
     const paramValue = url.searchParams.get("name__eq") || url.searchParams.get("title__eq");
     expect(paramValue).toBe("Groupe Ficgayo");
   });
