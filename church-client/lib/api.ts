@@ -184,6 +184,7 @@ export type GetMinistriesParams = {
   perPage?: number;
   search?: string;
   sort?: string;
+  filters?: Record<string, string>;
 };
 
 export async function getMinistries(params?: GetMinistriesParams): Promise<{
@@ -200,6 +201,12 @@ export async function getMinistries(params?: GetMinistriesParams): Promise<{
   if (params?.perPage) query.append("per_page", String(params.perPage));
   if (params?.search) query.append("search", params.search);
   if (params?.sort) query.append("sort", params.sort);
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   const json = await apiGet<{
@@ -227,6 +234,7 @@ export type GetSermonsParams = {
   year?: string[];
   date?: string[];
   book?: string[];
+  filters?: Record<string, string>;
 };
 
 export async function getSermons(params?: GetSermonsParams): Promise<{
@@ -252,6 +260,12 @@ export async function getSermons(params?: GetSermonsParams): Promise<{
   if (params?.year) params.year.forEach((y) => query.append("year[]", y));
   if (params?.date) params.date.forEach((d) => query.append("date[]", d));
   if (params?.book) params.book.forEach((b) => query.append("book[]", b));
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   const json = await apiGet<{
@@ -328,6 +342,7 @@ export type GetEventsParams = {
   search?: string;
   scope?: string;
   featured?: boolean;
+  filters?: Record<string, string>;
 };
 
 export async function getEvents(params?: GetEventsParams): Promise<{
@@ -345,6 +360,12 @@ export async function getEvents(params?: GetEventsParams): Promise<{
   if (params?.search) query.append("search", params.search);
   if (params?.scope) query.append("scope", params.scope);
   if (params?.featured !== undefined) query.append("featured", params.featured ? "1" : "0");
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   const json = await apiGet<{
@@ -372,6 +393,7 @@ export type GetHomeGroupsParams = {
   search?: string;
   zone_name?: string;
   day?: string;
+  filters?: Record<string, string>;
 };
 
 export async function getHomeGroups(params?: GetHomeGroupsParams): Promise<{
@@ -388,6 +410,12 @@ export async function getHomeGroups(params?: GetHomeGroupsParams): Promise<{
     const dayUpper = params.day.toUpperCase();
     query.append("day", dayUpper);
     query.append("meeting_day", dayUpper);
+  }
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
   }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
@@ -943,6 +971,7 @@ export type GetAlbumsParams = {
   search?: string;
   category?: string;
   year?: number;
+  filters?: Record<string, string>;
 };
 
 export async function getAlbums(params?: GetAlbumsParams): Promise<{
@@ -960,6 +989,12 @@ export async function getAlbums(params?: GetAlbumsParams): Promise<{
   if (params?.search) query.append("search", params.search);
   if (params?.category) query.append("category", params.category);
   if (params?.year) query.append("year", String(params.year));
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
+  }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   const json = await apiGet<{
@@ -1042,6 +1077,7 @@ export type GetPastLivesParams = {
   search?: string;
   series?: string[];
   year?: string[];
+  filters?: Record<string, string>;
 };
 
 export async function getPastLives(params?: GetPastLivesParams): Promise<{
@@ -1064,6 +1100,12 @@ export async function getPastLives(params?: GetPastLivesParams): Promise<{
   }
   if (params?.year) {
     params.year.forEach((y) => query.append("year[]", y));
+  }
+
+  if (params?.filters) {
+    Object.entries(params.filters).forEach(([key, val]) => {
+      query.append(key, val);
+    });
   }
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
