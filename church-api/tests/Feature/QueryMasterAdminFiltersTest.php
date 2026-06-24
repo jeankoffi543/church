@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Resources\V1\PastLiveResource;
 use App\Models\Branch;
 use App\Models\HomeGroup;
 use App\Models\Ministry;
+use App\Models\PastLive;
 use App\Models\Sermon;
 use App\Models\User;
 use Spatie\Permission\Models\Permission;
@@ -121,4 +123,15 @@ it('honours operator filters over the admin HTTP endpoint', function () {
         ->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.title', 'Combat spirituel');
+});
+
+it('serialises a past live whose source_type is null without a 500', function () {
+    // In production an invalid stored enum value makes the `VideoSourceType` cast
+    // resolve to null; the resource must read it null-safely (`?->value`).
+    $live = PastLive::factory()->create();
+    $live->source_type = null;
+
+    $payload = (new PastLiveResource($live))->toArray(request());
+
+    expect($payload['source_type'])->toBeNull();
 });
