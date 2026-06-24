@@ -1,0 +1,287 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: query-master.spec.ts >> QueryMaster Front-End E2E Tests >> Lives Archives (/lives-archives) >> appends elements via Charger plus button
+- Location: tests/e2e/query-master.spec.ts:101:9
+
+# Error details
+
+```
+Error: apiRequestContext._wrapApiCall: file data stream has unexpected number of bytes
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "MFM Ficgayo — Accueil" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e6]
+          - generic [ref=e7]:
+            - generic [ref=e8]: MFM Ficgayo
+            - generic [ref=e9]: Maison du Feu
+        - navigation [ref=e10]:
+          - navigation "Main" [ref=e11]:
+            - list [ref=e13]:
+              - listitem [ref=e14]:
+                - button "L'Église" [ref=e15]:
+                  - text: L'Église
+                  - img [ref=e16]
+              - listitem [ref=e18]:
+                - button "Communauté" [ref=e19]:
+                  - text: Communauté
+                  - img [ref=e20]
+              - listitem [ref=e22]:
+                - button "Médiathèque" [ref=e23]:
+                  - text: Médiathèque
+                  - img [ref=e24]
+              - listitem [ref=e26]:
+                - link "Agenda" [ref=e27] [cursor=pointer]:
+                  - /url: /agenda
+                  - img [ref=e28]
+                  - text: Agenda
+              - listitem [ref=e30]:
+                - link "Contact" [ref=e31] [cursor=pointer]:
+                  - /url: /contact
+                  - img [ref=e32]
+                  - text: Contact
+        - generic [ref=e34]:
+          - link "HORS LIGNE" [ref=e35] [cursor=pointer]:
+            - /url: /live
+            - text: HORS LIGNE
+          - link "Donner" [ref=e37] [cursor=pointer]:
+            - /url: /dons
+    - main [ref=e38]:
+      - generic [ref=e39]:
+        - generic [ref=e41]:
+          - generic [ref=e42]: Combats spirituels
+          - heading "Vaincre les Géants de ta Vie" [level=1] [ref=e43]
+          - generic [ref=e44]:
+            - generic [ref=e45]: Administrateur MFM
+            - generic [ref=e46]: 20 juin 2026
+            - generic [ref=e48]:
+              - img [ref=e49]
+              - text: 59 min
+            - generic [ref=e52]:
+              - img [ref=e53]
+              - text: 6 098 vues
+          - paragraph [ref=e56]: Rediffusion intégrale de ce moment d'enseignement et d'adoration.
+          - button "Regarder la rediffusion" [ref=e58] [cursor=pointer]:
+            - img
+            - text: Regarder la rediffusion
+        - generic [ref=e59]:
+          - heading "Toutes les archives" [level=2] [ref=e60]:
+            - img [ref=e61]
+            - text: Toutes les archives
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - img [ref=e65]
+              - textbox "Rechercher par titre, prédicateur ou série…" [ref=e68]
+            - generic [ref=e69]:
+              - generic [ref=e70]: Séries
+              - button "Action de grâce" [ref=e71] [cursor=pointer]
+              - button "Adoration Profonde" [ref=e72] [cursor=pointer]
+              - button "Alliance Éternelle" [ref=e73] [cursor=pointer]
+              - button "Cellules de Vie" [ref=e74] [cursor=pointer]
+              - button "Combat de la Foi" [ref=e75] [cursor=pointer]
+              - button "Combats spirituels" [ref=e76] [cursor=pointer]
+              - button "Voir plus (30)" [ref=e77] [cursor=pointer]
+            - generic [ref=e78]:
+              - generic [ref=e79]: Années
+              - button "2026" [ref=e80] [cursor=pointer]
+              - button "2025" [ref=e81] [cursor=pointer]
+              - button "2024" [ref=e82] [cursor=pointer]
+              - button "2023" [ref=e83] [cursor=pointer]
+              - button "2022" [ref=e84] [cursor=pointer]
+              - button "2021" [ref=e85] [cursor=pointer]
+              - button "Voir plus (19)" [ref=e86] [cursor=pointer]
+          - generic [ref=e88]: 220 rediffusion(s)
+          - generic [ref=e89]:
+            - heading "Juin 2008" [level=3] [ref=e90]
+            - button "Bâtir sur le Roc 105 min Bâtir sur le Roc 24 juin 2008 7 773" [ref=e92] [cursor=pointer]:
+              - generic [ref=e93]:
+                - img "Bâtir sur le Roc" [ref=e95]
+                - img [ref=e97]
+                - generic [ref=e99]: 105 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e100]
+              - paragraph [ref=e101]:
+                - generic [ref=e102]: 24 juin 2008
+                - generic [ref=e104]:
+                  - img [ref=e105]
+                  - text: 7 773
+          - generic [ref=e108]:
+            - heading "Septembre 2009" [level=3] [ref=e109]
+            - button "Bâtir sur le Roc 105 min Bâtir sur le Roc 17 septembre 2009 4 290" [ref=e111] [cursor=pointer]:
+              - generic [ref=e112]:
+                - img "Bâtir sur le Roc" [ref=e114]
+                - img [ref=e116]
+                - generic [ref=e118]: 105 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e119]
+              - paragraph [ref=e120]:
+                - generic [ref=e121]: 17 septembre 2009
+                - generic [ref=e123]:
+                  - img [ref=e124]
+                  - text: 4 290
+          - generic [ref=e127]:
+            - heading "Décembre 2010" [level=3] [ref=e128]
+            - button "Bâtir sur le Roc 87 min Bâtir sur le Roc 11 décembre 2010 3 620" [ref=e130] [cursor=pointer]:
+              - generic [ref=e131]:
+                - img "Bâtir sur le Roc" [ref=e133]
+                - img [ref=e135]
+                - generic [ref=e137]: 87 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e138]
+              - paragraph [ref=e139]:
+                - generic [ref=e140]: 11 décembre 2010
+                - generic [ref=e142]:
+                  - img [ref=e143]
+                  - text: 3 620
+          - generic [ref=e146]:
+            - heading "Mars 2012" [level=3] [ref=e147]
+            - button "Bâtir sur le Roc 86 min Bâtir sur le Roc 05 mars 2012 8 421" [ref=e149] [cursor=pointer]:
+              - generic [ref=e150]:
+                - img "Bâtir sur le Roc" [ref=e152]
+                - img [ref=e154]
+                - generic [ref=e156]: 86 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e157]
+              - paragraph [ref=e158]:
+                - generic [ref=e159]: 05 mars 2012
+                - generic [ref=e161]:
+                  - img [ref=e162]
+                  - text: 8 421
+          - generic [ref=e165]:
+            - heading "Mai 2013" [level=3] [ref=e166]
+            - button "Bâtir sur le Roc 102 min Bâtir sur le Roc 29 mai 2013 8 859" [ref=e168] [cursor=pointer]:
+              - generic [ref=e169]:
+                - img "Bâtir sur le Roc" [ref=e171]
+                - img [ref=e173]
+                - generic [ref=e175]: 102 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e176]
+              - paragraph [ref=e177]:
+                - generic [ref=e178]: 29 mai 2013
+                - generic [ref=e180]:
+                  - img [ref=e181]
+                  - text: 8 859
+          - generic [ref=e184]:
+            - heading "Août 2014" [level=3] [ref=e185]
+            - button "Bâtir sur le Roc 61 min Bâtir sur le Roc 22 août 2014 7 366" [ref=e187] [cursor=pointer]:
+              - generic [ref=e188]:
+                - img "Bâtir sur le Roc" [ref=e190]
+                - img [ref=e192]
+                - generic [ref=e194]: 61 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e195]
+              - paragraph [ref=e196]:
+                - generic [ref=e197]: 22 août 2014
+                - generic [ref=e199]:
+                  - img [ref=e200]
+                  - text: 7 366
+          - generic [ref=e203]:
+            - heading "Novembre 2015" [level=3] [ref=e204]
+            - button "Bâtir sur le Roc 72 min Bâtir sur le Roc 15 novembre 2015 1 656" [ref=e206] [cursor=pointer]:
+              - generic [ref=e207]:
+                - img "Bâtir sur le Roc" [ref=e209]
+                - img [ref=e211]
+                - generic [ref=e213]: 72 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e214]
+              - paragraph [ref=e215]:
+                - generic [ref=e216]: 15 novembre 2015
+                - generic [ref=e218]:
+                  - img [ref=e219]
+                  - text: 1 656
+          - generic [ref=e222]:
+            - heading "Février 2017" [level=3] [ref=e223]
+            - button "Bâtir sur le Roc 65 min Bâtir sur le Roc 07 février 2017 4 945" [ref=e225] [cursor=pointer]:
+              - generic [ref=e226]:
+                - img "Bâtir sur le Roc" [ref=e228]
+                - img [ref=e230]
+                - generic [ref=e232]: 65 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e233]
+              - paragraph [ref=e234]:
+                - generic [ref=e235]: 07 février 2017
+                - generic [ref=e237]:
+                  - img [ref=e238]
+                  - text: 4 945
+          - generic [ref=e241]:
+            - heading "Mai 2018" [level=3] [ref=e242]
+            - button "Bâtir sur le Roc 86 min Bâtir sur le Roc 03 mai 2018 2 914" [ref=e244] [cursor=pointer]:
+              - generic [ref=e245]:
+                - img "Bâtir sur le Roc" [ref=e247]
+                - img [ref=e249]
+                - generic [ref=e251]: 86 min
+              - heading "Bâtir sur le Roc" [level=3] [ref=e252]
+              - paragraph [ref=e253]:
+                - generic [ref=e254]: 03 mai 2018
+                - generic [ref=e256]:
+                  - img [ref=e257]
+                  - text: 2 914
+          - button "Charger plus (211)" [ref=e261] [cursor=pointer]:
+            - img [ref=e262]
+            - text: Charger plus
+            - generic [ref=e264]: (211)
+    - contentinfo [ref=e265]:
+      - generic [ref=e266]:
+        - generic [ref=e267]:
+          - link "MFM Ficgayo — Accueil" [ref=e268] [cursor=pointer]:
+            - /url: /
+            - img "Logo Ministères de la Montagne du Feu et des Miracles" [ref=e269]
+            - generic [ref=e270]:
+              - generic [ref=e271]: MFM Ficgayo
+              - generic [ref=e272]: Maison du Feu
+          - paragraph [ref=e273]: Une église chrétienne évangélique de grâce, de feu et de miracles, au cœur d'Abidjan.
+          - generic [ref=e274]:
+            - link "Facebook" [ref=e275] [cursor=pointer]:
+              - /url: https://facebook.com/mfmficgayo
+              - text: f
+            - link "YouTube" [ref=e276] [cursor=pointer]:
+              - /url: https://youtube.com/@mfmficgayo
+              - text: ▶
+            - link "Instagram" [ref=e277] [cursor=pointer]:
+              - /url: https://instagram.com/mfmficgayo
+              - text: "@"
+        - generic [ref=e278]:
+          - generic [ref=e279]: Navigation
+          - generic [ref=e280]:
+            - link "Accueil" [ref=e281] [cursor=pointer]:
+              - /url: /
+            - link "Culte en direct" [ref=e282] [cursor=pointer]:
+              - /url: /live
+            - link "Médiathèque" [ref=e283] [cursor=pointer]:
+              - /url: /mediatheque
+            - link "Ministères" [ref=e284] [cursor=pointer]:
+              - /url: /ministeres
+            - link "L'Église" [ref=e285] [cursor=pointer]:
+              - /url: /eglise
+            - link "Agenda" [ref=e286] [cursor=pointer]:
+              - /url: /agenda
+            - link "Contact" [ref=e287] [cursor=pointer]:
+              - /url: /contact
+        - generic [ref=e288]:
+          - generic [ref=e289]: Nous trouver
+          - generic [ref=e290]:
+            - generic [ref=e291]: Yopougon Ficgayo
+            - generic [ref=e292]: Abidjan, Côte d'Ivoire
+            - text: +225 07 00 00 00 00
+            - text: bonjour@mfm-ficgayo.ci
+          - generic [ref=e293]:
+            - strong [ref=e294]: Cultes
+            - text: · Dim 9h · Mar 18h30 · Ven 22h
+        - generic [ref=e295]:
+          - generic [ref=e296]: Reste connecté
+          - paragraph [ref=e297]: Reçois les actus et les méditations de la semaine.
+          - generic [ref=e298]:
+            - textbox "Ton e-mail" [ref=e299]
+            - button "S'abonner" [ref=e300]: →
+      - generic [ref=e301]:
+        - generic [ref=e302]: © 2026 Église MFM Ficgayo. Tous droits réservés.
+        - generic [ref=e303]: Bâti avec foi · « À Dieu seul la gloire »
+  - button "Open Next.js Dev Tools" [ref=e309] [cursor=pointer]:
+    - img [ref=e310]
+  - alert [ref=e313]
+```

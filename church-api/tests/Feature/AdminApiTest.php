@@ -101,12 +101,16 @@ it('auto-generates a unique slug for events', function () {
 
     $first = $this->postJson('/api/v1/admin/events', [
         'title' => 'Maison de Feu',
-        'starts_at' => '2026-07-11 09:00:00',
+        'description' => 'Description test',
+        'location' => 'Lieu test',
+        'start_date' => '2026-07-11 09:00:00',
     ])->assertCreated();
 
     $second = $this->postJson('/api/v1/admin/events', [
         'title' => 'Maison de Feu',
-        'starts_at' => '2026-07-12 09:00:00',
+        'description' => 'Description test',
+        'location' => 'Lieu test',
+        'start_date' => '2026-07-12 09:00:00',
     ])->assertCreated();
 
     expect($first->json('data.slug'))->toBe('maison-de-feu');

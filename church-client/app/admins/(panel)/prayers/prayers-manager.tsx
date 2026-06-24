@@ -19,19 +19,23 @@ import {
   User,
   BookHeart,
 } from "lucide-react";
-import type { AdminPrayerRequest, AdminUser } from "@/lib/admin-api";
+import type { AdminPrayerRequest, AdminUser, AdminListMeta } from "@/lib/admin-api";
 import {
   updatePrayerStatus,
   assignPrayer,
   updatePrayer,
   deletePrayer,
   updateAdminSettings,
+  getAdminPrayersPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const PRAYERS_PER_PAGE = 10;
 
 /* ── Constants ───────────────────────────────────────────────────── */
 
@@ -87,35 +91,28 @@ const PLACEHOLDERS = [
 
 /* ── Component ───────────────────────────────────────────────────── */
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function PrayersManager({
   initialPrayers,
+  initialMeta,
+  initialNewCount,
   users,
   initialSuccessMessage,
   initialNotificationMessage,
   initialCategories,
 }: {
   initialPrayers: AdminPrayerRequest[];
+  initialMeta: AdminListMeta;
+  initialNewCount: number;
   users: AdminUser[];
   initialSuccessMessage: string;
   initialNotificationMessage: string;
   initialCategories: string[];
 }) {
-  const [prayers, setPrayers] = useState<AdminPrayerRequest[]>(initialPrayers);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(PRAYERS_PER_PAGE);
   const [sortBy, setSortBy] = useState<"name" | "category" | "message" | "status" | "assigned_to" | "created_at" | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
@@ -125,6 +122,42 @@ export function PrayersManager({
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const prayerFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (statusFilter !== "all") {
+    prayerFilters.status = statusFilter;
+  }
+  if (categoryFilter !== "all") {
+    prayerFilters.category = categoryFilter;
+  }
+
+  const {
+    items: prayers,
+    setItems: setPrayers,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminPrayerRequest>({
+    fetcher: getAdminPrayersPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: sortBy, dir: sortOrder } : null,
+      filters: prayerFilters,
+    },
+    initialData: initialPrayers,
+    initialMeta,
+  });
+
+  // The "new" badge needs the global count, not just the visible page.
+  const [newCount, setNewCount] = useState(initialNewCount);
+  const refreshNew = useCallback(() => {
+    getAdminPrayersPaginated({ filters: { status: "new" }, perPage: 1 })
+      .then((res) => setNewCount(res.meta.total))
+      .catch(() => {});
+  }, []);
 
   // Panel-local form state
   const [panelNotes, setPanelNotes] = useState("");
@@ -406,7 +439,7 @@ export function PrayersManager({
       setPrayers((prev) =>
         prev.map((p) => (p.id === updated.id ? updated : p)),
       ),
-    [],
+    [setPrayers],
   );
 
   /* ── Actions ──────────────────────────────────────────────── */
@@ -421,6 +454,8 @@ export function PrayersManager({
       try {
         const res = await updatePrayerStatus(prayer.id, newStatus);
         replaceInList(res.data);
+        refresh();
+        refreshNew();
         setStatus({ type: "success", message: "Statut mis à jour." });
       } catch (err) {
         replaceInList(prayer); // rollback
@@ -451,6 +486,7 @@ export function PrayersManager({
       try {
         const res = await assignPrayer(prayer.id, userId);
         replaceInList(res.data);
+        refresh();
         setStatus({ type: "success", message: "Intercesseur assigné." });
       } catch (err) {
         replaceInList(prayer);
@@ -509,6 +545,8 @@ export function PrayersManager({
     startTransition(async () => {
       try {
         await deletePrayer(prayer.id);
+        refresh();
+        refreshNew();
         setStatus({ type: "success", message: "Requête supprimée." });
       } catch (err) {
         // rollback
@@ -620,6 +658,7 @@ export function PrayersManager({
   };
 
   const handleSort = (column: "name" | "category" | "message" | "status" | "assigned_to" | "created_at") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -648,90 +687,11 @@ export function PrayersManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Prayers (combined filters + sorting)
-  const processedPrayers = useMemo(() => {
-    let result = prayers.filter((p) => {
-      // Existing Status Filter Tab
-      if (statusFilter !== "all" && p.status !== statusFilter) return false;
-
-      // Existing Category Filter Dropdown
-      if (categoryFilter !== "all" && p.category !== categoryFilter) return false;
-
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const nameMatch = p.name ? p.name.toLowerCase().includes(q) : false;
-        const msgMatch = p.message ? p.message.toLowerCase().includes(q) : false;
-        const emailMatch = p.email ? p.email.toLowerCase().includes(q) : false;
-        if (!nameMatch && !msgMatch && !emailMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(p.name ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "email") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(p.email ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "phone") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(p.phone ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "message") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(p.message ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "category") {
-          if (filter.value === "") continue;
-          if (p.category !== filter.value) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "name") {
-          valA = a.name ?? "";
-          valB = b.name ?? "";
-        } else if (sortBy === "category") {
-          valA = a.category ?? "";
-          valB = b.category ?? "";
-        } else if (sortBy === "message") {
-          valA = a.message ?? "";
-          valB = b.message ?? "";
-        } else if (sortBy === "status") {
-          valA = a.status ?? "";
-          valB = b.status ?? "";
-        } else if (sortBy === "assigned_to") {
-          valA = a.assignee?.name ?? "";
-          valB = b.assignee?.name ?? "";
-        } else if (sortBy === "created_at") {
-          valA = a.created_at ?? "";
-          valB = b.created_at ?? "";
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    } else {
-      // Default fallback sort: created_at desc
-      result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-
-    return result;
-  }, [prayers, statusFilter, categoryFilter, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedPrayers.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedPrayers.slice((currentPage - 1) * perPage, currentPage * perPage);
-
-  const filtered = paged;
-
-  const newCount = prayers.filter((p) => p.status === "new").length;
+  // The API already returns the filtered + sorted page; render it directly.
+  const filtered = prayers;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   const whatsappUrl = (prayer: AdminPrayerRequest) => {
     const phone = prayer.phone.replace(/^\+/, "");
@@ -752,7 +712,7 @@ export function PrayersManager({
           <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
             Requêtes de Prière
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {prayers.length}
+              {total}
               {newCount > 0 && (
                 <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-live text-[10px] font-black text-white animate-pulse">
                   {newCount}
@@ -905,7 +865,7 @@ export function PrayersManager({
 
           {/* ── Data table ──────────────────────────────────────── */}
           <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-            <div className="overflow-x-auto">
+            <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
               <table className="w-full text-left text-sm text-indigo">
                 <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
                   <tr>
@@ -1059,11 +1019,11 @@ export function PrayersManager({
               </table>
             </div>
 
-            {processedPrayers.length > 0 && (
+            {total > 0 && (
               <Pagination
                 page={currentPage}
                 pageCount={pageCount}
-                total={processedPrayers.length}
+                total={total}
                 perPage={perPage}
                 onPageChange={(page) => {
                   setPage(page);

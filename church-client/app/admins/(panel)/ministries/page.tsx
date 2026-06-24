@@ -1,7 +1,7 @@
-import { getAdminMe, getAdminMinistries, getAdminUsers } from "@/lib/admin-api";
+import { getAdminMe, getAdminMinistriesPaginated, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { MinistriesManager } from "./ministries-manager";
+import { MinistriesManager, MINISTRIES_PER_PAGE } from "./ministries-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,10 @@ export default async function AdminMinistriesPage() {
     return <AccessRestricted />;
   }
 
-  const [ministries, staff] = await Promise.all([
-    getAdminMinistries(),
+  const [list, staff] = await Promise.all([
+    getAdminMinistriesPaginated({ perPage: MINISTRIES_PER_PAGE }),
     getAdminUsers(),
   ]);
 
-  return <MinistriesManager initialMinistries={ministries} staff={staff} />;
+  return <MinistriesManager initialMinistries={list.data} initialMeta={list.meta} staff={staff} />;
 }

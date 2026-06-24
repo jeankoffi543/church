@@ -22,12 +22,18 @@ import {
   type AdminHomeGroup,
   type AdminHomeGroupApplication,
   type AdminMe,
+  type AdminListMeta,
   approveHomeGroupApplication,
   rejectHomeGroupApplication,
+  getAdminHomeGroupApplicationsPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Pagination } from "../../_components/pagination";
+import { useServerList } from "../../_components/use-server-list";
+
+export const HOME_GROUP_APPLICATIONS_PER_PAGE = 10;
 
 type Feedback = { type: "success" | "error"; message: string } | null;
 
@@ -42,14 +48,15 @@ const STATUS_CONFIG: Record<
 
 export function ApplicationsManager({
   initialApplications,
+  initialMeta,
   homeGroups,
   me,
 }: {
   initialApplications: AdminHomeGroupApplication[];
+  initialMeta: AdminListMeta;
   homeGroups: AdminHomeGroup[];
   me: AdminMe | null;
 }) {
-  const [applications, setApplications] = useState<AdminHomeGroupApplication[]>(initialApplications);
   const [status, setStatus] = useState<Feedback>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -57,6 +64,30 @@ export function ApplicationsManager({
   const [search, setSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(HOME_GROUP_APPLICATIONS_PER_PAGE);
+
+  // Server-side list (search + group + status filters + pagination via QueryMaster).
+  const applicationFilters: Record<string, string> = {};
+  if (selectedGroupId !== "all") {
+    applicationFilters.home_group_id = selectedGroupId;
+  }
+  if (selectedStatus !== "all") {
+    applicationFilters.status = selectedStatus;
+  }
+
+  const {
+    items: applications,
+    setItems: setApplications,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminHomeGroupApplication>({
+    fetcher: getAdminHomeGroupApplicationsPaginated,
+    params: { page, perPage, search, filters: applicationFilters },
+    initialData: initialApplications,
+    initialMeta,
+  });
 
   // Detail Modal state
   const [selectedApp, setSelectedApp] = useState<AdminHomeGroupApplication | null>(null);
@@ -103,6 +134,7 @@ export function ApplicationsManager({
         setApplications((prev) =>
           prev.map((a) => (a.id === application.id ? res.data : a))
         );
+        refresh();
         setStatus({
           type: "success",
           message: decision === "approve" ? "Demande d'adhésion approuvée." : "Demande d'adhésion rejetée.",
@@ -121,21 +153,10 @@ export function ApplicationsManager({
     });
   };
 
-  // Filter logic
-  const filteredApplications = applications.filter((app) => {
-    const matchesSearch =
-      app.name.toLowerCase().includes(search.toLowerCase()) ||
-      app.email.toLowerCase().includes(search.toLowerCase()) ||
-      app.phone.includes(search);
-
-    const matchesGroup =
-      selectedGroupId === "all" || app.home_group_id === Number(selectedGroupId);
-
-    const matchesStatus =
-      selectedStatus === "all" || app.status === selectedStatus;
-
-    return matchesSearch && matchesGroup && matchesStatus;
-  });
+  // The API already returns the filtered page; render it directly.
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   const formatDate = (dateStr: string) => {
     try {
@@ -177,7 +198,7 @@ export function ApplicationsManager({
           <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
             Demandes d&apos;adhésion
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {filteredApplications.length}
+              {total}
             </span>
           </h1>
           <p className="mt-1 text-sm text-body">
@@ -213,7 +234,10 @@ export function ApplicationsManager({
             type="text"
             placeholder="Rechercher par nom, email, téléphone..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             className="w-full h-11 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] pl-11 pr-4 text-sm text-indigo placeholder:text-faint outline-none focus:border-gold"
           />
         </div>
@@ -222,7 +246,10 @@ export function ApplicationsManager({
         <div className="w-full sm:w-auto min-w-[180px]">
           <select
             value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
+            onChange={(e) => {
+              setSelectedGroupId(e.target.value);
+              setPage(1);
+            }}
             className="w-full h-11 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 text-sm text-indigo outline-none focus:border-gold"
           >
             <option value="all">Toutes les cellules</option>
@@ -238,7 +265,10 @@ export function ApplicationsManager({
         <div className="w-full sm:w-auto min-w-[150px]">
           <select
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
+            onChange={(e) => {
+              setSelectedStatus(e.target.value);
+              setPage(1);
+            }}
             className="w-full h-11 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 text-sm text-indigo outline-none focus:border-gold"
           >
             <option value="all">Tous les statuts</option>
@@ -251,7 +281,7 @@ export function ApplicationsManager({
 
       {/* Table */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-[rgba(40,25,80,0.08)] bg-cream/40">
@@ -276,14 +306,14 @@ export function ApplicationsManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-[rgba(40,25,80,0.05)]">
-              {filteredApplications.length === 0 ? (
+              {applications.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-sm text-faint">
                     Aucune demande d&apos;adhésion trouvée.
                   </td>
                 </tr>
               ) : (
-                filteredApplications.map((app) => (
+                applications.map((app) => (
                   <tr
                     key={app.id}
                     onClick={() => openApp(app)}
@@ -338,6 +368,20 @@ export function ApplicationsManager({
             </tbody>
           </table>
         </div>
+        {total > 0 && (
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            total={total}
+            perPage={perPage}
+            onPageChange={setPage}
+            onPerPageChange={(n) => {
+              setPerPage(n);
+              setPage(1);
+            }}
+            itemLabel="demandes"
+          />
+        )}
       </div>
 
       {/* Processing Dialog */}

@@ -2,11 +2,12 @@
 
 namespace App\Models;
 
+use App\Support\QueryFilters;
 use Database\Factories\HomeGroupFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Keky\QueryMaster\Concerns\HasFilters;
 use Keky\QueryMaster\Concerns\IsSearchable;
 use Keky\QueryMaster\Concerns\IsSortable;
@@ -37,6 +38,7 @@ class HomeGroup extends Model
     protected array $sortable = [
         'name',
         'leader',
+        'address',
         'sort_order',
         'is_active',
         'created_at',
@@ -45,12 +47,21 @@ class HomeGroup extends Model
     public function filters(): array
     {
         return [
-            Filter::make('is_active', 'is_active'),
-            Filter::make('leader_id', 'leader_id'),
-            Filter::make('zone_name', 'zone_name'),
-            Filter::make('name', 'name'),
-            Filter::make('day', 'meeting_day'),
-            Filter::make('meeting_day', 'meeting_day'),
+            ...QueryFilters::exact('is_active'),
+            ...QueryFilters::exact('leader_id'),
+            ...QueryFilters::exact('zone_name'),
+            ...QueryFilters::text('name'),
+            ...QueryFilters::text('leader'),
+            ...QueryFilters::text('address'),
+            // Day match is case-insensitive so "Mardi"/"mardi"/"MARDI" all hit.
+            // `day`/`meeting_day` serve the public site; `meeting_day__eq` is what
+            // the admin QueryBuilder <select> emits.
+            ...array_map(
+                fn (string $queryField) => Filter::make('meeting_day', $queryField)->applyWith(
+                    fn ($q, $value) => $q->whereRaw('LOWER(meeting_day) = ?', [mb_strtolower((string) $value)])
+                ),
+                ['day', 'meeting_day', 'meeting_day__eq'],
+            ),
         ];
     }
 
@@ -73,7 +84,7 @@ class HomeGroup extends Model
     /**
      * Get the user who leads this home group.
      */
-    public function leaderUser(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function leaderUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'leader_id');
     }

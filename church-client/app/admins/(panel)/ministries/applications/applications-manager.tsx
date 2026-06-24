@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import {
   Loader2,
   CheckCircle,
@@ -15,12 +15,15 @@ import {
   User,
 } from "lucide-react";
 
-import type { AdminMe, AdminMinistryApplication } from "@/lib/admin-api";
-import { approveMinistryApplication, rejectMinistryApplication } from "@/lib/admin-api";
+import type { AdminMe, AdminMinistryApplication, AdminListMeta } from "@/lib/admin-api";
+import { approveMinistryApplication, rejectMinistryApplication, getMinistryApplicationsPaginated } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Pagination } from "../../_components/pagination";
+import { useServerList } from "../../_components/use-server-list";
+
+export const MINISTRY_APPLICATIONS_PER_PAGE = 10;
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
 
@@ -42,19 +45,47 @@ const STATUS_CONFIG: Record<
 
 export function ApplicationsManager({
   initialApplications,
+  initialMeta,
+  initialPendingCount,
   me,
 }: {
   initialApplications: AdminMinistryApplication[];
+  initialMeta: AdminListMeta;
+  initialPendingCount: number;
   me: AdminMe;
 }) {
-  const [applications, setApplications] = useState(initialApplications);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(MINISTRY_APPLICATIONS_PER_PAGE);
+
+  // Server-side list (status filter + pagination via QueryMaster).
+  const {
+    items: applications,
+    setItems: setApplications,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminMinistryApplication>({
+    fetcher: getMinistryApplicationsPaginated,
+    params: {
+      page,
+      perPage,
+      filters: statusFilter === "all" ? {} : { status: statusFilter },
+    },
+    initialData: initialApplications,
+    initialMeta,
+  });
+
+  const [pendingCount, setPendingCount] = useState(initialPendingCount);
+  const refreshPending = useCallback(() => {
+    getMinistryApplicationsPaginated({ filters: { status: "pending" }, perPage: 1 })
+      .then((res) => setPendingCount(res.meta.total))
+      .catch(() => {});
+  }, []);
 
   // Optional decision note (motif) recorded with an approve/reject, and whether
   // it is shared with the candidate in the public status lookup.
@@ -76,20 +107,19 @@ export function ApplicationsManager({
     return me.id === application.ministry?.chef_id;
   };
 
-  const filtered = useMemo(
-    () => applications.filter((a) => (statusFilter === "all" ? true : a.status === statusFilter)),
-    [applications, statusFilter]
-  );
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered page; render it directly.
+  const paged = applications;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   const selected = applications.find((a) => a.id === selectedId) ?? null;
-  const pendingCount = applications.filter((a) => a.status === "pending").length;
 
-  const replaceInList = (updated: AdminMinistryApplication) =>
+  const replaceInList = (updated: AdminMinistryApplication) => {
     setApplications((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    refresh();
+    refreshPending();
+  };
 
   const handleDecision = (
     application: AdminMinistryApplication,
@@ -183,7 +213,10 @@ export function ApplicationsManager({
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.key}
-            onClick={() => setStatusFilter(f.key)}
+            onClick={() => {
+              setStatusFilter(f.key);
+              setPage(1);
+            }}
             className={cn(
               "cursor-pointer rounded-[10px] px-3.5 py-2 text-xs font-bold transition",
               statusFilter === f.key ? "bg-indigo text-white shadow-sm" : "text-body hover:bg-cream hover:text-indigo"
@@ -201,7 +234,7 @@ export function ApplicationsManager({
 
       {/* Table */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase">
               <tr>
@@ -269,7 +302,7 @@ export function ApplicationsManager({
                 );
               })}
 
-              {filtered.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -285,11 +318,11 @@ export function ApplicationsManager({
             </tbody>
           </table>
         </div>
-        {filtered.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={filtered.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

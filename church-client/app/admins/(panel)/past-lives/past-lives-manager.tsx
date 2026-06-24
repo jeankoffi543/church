@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, useMemo } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   Plus,
   Search,
@@ -27,47 +27,43 @@ import {
   deletePastLive,
   type AdminPastLive,
   type AdminUser,
+  type AdminListMeta,
+  getAdminPastLivesPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SmartImage } from "@/components/ui/smart-image";
 import { Pagination } from "../_components/pagination";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
 import { SearchableSelect } from "../_components/searchable-select";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
 
 type Source = "youtube" | "file";
 
 const IMG_FALLBACK = "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=600&q=80";
+
+export const PAST_LIVES_PER_PAGE = 10;
 
 const filterFields: FilterField[] = [
   { id: "title", label: "Titre", type: "text" },
   { id: "series_name", label: "Série", type: "text" }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function PastLivesManager({
   initialLives,
+  initialMeta,
   preachers,
 }: {
   initialLives: AdminPastLive[];
+  initialMeta: AdminListMeta;
   preachers: AdminUser[];
 }) {
   const preacherOptions = preachers.map((p) => ({ value: p.id, label: p.name, sublabel: p.email }));
-  const [lives, setLives] = useState<AdminPastLive[]>(initialLives);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(PAST_LIVES_PER_PAGE);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -75,6 +71,26 @@ export function PastLivesManager({
   const [sortBy, setSortBy] = useState<"title" | "series_name" | "media_type" | "views_count" | "broadcasted_at" | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const {
+    items: lives,
+    setItems: setLives,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminPastLive>({
+    fetcher: getAdminPastLivesPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: sortBy, dir: sortOrder } : null,
+      filters: serializeFiltersForQueryMaster(activeFilters),
+    },
+    initialData: initialLives,
+    initialMeta,
+  });
 
   useEffect(() => {
     if (!status) return;
@@ -188,10 +204,12 @@ export function PastLivesManager({
         if (editing) {
           const res = await updatePastLive(editing.id, payload, files);
           setLives((prev) => prev.map((l) => (l.id === res.data.id ? res.data : l)));
+          refresh();
           setStatus({ type: "success", message: `« ${title} » mis à jour.` });
         } else {
           const res = await createPastLive(payload, files);
           setLives((prev) => [res.data, ...prev]);
+          refresh();
           setStatus({ type: "success", message: `« ${title} » créé.` });
         }
         stopFaux(true);
@@ -210,6 +228,7 @@ export function PastLivesManager({
       try {
         await deletePastLive(l.id);
         setLives((prev) => prev.filter((x) => x.id !== l.id));
+        refresh();
         setStatus({ type: "success", message: `« ${l.title} » supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -224,6 +243,7 @@ export function PastLivesManager({
   };
 
   const handleSort = (column: "title" | "series_name" | "media_type" | "views_count" | "broadcasted_at") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -252,65 +272,11 @@ export function PastLivesManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Lives (combined filters + sorting)
-  const processedLives = useMemo(() => {
-    let result = lives.filter((l) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = l.title.toLowerCase().includes(q);
-        const seriesMatch = l.series_name ? l.series_name.toLowerCase().includes(q) : false;
-        if (!titleMatch && !seriesMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(l.title, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "series_name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(l.series_name ?? "", filter.value, filter.operator)) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "series_name") {
-          valA = a.series_name ?? "";
-          valB = b.series_name ?? "";
-        } else if (sortBy === "media_type") {
-          valA = a.media_type ?? "";
-          valB = b.media_type ?? "";
-        } else if (sortBy === "broadcasted_at") {
-          valA = a.broadcasted_at ?? "";
-          valB = b.broadcasted_at ?? "";
-        } else if (sortBy === "views_count") {
-          const numA = a.views_count;
-          const numB = b.views_count;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [lives, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedLives.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedLives.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = lives;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -370,7 +336,7 @@ export function PastLivesManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -459,18 +425,18 @@ export function PastLivesManager({
                   </td>
                 </tr>
               ))}
-              {processedLives.length === 0 && (
+              {paged.length === 0 && (
                 <tr><td colSpan={6} className="px-6 py-10 text-center text-xs text-body">Aucune rediffusion.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {processedLives.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedLives.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

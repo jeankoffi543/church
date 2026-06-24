@@ -19,16 +19,35 @@ class SermonController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $sermons = Sermon::query()
+        $query = Sermon::query()
             ->with('scriptures')
-            ->published()
-            ->when($request->filled('series'), fn ($q) => $q->where('series', $request->string('series')))
-            ->when($request->filled('speaker'), fn ($q) => $q->where('speaker', $request->string('speaker')))
-            ->when($request->filled('book'), fn ($q) => $q->where('book', $request->string('book')))
-            ->latestFirst()
-            ->paginate($request->integer('per_page', 12));
+            ->published();
 
-        return SermonResource::collection($sermons);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
+        $sermons = $query->paginate($request->integer('per_page', 12));
+
+        $speakers = Sermon::query()->published()->distinct()->pluck('speaker')->filter()->sort()->values()->all();
+        $series = Sermon::query()->published()->distinct()->pluck('series')->filter()->sort()->values()->all();
+        $years = Sermon::query()->published()->pluck('preached_at')->map(fn ($d) => $d->format('Y'))->unique()->sortDesc()->values()->all();
+        $dates = Sermon::query()->published()->pluck('preached_at')->map(fn ($d) => $d->format('Y-m-d'))->unique()->sortDesc()->values()->all();
+        $books = Sermon::query()->published()->distinct()->pluck('book')->filter()->sort()->values()->all();
+
+        return SermonResource::collection($sermons)->additional([
+            'meta' => [
+                'speakers' => $speakers,
+                'series' => $series,
+                'years' => $years,
+                'dates' => $dates,
+                'books' => $books,
+            ],
+        ]);
     }
 
     /**

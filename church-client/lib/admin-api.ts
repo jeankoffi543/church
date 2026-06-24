@@ -65,6 +65,8 @@ export type AdminHomeGroup = {
   latitude: number | null;
   longitude: number | null;
   zone_name: string | null;
+  meeting_day: string | null;
+  meeting_time: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
@@ -521,6 +523,8 @@ export async function createHomeGroup(data: {
   latitude?: number | null;
   longitude?: number | null;
   zone_name?: string | null;
+  meeting_day?: string | null;
+  meeting_time?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
@@ -543,6 +547,8 @@ export async function updateHomeGroup(id: number, data: {
   latitude?: number | null;
   longitude?: number | null;
   zone_name?: string | null;
+  meeting_day?: string | null;
+  meeting_time?: string | null;
   schedule?: string | null;
   coordinates?: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order?: number;
@@ -1148,5 +1154,143 @@ export async function deleteBranch(id: number): Promise<void> {
   await adminFetch<void>(`/branches/${id}`, { method: "DELETE" });
   revalidateTag("branches", { expire: 0 });
   revalidatePath("/branches");
+}
+
+/* ── Server-side list querying (Keky\QueryMaster) ─────────────────────
+ *
+ * The admin tables drive search / filtering / sorting / pagination through
+ * the API instead of in the browser. Filters already arrive in QueryMaster
+ * format (`field__lk`, `is_published__eq`, …) from the QueryBuilder's
+ * `serializeFiltersForQueryMaster`; here we only append the transport bits.
+ */
+
+export type AdminListMeta = {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+};
+
+export type AdminListParams = {
+  page?: number;
+  perPage?: number;
+  /** Free-text search across the model's `$searchable` columns. */
+  search?: string;
+  /** A single column sort, e.g. `{ field: "preached_at", dir: "desc" }`. */
+  sort?: { field: string; dir: "asc" | "desc" } | null;
+  /** QueryMaster filter params already keyed with their operator suffix. */
+  filters?: Record<string, string>;
+};
+
+export type AdminListResult<T> = { data: T[]; meta: AdminListMeta };
+
+/** Append page / per_page / search / sort / filter params to an admin path. */
+function buildAdminListPath(base: string, params?: AdminListParams): string {
+  const q = new URLSearchParams();
+  if (params?.page && params.page > 1) q.set("page", String(params.page));
+  if (params?.perPage) q.set("per_page", String(params.perPage));
+  const search = params?.search?.trim();
+  if (search) q.set("search", search);
+  if (params?.sort) q.set(`sort[${params.sort.field}]`, params.sort.dir);
+  if (params?.filters) {
+    for (const [key, value] of Object.entries(params.filters)) {
+      if (value !== undefined && value !== null && value !== "") {
+        q.set(key, String(value));
+      }
+    }
+  }
+  const qs = q.toString();
+  return `${base}${qs ? `?${qs}` : ""}`;
+}
+
+export async function getAdminSermonsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminSermon>> {
+  return adminFetch<AdminListResult<AdminSermon>>(buildAdminListPath("/sermons", params));
+}
+
+export async function getAdminEventsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminEvent>> {
+  return adminFetch<AdminListResult<AdminEvent>>(buildAdminListPath("/events", params));
+}
+
+export async function getAdminContactsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminContactMessage>> {
+  return adminFetch<AdminListResult<AdminContactMessage>>(buildAdminListPath("/contacts", params));
+}
+
+export async function getAdminAlbumsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminAlbum>> {
+  return adminFetch<AdminListResult<AdminAlbum>>(buildAdminListPath("/albums", params));
+}
+
+export async function getAdminPastLivesPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminPastLive>> {
+  return adminFetch<AdminListResult<AdminPastLive>>(buildAdminListPath("/past-lives", params));
+}
+
+export async function getServantsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminServant>> {
+  return adminFetch<AdminListResult<AdminServant>>(buildAdminListPath("/admin-users", params));
+}
+
+/**
+ * Prayers are served as a raw Laravel paginator (top-level meta keys), so we
+ * normalise them into the same `{ data, meta }` envelope as the others.
+ */
+export async function getAdminPrayersPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminPrayerRequest>> {
+  const res = await adminFetch<
+    { data: AdminPrayerRequest[] } & AdminListMeta
+  >(buildAdminListPath("/prayers", params));
+  return {
+    data: res.data,
+    meta: {
+      current_page: res.current_page,
+      last_page: res.last_page,
+      per_page: res.per_page,
+      total: res.total,
+    },
+  };
+}
+
+export async function getAdminMinistriesPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminMinistry>> {
+  return adminFetch<AdminListResult<AdminMinistry>>(buildAdminListPath("/ministries", params));
+}
+
+export async function getAdminHomeGroupsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminHomeGroup>> {
+  return adminFetch<AdminListResult<AdminHomeGroup>>(buildAdminListPath("/home-groups", params));
+}
+
+export async function getAdminBranchesPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminBranch>> {
+  return adminFetch<AdminListResult<AdminBranch>>(buildAdminListPath("/branches", params));
+}
+
+export async function getMinistryApplicationsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminMinistryApplication>> {
+  return adminFetch<AdminListResult<AdminMinistryApplication>>(
+    buildAdminListPath("/ministry-applications", params)
+  );
+}
+
+export async function getAdminHomeGroupApplicationsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminHomeGroupApplication>> {
+  return adminFetch<AdminListResult<AdminHomeGroupApplication>>(
+    buildAdminListPath("/home-groups/applications", params)
+  );
 }
 

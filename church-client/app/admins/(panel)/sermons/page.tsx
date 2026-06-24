@@ -1,7 +1,7 @@
-import { getAdminMe, getAdminSermons, getAdminUsers } from "@/lib/admin-api";
+import { getAdminMe, getAdminSermonsPaginated, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { SermonsManager } from "./sermons-manager";
+import { SermonsManager, SERMONS_PER_PAGE } from "./sermons-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,16 @@ export default async function AdminSermonsPage() {
     return <AccessRestricted />;
   }
 
-  const [sermons, users] = await Promise.all([getAdminSermons(), getAdminUsers()]);
+  const [list, users] = await Promise.all([
+    getAdminSermonsPaginated({ perPage: SERMONS_PER_PAGE }),
+    getAdminUsers(),
+  ]);
 
-  return <SermonsManager initialSermons={sermons} preachers={users.map((u) => ({ id: u.id, name: u.name }))} />;
+  return (
+    <SermonsManager
+      initialSermons={list.data}
+      initialMeta={list.meta}
+      preachers={users.map((u) => ({ id: u.id, name: u.name }))}
+    />
+  );
 }

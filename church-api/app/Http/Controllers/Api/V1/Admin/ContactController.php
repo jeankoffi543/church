@@ -17,11 +17,19 @@ class ContactController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $messages = ContactMessage::with(['repliedBy'])
-            ->latest()
-            ->get();
+        $query = ContactMessage::with(['repliedBy']);
 
-        return ContactMessageResource::collection($messages);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latest();
+        }
+
+        return ContactMessageResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     /**

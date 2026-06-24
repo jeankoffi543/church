@@ -5,17 +5,24 @@ namespace App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\MinistryResource;
 use App\Models\Ministry;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class MinistryController extends Controller
 {
-    /**
-     * Active ministries, ordered. The client decides whether to show the
-     * "Voir plus" button when the list exceeds 4.
-     */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        $ministries = Ministry::query()->active()->ordered()->get();
+        $query = Ministry::query()->active();
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->ordered();
+        }
+
+        $ministries = $query->paginate($request->integer('per_page', 8));
 
         return MinistryResource::collection($ministries);
     }

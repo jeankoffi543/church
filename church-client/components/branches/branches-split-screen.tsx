@@ -77,19 +77,48 @@ const STATIC_BRANCHES = [
   },
 ];
 
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+
 type BranchesSplitScreenProps = {
   initialBranches?: PublicBranch[];
+  searchParam?: string;
 };
 
-export function BranchesSplitScreen({ initialBranches }: BranchesSplitScreenProps) {
+export function BranchesSplitScreen({ initialBranches, searchParam }: BranchesSplitScreenProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MbMap | null>(null);
   const markersRef = useRef<{ [id: string]: { marker: MbMarker; popup: MbPopup } }>({});
   
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParam ?? "");
   const [activeBranchId, setActiveBranchId] = useState<string | number | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapError, setMapError] = useState<string | null>(
+    MAPBOX_TOKEN
+      ? null
+      : "Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant)."
+  );
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Debounce search update in URL
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (search) {
+        params.set("search", search);
+      } else {
+        params.delete("search");
+      }
+      const nextQueryString = params.toString();
+      if (nextQueryString !== searchParams.toString()) {
+        router.push(`${pathname}?${nextQueryString}`, { scroll: false });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, router, pathname, searchParams]);
 
   // Map backend API data to visual SplitScreenBranch structure, fallback to static defaults
   const branchesList = useMemo<SplitScreenBranch[]>(() => {
@@ -120,23 +149,17 @@ export function BranchesSplitScreen({ initialBranches }: BranchesSplitScreenProp
     }));
   }, [initialBranches]);
 
-  const filtered = useMemo(() => {
-    return branchesList.filter(
-      (b) =>
-        b.title.toLowerCase().includes(search.toLowerCase()) ||
-        b.address.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [branchesList, search]);
+  const filtered = branchesList;
 
   useEffect(() => {
     if (!MAPBOX_TOKEN) {
-      setMapError("Token Mapbox non configuré (NEXT_PUBLIC_MAPBOX_TOKEN manquant).");
+
       return;
     }
 
     if (!containerRef.current) return;
     let cancelled = false;
-    let mapboxgl: any;
+    let mapboxgl: typeof import("mapbox-gl")["default"];
 
     const markersList: { marker: MbMarker; popup: MbPopup }[] = [];
 

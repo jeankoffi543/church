@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\HomeGroupApplicationResource;
 use App\Models\HomeGroupApplication;
 use App\Support\AccessControl;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -20,17 +19,17 @@ class HomeGroupApplicationController extends Controller
         $query = HomeGroupApplication::query()
             ->with(['homeGroup', 'user', 'processor']);
 
-        if ($request->has('home_group_id')) {
-            $query->where('home_group_id', $request->query('home_group_id'));
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->orderBy('created_at', 'desc');
         }
 
-        if ($request->has('status')) {
-            $query->where('status', $request->query('status'));
-        }
-
-        $applications = $query->orderBy('created_at', 'desc')->get();
-
-        return HomeGroupApplicationResource::collection($applications);
+        return HomeGroupApplicationResource::collection(
+            $query->paginate($request->integer('per_page', 20))
+        );
     }
 
     /**
@@ -87,7 +86,7 @@ class HomeGroupApplicationController extends Controller
         $isPasteur = $user->hasRole('Pasteurs');
         $isResponsable = $user->hasRole('Responsables de cellule');
 
-        if ($isResponsable && !$isPasteur && !$isSuperAdmin) {
+        if ($isResponsable && ! $isPasteur && ! $isSuperAdmin) {
             if ($application->homeGroup === null || (int) $application->homeGroup->leader_id !== (int) $user->id) {
                 abort(403, "Vous n'êtes pas le leader désigné de cette cellule spécifique.");
             }

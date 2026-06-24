@@ -16,11 +16,18 @@ class EventController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $events = Event::query()
-            ->when($request->string('scope')->toString() === 'upcoming', fn ($q) => $q->upcoming())
-            ->when($request->boolean('featured'), fn ($q) => $q->where('is_featured', true))
-            ->chronological()
-            ->get();
+        $query = Event::query()
+            ->when($request->string('scope')->toString() === 'upcoming', fn ($q) => $q->upcoming());
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->chronological();
+        }
+
+        $events = $query->paginate($request->integer('per_page', 20));
 
         return EventResource::collection($events);
     }

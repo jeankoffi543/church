@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Images, ChevronLeft, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -20,23 +21,42 @@ type LightboxState = {
 
 const CLOSED: LightboxState = { open: false, title: "", photos: [], index: 0, loading: false };
 
-export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
-  const [year, setYear] = useState<string | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
+export function GalleryGrid({
+  albums,
+  initialMeta,
+}: {
+  albums: GalleryAlbum[];
+  initialMeta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    years?: string[];
+    categories?: string[];
+  };
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [box, setBox] = useState<LightboxState>(CLOSED);
 
-  const years = useMemo(() => uniq(albums.map((a) => a.year)).sort((a, b) => b.localeCompare(a)), [albums]);
-  const categories = useMemo(() => uniq(albums.map((a) => a.category)).sort(), [albums]);
+  const year = searchParams.get("year");
+  const category = searchParams.get("category");
+  const currentPage = initialMeta?.current_page ?? 1;
+  const pageCount = initialMeta?.last_page ?? 1;
 
-  const filtered = useMemo(
-    () => albums.filter((a) => (!year || a.year === year) && (!category || a.category === category)),
-    [albums, year, category]
+  const years = useMemo(
+    () => initialMeta?.years ?? uniq(albums.map((a) => a.year)).sort((a, b) => b.localeCompare(a)),
+    [albums, initialMeta?.years]
+  );
+  const categories = useMemo(
+    () => initialMeta?.categories ?? uniq(albums.map((a) => a.category)).sort(),
+    [albums, initialMeta?.categories]
   );
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const filtered = albums;
+  const paged = albums;
 
   const openAlbum = async (album: GalleryAlbum) => {
     setBox({ open: true, title: album.title, photos: album.photos, index: 0, loading: true });
@@ -45,9 +65,21 @@ export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
     setBox((b) => ({ ...b, photos: full?.photos ?? [], loading: false }));
   };
 
-  const pick = (setter: (v: string | null) => void, value: string, current: string | null) => {
-    setter(current === value ? null : value);
-    setPage(1);
+  const handlePick = (key: "year" | "category", value: string, current: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (current === value) {
+      params.delete(key);
+    } else {
+      params.set(key, value);
+    }
+    params.set("page", "1");
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(newPage));
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   return (
@@ -56,10 +88,10 @@ export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
       {(years.length > 1 || categories.length > 1) && (
         <div className="mb-8 flex flex-col gap-3">
           {categories.length > 1 && (
-            <FilterRow label="Catégorie" options={categories} active={category} onPick={(v) => pick(setCategory, v, category)} />
+            <FilterRow label="Catégorie" options={categories} active={category} onPick={(v) => handlePick("category", v, category)} />
           )}
           {years.length > 1 && (
-            <FilterRow label="Année" options={years} active={year} onPick={(v) => pick(setYear, v, year)} />
+            <FilterRow label="Année" options={years} active={year} onPick={(v) => handlePick("year", v, year)} />
           )}
         </div>
       )}
@@ -112,15 +144,15 @@ export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
       )}
 
       {/* Pagination */}
-      {filtered.length > PAGE_SIZE && (
+      {pageCount > 1 && (
         <div className="mt-10 flex items-center justify-center gap-2">
-          <Pager onClick={() => setPage(currentPage - 1)} disabled={currentPage <= 1} aria-label="Précédent">
+          <Pager onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage <= 1} aria-label="Précédent">
             <ChevronLeft className="size-4" />
           </Pager>
           {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
             <button
               key={p}
-              onClick={() => setPage(p)}
+              onClick={() => handlePageChange(p)}
               aria-current={p === currentPage ? "page" : undefined}
               className={cn(
                 "flex size-10 cursor-pointer items-center justify-center rounded-xl text-sm font-bold transition",
@@ -132,7 +164,7 @@ export function GalleryGrid({ albums }: { albums: GalleryAlbum[] }) {
               {p}
             </button>
           ))}
-          <Pager onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pageCount} aria-label="Suivant">
+          <Pager onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage >= pageCount} aria-label="Suivant">
             <ChevronRight className="size-4" />
           </Pager>
         </div>

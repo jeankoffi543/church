@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition } from "react";
 import { 
   Plus, 
   Search, 
@@ -17,63 +17,57 @@ import {
   ChevronDown,
   ChevronsUpDown,
 } from "lucide-react";
-import { createMinistry, updateMinistry, deleteMinistry } from "@/lib/admin-api";
-import type { AdminMinistry, AdminUser } from "@/lib/admin-api";
+import { createMinistry, updateMinistry, deleteMinistry, getAdminMinistriesPaginated } from "@/lib/admin-api";
+import type { AdminMinistry, AdminUser, AdminListMeta } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import Link from "next/link";
 import { SearchableSelect } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
 
 type Ministry = AdminMinistry;
+
+export const MINISTRIES_PER_PAGE = 10;
+
+/** UI sort columns → QueryMaster sortable model fields (chef is a relation, not sortable). */
+const MINISTRY_SORT_FIELD: Record<string, string | undefined> = {
+  name: "name",
+  schedule: "schedule",
+  is_active: "is_active",
+  chef: undefined,
+};
 
 const filterFields: FilterField[] = [
   { id: "name", label: "Nom", type: "text" },
   { id: "chef", label: "Chef du ministère", type: "async-select" },
   { id: "schedule", label: "Programme / Horaires", type: "text" },
-  { 
-    id: "is_active", 
-    label: "Statut", 
-    type: "select", 
+  {
+    id: "is_active",
+    label: "Statut",
+    type: "select",
     options: [
       { value: "active", label: "Actif" },
       { value: "inactive", label: "Inactif" }
-    ] 
+    ]
   }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") {
-    return v.includes(t);
-  }
-  if (operator === "equals") {
-    return v === t;
-  }
-  if (operator === "starts_with") {
-    return v.startsWith(t);
-  }
-  if (operator === "ends_with") {
-    return v.endsWith(t);
-  }
-  return true;
-};
-
 export function MinistriesManager({
   initialMinistries,
+  initialMeta,
   staff,
 }: {
   initialMinistries: Ministry[];
+  initialMeta: AdminListMeta;
   staff: AdminUser[];
 }) {
-  const [ministries, setMinistries] = useState<Ministry[]>(initialMinistries);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(MINISTRIES_PER_PAGE);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -95,6 +89,32 @@ export function MinistriesManager({
 
   // Table filtering states (Centralized Inline Chips)
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const ministryFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (ministryFilters.is_active__eq) {
+    ministryFilters.is_active__eq = ministryFilters.is_active__eq === "active" ? "1" : "0";
+  }
+  const ministrySort = sortBy ? MINISTRY_SORT_FIELD[sortBy] : undefined;
+
+  const {
+    items: ministries,
+    setItems: setMinistries,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<Ministry>({
+    fetcher: getAdminMinistriesPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: ministrySort && sortOrder ? { field: ministrySort, dir: sortOrder } : null,
+      filters: ministryFilters,
+    },
+    initialData: initialMinistries,
+    initialMeta,
+  });
 
   // Cover image: a freshly picked file, and/or removal of the existing one.
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -168,6 +188,7 @@ export function MinistriesManager({
       try {
         await deleteMinistry(id);
         setMinistries(ministries.filter((m) => m.id !== id));
+        refresh();
         setStatus({ type: "success", message: `Le ministère "${name}" a été supprimé.` });
       } catch (err) {
         const error = err as Error;
@@ -196,11 +217,13 @@ export function MinistriesManager({
           const res = await updateMinistry(editingMinistry.id, payload, imageFile, removeImage);
           const updated = res.data as Ministry;
           setMinistries(ministries.map((m) => (m.id === updated.id ? updated : m)));
+          refresh();
           setStatus({ type: "success", message: `Le ministère "${name}" a été mis à jour.` });
         } else {
           const res = await createMinistry({ ...payload, name }, imageFile);
           const created = res.data as Ministry;
           setMinistries([...ministries, created]);
+          refresh();
           setStatus({ type: "success", message: `Le ministère "${name}" a été créé.` });
         }
         closeModal();
@@ -220,6 +243,7 @@ export function MinistriesManager({
   };
 
   const handleSort = (column: "name" | "chef" | "schedule" | "is_active") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -235,81 +259,11 @@ export function MinistriesManager({
     }
   };
 
-  // Processed Ministries (combined filters + sorting)
-  const processedMinistries = useMemo(() => {
-    let result = ministries.filter((m) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const nameMatch = m.name.toLowerCase().includes(q);
-        const descMatch = m.description ? m.description.toLowerCase().includes(q) : false;
-        if (!nameMatch && !descMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(m.name, filter.value, filter.operator)) {
-            return false;
-          }
-        } else if (filter.fieldId === "chef") {
-          if (filter.value === "") continue;
-          const chefIdValue = Number(filter.value);
-          if (m.chef_id !== chefIdValue) {
-            return false;
-          }
-        } else if (filter.fieldId === "schedule") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          const sched = m.schedule ?? "";
-          if (!matchString(sched, filter.value, filter.operator)) {
-            return false;
-          }
-        } else if (filter.fieldId === "is_active") {
-          if (filter.value === "") continue;
-          const targetIsActive = filter.value === "active";
-          if (m.is_active !== targetIsActive) {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "name") {
-          valA = a.name;
-          valB = b.name;
-        } else if (sortBy === "chef") {
-          valA = a.chef?.name ?? "";
-          valB = b.chef?.name ?? "";
-        } else if (sortBy === "schedule") {
-          valA = a.schedule ?? "";
-          valB = b.schedule ?? "";
-        } else if (sortBy === "is_active") {
-          const numA = a.is_active ? 1 : 0;
-          const numB = b.is_active ? 1 : 0;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [ministries, search, activeFilters, sortBy, sortOrder]);
-
-  // Client-side pagination based on processed list
-  const pageCount = Math.max(1, Math.ceil(processedMinistries.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedMinistries.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = ministries;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   // Chevron rendering helper
   const renderSortChevron = (column: "name" | "chef" | "schedule" | "is_active") => {
@@ -420,7 +374,7 @@ export function MinistriesManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -532,7 +486,7 @@ export function MinistriesManager({
                 </tr>
               ))}
 
-              {processedMinistries.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-xs text-body">
                     Aucun ministère trouvé.
@@ -542,11 +496,11 @@ export function MinistriesManager({
             </tbody>
           </table>
         </div>
-        {processedMinistries.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedMinistries.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

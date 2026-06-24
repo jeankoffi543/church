@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   Loader2,
   ArrowRight,
@@ -82,21 +83,34 @@ function cnPill(bg: string, text: string, ring: string) {
   return `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${bg} ${text} ${ring}`;
 }
 
-const PAGE_SIZE = 8;
+export function MinistryGrid({
+  ministries,
+  initialMeta,
+}: {
+  ministries: Ministry[];
+  initialMeta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-export function MinistryGrid({ ministries }: { ministries: Ministry[] }) {
   const [selectedMinistry, setSelectedMinistry] = useState<Ministry | null>(null);
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Pagination — show 8 ministries per page.
-  const [page, setPage] = useState(1);
-  const pageCount = Math.max(1, Math.ceil(ministries.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const pagedMinistries = ministries.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
+  const currentPage = initialMeta?.current_page ?? 1;
+  const pageCount = initialMeta?.last_page ?? 1;
+
+  const handlePageChange = (newPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(newPage));
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   // Form states
   const [name, setName] = useState("");
@@ -291,17 +305,17 @@ export function MinistryGrid({ ministries }: { ministries: Ministry[] }) {
 
       {/* Grid of ministries */}
       <div className="mb-10 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-[18px]">
-        {pagedMinistries.map((m) => (
-          <MinistryCard key={m.name} ministry={m} variant="full" onJoin={openJoin} />
+        {ministries.map((m) => (
+          <MinistryCard key={m.id} ministry={m} variant="full" onJoin={openJoin} />
         ))}
       </div>
 
       {/* Pagination (shown when more than one page) */}
-      {ministries.length > PAGE_SIZE && (
+      {pageCount > 1 && (
         <div className="mb-16 flex items-center justify-center gap-2">
           <button
             type="button"
-            onClick={() => setPage(currentPage - 1)}
+            onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             aria-label="Page précédente"
             className="flex size-10 cursor-pointer items-center justify-center rounded-xl border border-[rgba(40,25,80,0.12)] bg-white text-indigo transition hover:border-gold hover:text-gold-dark disabled:cursor-not-allowed disabled:opacity-35"
@@ -312,7 +326,7 @@ export function MinistryGrid({ ministries }: { ministries: Ministry[] }) {
             <button
               key={p}
               type="button"
-              onClick={() => setPage(p)}
+              onClick={() => handlePageChange(p)}
               aria-current={p === currentPage ? "page" : undefined}
               className={
                 p === currentPage
@@ -325,7 +339,7 @@ export function MinistryGrid({ ministries }: { ministries: Ministry[] }) {
           ))}
           <button
             type="button"
-            onClick={() => setPage(currentPage + 1)}
+            onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage >= pageCount}
             aria-label="Page suivante"
             className="flex size-10 cursor-pointer items-center justify-center rounded-xl border border-[rgba(40,25,80,0.12)] bg-white text-indigo transition hover:border-gold hover:text-gold-dark disabled:cursor-not-allowed disabled:opacity-35"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, useMemo } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   Plus,
   Search,
@@ -29,43 +29,47 @@ import {
   type AdminAlbum,
   type AdminAlbumPhoto,
   type AdminEvent,
+  type AdminListMeta,
+  getAdminAlbumsPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
 
 const MAX_PHOTOS = 50;
 type Pending = { file: File; url: string };
+
+export const GALLERY_PER_PAGE = 10;
 
 const filterFields: FilterField[] = [
   { id: "title", label: "Titre", type: "text" },
   { id: "category", label: "Catégorie", type: "text" }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
+/** UI sort columns → QueryMaster sortable model fields (category is a relation, not sortable). */
+const ALBUM_SORT_FIELD: Record<string, string | undefined> = {
+  title: "title",
+  photos_count: "photos_count",
+  date_label: "created_at",
+  category: undefined,
 };
 
 export function GalleryManager({
   initialAlbums,
+  initialMeta,
   events,
 }: {
   initialAlbums: AdminAlbum[];
+  initialMeta: AdminListMeta;
   events: Pick<AdminEvent, "id" | "title">[];
 }) {
-  const [albums, setAlbums] = useState<AdminAlbum[]>(initialAlbums);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(GALLERY_PER_PAGE);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -73,6 +77,27 @@ export function GalleryManager({
   const [sortBy, setSortBy] = useState<"title" | "category" | "photos_count" | "date_label" | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const albumSort = sortBy ? ALBUM_SORT_FIELD[sortBy] : undefined;
+  const {
+    items: albums,
+    setItems: setAlbums,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminAlbum>({
+    fetcher: getAdminAlbumsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: albumSort && sortOrder ? { field: albumSort, dir: sortOrder } : null,
+      filters: serializeFiltersForQueryMaster(activeFilters),
+    },
+    initialData: initialAlbums,
+    initialMeta,
+  });
 
   useEffect(() => {
     if (!status) return;
@@ -134,10 +159,12 @@ export function GalleryManager({
         if (editing) {
           const res = await updateAlbum(editing.id, payload, coverFile, removeCover);
           setAlbums((prev) => prev.map((a) => (a.id === res.data.id ? res.data : a)));
+          refresh();
           setStatus({ type: "success", message: `Album « ${title} » mis à jour.` });
         } else {
           const res = await createAlbum(payload, coverFile);
           setAlbums((prev) => [res.data, ...prev]);
+          refresh();
           setStatus({ type: "success", message: `Album « ${title} » créé.` });
         }
         setIsModalOpen(false);
@@ -154,6 +181,7 @@ export function GalleryManager({
       try {
         await deleteAlbum(a.id);
         setAlbums((prev) => prev.filter((x) => x.id !== a.id));
+        refresh();
         setStatus({ type: "success", message: `Album « ${a.title} » supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -187,6 +215,7 @@ export function GalleryManager({
   };
 
   const handleSort = (column: "title" | "category" | "photos_count" | "date_label") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -215,62 +244,11 @@ export function GalleryManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Albums (combined filters + sorting)
-  const processedAlbums = useMemo(() => {
-    let result = albums.filter((a) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = a.title.toLowerCase().includes(q);
-        const catMatch = a.category.toLowerCase().includes(q);
-        if (!titleMatch && !catMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(a.title, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "category") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(a.category, filter.value, filter.operator)) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "category") {
-          valA = a.category;
-          valB = b.category;
-        } else if (sortBy === "date_label") {
-          valA = a.date_label ?? "";
-          valB = b.date_label ?? "";
-        } else if (sortBy === "photos_count") {
-          const numA = a.photos_count;
-          const numB = b.photos_count;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [albums, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedAlbums.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedAlbums.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = albums;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -338,7 +316,7 @@ export function GalleryManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -417,18 +395,18 @@ export function GalleryManager({
                   </td>
                 </tr>
               ))}
-              {processedAlbums.length === 0 && (
+              {paged.length === 0 && (
                 <tr><td colSpan={5} className="px-6 py-10 text-center text-xs text-body">Aucun album.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {processedAlbums.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedAlbums.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

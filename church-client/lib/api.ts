@@ -406,10 +406,10 @@ export async function getHomeGroups(params?: GetHomeGroupsParams): Promise<{
   const query = new URLSearchParams();
   if (params?.search) query.append("search", params.search);
   if (params?.zone_name) query.append("zone_name", params.zone_name);
+  // Send the day verbatim — the API matches it case-insensitively against the
+  // stored value (e.g. "Mardi"). Upper-casing it here broke the exact match.
   if (params?.day) {
-    const dayUpper = params.day.toUpperCase();
-    query.append("day", dayUpper);
-    query.append("meeting_day", dayUpper);
+    query.append("day", params.day);
   }
 
   if (params?.filters) {

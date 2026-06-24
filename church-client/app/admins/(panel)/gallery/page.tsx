@@ -1,7 +1,7 @@
-import { getAdminMe, getAdminAlbums, getAdminEvents } from "@/lib/admin-api";
+import { getAdminMe, getAdminAlbumsPaginated, getAdminEvents } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { GalleryManager } from "./gallery-manager";
+import { GalleryManager, GALLERY_PER_PAGE } from "./gallery-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,16 @@ export default async function AdminGalleryPage() {
     return <AccessRestricted />;
   }
 
-  const [albums, events] = await Promise.all([getAdminAlbums(), getAdminEvents()]);
+  const [list, events] = await Promise.all([
+    getAdminAlbumsPaginated({ perPage: GALLERY_PER_PAGE }),
+    getAdminEvents(),
+  ]);
 
-  return <GalleryManager initialAlbums={albums} events={events.map((e) => ({ id: e.id, title: e.title }))} />;
+  return (
+    <GalleryManager
+      initialAlbums={list.data}
+      initialMeta={list.meta}
+      events={events.map((e) => ({ id: e.id, title: e.title }))}
+    />
+  );
 }

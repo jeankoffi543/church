@@ -29,7 +29,9 @@ import {
   createSermon,
   updateSermon,
   deleteSermon,
+  getAdminSermonsPaginated,
   type AdminSermon,
+  type AdminListMeta,
   type SermonMediaType,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -40,8 +42,19 @@ import { BookMultiSelect } from "@/components/admin/book-multi-select";
 import { BIBLE_BOOKS } from "@/lib/constants/bible";
 import { SearchableSelect } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const SERMONS_PER_PAGE = 10;
+
+/** UI sort columns → QueryMaster sortable model fields. */
+const SERMON_SORT_FIELD: Record<string, string> = {
+  date: "preached_at",
+  title: "title",
+  speaker: "speaker",
+  is_published: "is_published",
+};
 
 /** Form-only choice: the 4 real media types + "none" (notes-only sermon). */
 type MediaChoice = SermonMediaType | "none";
@@ -73,36 +86,19 @@ const filterFields: FilterField[] = [
   }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") {
-    return v.includes(t);
-  }
-  if (operator === "equals") {
-    return v === t;
-  }
-  if (operator === "starts_with") {
-    return v.startsWith(t);
-  }
-  if (operator === "ends_with") {
-    return v.endsWith(t);
-  }
-  return true;
-};
-
 export function SermonsManager({
   initialSermons,
+  initialMeta,
   preachers,
 }: {
   initialSermons: AdminSermon[];
+  initialMeta: AdminListMeta;
   preachers: { id: number; name: string }[];
 }) {
-  const [sermons, setSermons] = useState<AdminSermon[]>(initialSermons);
   const preacherOptions = preachers.map((p) => ({ value: p.id, label: p.name }));
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(SERMONS_PER_PAGE);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -116,6 +112,31 @@ export function SermonsManager({
 
   // Table filtering states (Centralized Inline Chips)
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const sermonFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (sermonFilters.is_published__eq) {
+    sermonFilters.is_published__eq = sermonFilters.is_published__eq === "published" ? "1" : "0";
+  }
+
+  const {
+    items: sermons,
+    setItems: setSermons,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminSermon>({
+    fetcher: getAdminSermonsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: SERMON_SORT_FIELD[sortBy], dir: sortOrder } : null,
+      filters: sermonFilters,
+    },
+    initialData: initialSermons,
+    initialMeta,
+  });
 
   // Auto-dismiss the status banner after 4s so it never lingers across actions.
   useEffect(() => {
@@ -275,6 +296,7 @@ export function SermonsManager({
       try {
         await deleteSermon(id);
         setSermons((prev) => prev.filter((s) => s.id !== id));
+        refresh();
         setStatus({ type: "success", message: `Le sermon "${t}" a été supprimé.` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -330,10 +352,12 @@ export function SermonsManager({
         if (editingSermon) {
           const res = await updateSermon(editingSermon.id, payload, files);
           setSermons((prev) => prev.map((s) => (s.id === res.data.id ? res.data : s)));
+          refresh();
           setStatus({ type: "success", message: `Le sermon "${title}" a été mis à jour.` });
         } else {
           const res = await createSermon(payload, files);
           setSermons((prev) => [res.data, ...prev]);
+          refresh();
           setStatus({ type: "success", message: `Le sermon "${title}" a été créé.` });
         }
         stopProgress(true);
@@ -354,6 +378,7 @@ export function SermonsManager({
   };
 
   const handleSort = (column: "date" | "title" | "speaker" | "is_published") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -369,82 +394,11 @@ export function SermonsManager({
     }
   };
 
-  // Combined filters + sorting logic
-  const processedSermons = useMemo(() => {
-    let result = sermons.filter((s) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = s.title.toLowerCase().includes(q);
-        const speakerMatch = s.speaker.toLowerCase().includes(q);
-        const seriesMatch = s.series ? s.series.toLowerCase().includes(q) : false;
-        if (!titleMatch && !speakerMatch && !seriesMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(s.title, filter.value, filter.operator)) {
-            return false;
-          }
-        } else if (filter.fieldId === "preacher") {
-          if (filter.value === "") continue;
-          const preacherIdVal = Number(filter.value);
-          if (s.user_id !== preacherIdVal) {
-            return false;
-          }
-        } else if (filter.fieldId === "series") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          const ser = s.series ?? "";
-          if (!matchString(ser, filter.value, filter.operator)) {
-            return false;
-          }
-        } else if (filter.fieldId === "is_published") {
-          if (filter.value === "") continue;
-          const targetPublished = filter.value === "published";
-          if (s.is_published !== targetPublished) {
-            return false;
-          }
-        }
-      }
-
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "date") {
-          valA = a.date ?? "";
-          valB = b.date ?? "";
-        } else if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "speaker") {
-          valA = a.speaker;
-          valB = b.speaker;
-        } else if (sortBy === "is_published") {
-          const numA = a.is_published ? 1 : 0;
-          const numB = b.is_published ? 1 : 0;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [sermons, search, activeFilters, sortBy, sortOrder]);
-
-  // Client-side pagination
-  const pageCount = Math.max(1, Math.ceil(processedSermons.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedSermons.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = sermons;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   // Chevron rendering helper
   const renderSortChevron = (column: "date" | "title" | "speaker" | "is_published") => {
@@ -542,7 +496,7 @@ export function SermonsManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -668,7 +622,7 @@ export function SermonsManager({
                 </tr>
               ))}
 
-              {processedSermons.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-6 py-10 text-center text-xs text-body">Aucun sermon trouvé.</td>
                 </tr>
@@ -676,11 +630,11 @@ export function SermonsManager({
             </tbody>
           </table>
         </div>
-        {processedSermons.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedSermons.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\AlbumResource;
 use App\Models\Album;
+use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -16,15 +17,29 @@ class AlbumController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $albums = Album::query()
+        $query = Album::query()
             ->with('event')
-            ->withCount('photos')
-            ->when($request->filled('year'), fn ($q) => $q->whereYear('created_at', $request->integer('year')))
-            ->when($request->filled('category'), fn ($q) => $q->whereHas('event', fn ($e) => $e->where('type', $request->string('category'))))
-            ->latestFirst()
-            ->paginate($request->integer('per_page', 24));
+            ->withCount('photos');
 
-        return AlbumResource::collection($albums);
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
+        $albums = $query->paginate($request->integer('per_page', 24));
+
+        $years = Album::query()->pluck('created_at')->map(fn ($d) => $d->format('Y'))->unique()->sortDesc()->values()->all();
+        $categories = Event::query()->distinct()->pluck('type')->filter()->sort()->values()->all();
+
+        return AlbumResource::collection($albums)->additional([
+            'meta' => [
+                'years' => $years,
+                'categories' => $categories,
+            ],
+        ]);
     }
 
     /**

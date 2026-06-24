@@ -20,11 +20,12 @@ import {
   X,
 } from "lucide-react";
 
-import type { AdminServant } from "@/lib/admin-api";
+import type { AdminServant, AdminListMeta } from "@/lib/admin-api";
 import {
   createServant,
   updateServant,
   deleteServant,
+  getServantsPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -32,8 +33,18 @@ import { Switch } from "@/components/ui/switch";
 import { MultiSelect } from "../_components/multi-select";
 import { groupStyle } from "../_components/group-style";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const USERS_PER_PAGE = 10;
+
+/** UI sort columns → QueryMaster sortable model fields (roles is a relation, not sortable). */
+const SERVANT_SORT_FIELD: Record<string, string | undefined> = {
+  name: "name",
+  is_active: "is_active",
+  roles: undefined,
+};
 
 type Feedback = { type: "success" | "error"; message: string } | null;
 
@@ -53,26 +64,17 @@ const EMPTY_FORM: FormState = {
   roles: [],
 };
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function UsersManager({
   initialServants,
+  initialMeta,
   roleNames,
   currentUserId,
 }: {
   initialServants: AdminServant[];
+  initialMeta: AdminListMeta;
   roleNames: string[];
   currentUserId: number;
 }) {
-  const [servants, setServants] = useState<AdminServant[]>(initialServants);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Feedback>(null);
 
@@ -86,9 +88,35 @@ export function UsersManager({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
-  // Pagination (client-side over the loaded servants).
+  // Pagination
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(USERS_PER_PAGE);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const servantFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (servantFilters.is_active__eq) {
+    servantFilters.is_active__eq = servantFilters.is_active__eq === "active" ? "1" : "0";
+  }
+  const servantSort = sortBy ? SERVANT_SORT_FIELD[sortBy] : undefined;
+
+  const {
+    items: servants,
+    setItems: setServants,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminServant>({
+    fetcher: getServantsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: servantSort && sortOrder ? { field: servantSort, dir: sortOrder } : null,
+      filters: servantFilters,
+    },
+    initialData: initialServants,
+    initialMeta,
+  });
 
   const filterFields: FilterField[] = useMemo(() => [
     { id: "name", label: "Nom", type: "text" },
@@ -117,6 +145,7 @@ export function UsersManager({
   };
 
   const handleSort = (column: "name" | "roles" | "is_active") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -145,70 +174,12 @@ export function UsersManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  const processedServants = useMemo(() => {
-    let result = servants.filter((s) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const nameMatch = s.name.toLowerCase().includes(q);
-        const emailMatch = s.email.toLowerCase().includes(q);
-        if (!nameMatch && !emailMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(s.name, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "email") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(s.email, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "role") {
-          if (filter.value === "") continue;
-          if (!s.roles.includes(filter.value)) return false;
-        } else if (filter.fieldId === "is_active") {
-          if (filter.value === "") continue;
-          const targetActive = filter.value === "active";
-          if (s.is_active !== targetActive) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "name") {
-          valA = a.name;
-          valB = b.name;
-        } else if (sortBy === "roles") {
-          valA = a.roles.join(", ");
-          valB = b.roles.join(", ");
-        } else if (sortBy === "is_active") {
-          valA = a.is_active ? "active" : "inactive";
-          valB = b.is_active ? "active" : "inactive";
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    } else {
-      // Default sort
-      result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return result;
-  }, [servants, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedServants.length / perPage));
-  // Clamp during render so the page stays valid when the list shrinks.
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedServants.slice((currentPage - 1) * perPage, currentPage * perPage);
-
-  const sorted = processedServants;
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = servants;
+  const sorted = servants;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   const openCreate = () => {
     setEditing(null);
@@ -256,6 +227,7 @@ export function UsersManager({
           setServants((prev) =>
             prev.map((s) => (s.id === editing.id ? res.data : s))
           );
+          refresh();
           setStatus({ type: "success", message: "Serviteur mis à jour." });
         } else {
           const res = await createServant({
@@ -266,6 +238,7 @@ export function UsersManager({
             roles: form.roles,
           });
           setServants((prev) => [...prev, res.data]);
+          refresh();
           setStatus({ type: "success", message: "Serviteur ajouté." });
         }
         setModalOpen(false);
@@ -290,6 +263,7 @@ export function UsersManager({
         setServants((prev) =>
           prev.map((s) => (s.id === servant.id ? res.data : s))
         );
+        refresh();
         setStatus({
           type: "success",
           message: next ? "Accès réactivé." : "Accès suspendu.",
@@ -314,6 +288,7 @@ export function UsersManager({
     startTransition(async () => {
       try {
         await deleteServant(servant.id);
+        refresh();
         setStatus({ type: "success", message: "Serviteur supprimé." });
       } catch (err) {
         setServants((prev) =>
@@ -340,7 +315,7 @@ export function UsersManager({
           <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
             Comptes &amp; Accès
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {servants.length}
+              {total}
             </span>
           </h1>
           <p className="mt-1 text-sm text-body">
@@ -417,7 +392,7 @@ export function UsersManager({
 
       {/* Table (Set z-10 relative for correct stacking context) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -564,7 +539,7 @@ export function UsersManager({
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={sorted.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

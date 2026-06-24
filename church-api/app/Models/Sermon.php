@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\SermonMediaType;
+use App\Support\QueryFilters;
 use Database\Factories\SermonFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,6 +11,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
+use Keky\QueryMaster\Filter;
 
 /**
  * @property string|null $series
@@ -32,7 +38,43 @@ use Illuminate\Support\Carbon;
 class Sermon extends Model
 {
     /** @use HasFactory<SermonFactory> */
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'title' => SearchOperator::LIKE,
+        'description' => SearchOperator::LIKE,
+        'speaker' => SearchOperator::LIKE,
+        'series' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'title',
+        'speaker',
+        'preached_at',
+        'is_published',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            ...QueryFilters::exact('is_published'),
+            ...QueryFilters::exact('speaker'),
+            ...QueryFilters::text('title'),
+            ...QueryFilters::text('series'),
+            ...QueryFilters::exact('book'),
+            ...QueryFilters::exact('user_id'),
+            ...QueryFilters::exact('user_id', 'preacher'),
+            Filter::make('preached_at', 'date'),
+            Filter::make('preached_at', 'year')->applyWith(function ($q, $value) {
+                $q->where(function ($sub) use ($value) {
+                    foreach ((array) $value as $yr) {
+                        $sub->orWhereYear('preached_at', $yr);
+                    }
+                });
+            }),
+        ];
+    }
 
     protected $fillable = [
         'series',

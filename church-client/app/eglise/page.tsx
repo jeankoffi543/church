@@ -1,6 +1,8 @@
+import type { ComponentType, SVGProps } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Flame, ArrowRight, ShieldCheck, HeartHandshake } from "lucide-react";
+import * as Lucide from "lucide-react";
+import { Flame, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/sections/page-header";
 import { BrandButton } from "@/components/ui/brand-button";
 import { PastorWord } from "@/components/eglise/pastor-word";
@@ -65,16 +67,11 @@ const DEFAULT_PASTORS = [
 ];
 
 function RenderIcon({ name }: { name: string }) {
-  switch (name) {
-    case "ShieldCheck":
-      return <ShieldCheck className="size-6 text-gold" />;
-    case "Flame":
-      return <Flame className="size-6 text-gold" />;
-    case "HeartHandshake":
-      return <HeartHandshake className="size-6 text-gold" />;
-    default:
-      return <Flame className="size-6 text-gold" />;
+  const IconComp = (Lucide as unknown as Record<string, ComponentType<SVGProps<SVGSVGElement>>>)[name];
+  if (!IconComp) {
+    return <Flame className="size-6 text-gold" />;
   }
+  return <IconComp className="size-6 text-gold" />;
 }
 
 export default async function EglisePage() {

@@ -10,16 +10,27 @@ use App\Models\Sermon;
 use App\Models\User;
 use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class SermonController extends Controller
 {
     use HandlesFileUploads;
 
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
+        $query = Sermon::query()->with('scriptures');
+
+        $query->searchOnRequest()
+            ->filterOnRequest()
+            ->sortOnRequest();
+
+        if (! $request->has('sort')) {
+            $query->latestFirst();
+        }
+
         return SermonResource::collection(
-            Sermon::query()->with('scriptures')->latestFirst()->paginate(20)
+            $query->paginate($request->integer('per_page', 20))
         );
     }
 

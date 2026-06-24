@@ -1,7 +1,7 @@
-import { getAdminMe, getServants, getAdminRoles } from "@/lib/admin-api";
+import { getAdminMe, getServantsPaginated, getAdminRoles } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { UsersManager } from "./users-manager";
+import { UsersManager, USERS_PER_PAGE } from "./users-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +12,15 @@ export default async function AdminUsersPage() {
     return <AccessRestricted />;
   }
 
-  const [servants, roles] = await Promise.all([
-    getServants(),
+  const [list, roles] = await Promise.all([
+    getServantsPaginated({ perPage: USERS_PER_PAGE }),
     getAdminRoles(),
   ]);
 
   return (
     <UsersManager
-      initialServants={servants}
+      initialServants={list.data}
+      initialMeta={list.meta}
       roleNames={roles.map((r) => r.name)}
       currentUserId={me!.id}
     />

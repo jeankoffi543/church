@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { 
   Plus, 
   Search, 
@@ -16,13 +16,24 @@ import {
   SlidersHorizontal,
   X
 } from "lucide-react";
-import { createEvent, updateEvent, deleteEvent, checkEventSlug } from "@/lib/admin-api";
+import { createEvent, updateEvent, deleteEvent, checkEventSlug, getAdminEventsPaginated, type AdminListMeta } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { assetUrl } from "@/lib/asset-url";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const EVENTS_PER_PAGE = 10;
+
+/** UI sort columns → QueryMaster sortable model fields. */
+const EVENT_SORT_FIELD: Record<string, string> = {
+  is_featured: "is_featured",
+  title: "title",
+  location: "location",
+  starts_at: "start_date",
+};
 
 type Event = {
   id: number;
@@ -55,22 +66,13 @@ const filterFields: FilterField[] = [
   }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function EventsManager({
   initialEvents,
+  initialMeta,
 }: {
   initialEvents: Event[];
+  initialMeta: AdminListMeta;
 }) {
-  const [events, setEvents] = useState<Event[]>(initialEvents);
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -103,7 +105,32 @@ export function EventsManager({
 
   // Pagination states
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(EVENTS_PER_PAGE);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const eventFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (eventFilters.is_featured__eq) {
+    eventFilters.is_featured__eq = eventFilters.is_featured__eq === "featured" ? "1" : "0";
+  }
+
+  const {
+    items: events,
+    setItems: setEvents,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<Event>({
+    fetcher: getAdminEventsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: EVENT_SORT_FIELD[sortBy], dir: sortOrder } : null,
+      filters: eventFilters,
+    },
+    initialData: initialEvents,
+    initialMeta,
+  });
 
   // Validation & helper states
   const [slugError, setSlugError] = useState<string | null>(null);
@@ -240,6 +267,7 @@ export function EventsManager({
       try {
         await deleteEvent(id);
         setEvents(events.filter((e) => e.id !== id));
+        refresh();
         setStatus({ type: "success", message: `L'événement "${title}" a été supprimé.` });
       } catch (err) {
         const error = err as Error;
@@ -288,11 +316,13 @@ export function EventsManager({
           const res = await updateEvent(editingEvent.id, fd);
           const updated = res.data as Event;
           setEvents(events.map((e) => (e.id === updated.id ? updated : e)));
+          refresh();
           setStatus({ type: "success", message: `L'événement "${title}" a été mis à jour.` });
         } else {
           const res = await createEvent(fd);
           const created = res.data as Event;
           setEvents([...events, created]);
+          refresh();
           setStatus({ type: "success", message: `L'événement "${title}" a été créé.` });
         }
         closeModal();
@@ -318,6 +348,7 @@ export function EventsManager({
   };
 
   const handleSort = (column: "is_featured" | "title" | "location" | "starts_at") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -346,73 +377,11 @@ export function EventsManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Events (combined filters + sorting)
-  const processedEvents = useMemo(() => {
-    let result = events.filter((e) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = e.title.toLowerCase().includes(q);
-        const typeMatch = e.type ? e.type.toLowerCase().includes(q) : false;
-        const locMatch = e.location ? e.location.toLowerCase().includes(q) : false;
-        if (!titleMatch && !typeMatch && !locMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.title, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "type") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.type ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "location") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.location ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "host") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(e.host ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "is_featured") {
-          if (filter.value === "") continue;
-          const targetFeatured = filter.value === "featured";
-          if (e.is_featured !== targetFeatured) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "location") {
-          valA = a.location ?? "";
-          valB = b.location ?? "";
-        } else if (sortBy === "starts_at") {
-          valA = a.starts_at;
-          valB = b.starts_at;
-        } else if (sortBy === "is_featured") {
-          const numA = a.is_featured ? 1 : 0;
-          const numB = b.is_featured ? 1 : 0;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [events, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedEvents.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paginatedEvents = processedEvents.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paginatedEvents = events;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -495,7 +464,7 @@ export function EventsManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -599,11 +568,11 @@ export function EventsManager({
           </table>
         </div>
 
-        {processedEvents.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedEvents.length}
+            total={total}
             perPage={perPage}
             onPageChange={(page) => {
               setPage(page);

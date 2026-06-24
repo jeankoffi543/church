@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Play, Eye, Clock, Search, X, ChevronDown, CalendarRange } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { Play, Eye, Clock, Search, X, ChevronDown, CalendarRange, Loader2 } from "lucide-react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 import { cn } from "@/lib/utils";
-import type { PastLive } from "@/lib/api";
+import { type PastLive, getPastLives } from "@/lib/api";
 import { BrandButton } from "@/components/ui/brand-button";
 import { SmartImage } from "@/components/ui/smart-image";
 import { SermonVideoDialog } from "@/components/media/sermon-video-dialog";
@@ -15,53 +16,119 @@ const STEP = 9;
 
 const resumeKeyOf = (live: PastLive) => `mfm:resume:past-live:${live.id}`;
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const yearOf = (live: PastLive) => live.monthLabel.match(/\d{4}/)?.[0] ?? "";
-const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 
-export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives: PastLive[] }) {
+export function LivesArchive({
+  latest,
+  initialLives = [],
+  meta,
+  searchParam = "",
+  seriesParam = [],
+  yearsParam = [],
+}: {
+  latest: PastLive | null;
+  initialLives?: PastLive[];
+  meta?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    years: string[];
+    series: string[];
+  };
+  searchParam?: string;
+  seriesParam?: string[];
+  yearsParam?: string[];
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [active, setActive] = useState<PastLive | null>(null);
-  const [search, setSearch] = useState("");
-  const [series, setSeries] = useState<string[]>([]);
-  const [years, setYears] = useState<string[]>([]);
-  const [visible, setVisible] = useState(STEP);
+  const [search, setSearch] = useState(searchParam);
+  const [series, setSeries] = useState<string[]>(seriesParam);
+  const [years, setYears] = useState<string[]>(yearsParam);
+
+  const [livesList, setLivesList] = useState<PastLive[]>(initialLives);
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Sync state with props when initialLives updates from server page reload
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setLivesList(initialLives);
+      setPage(1);
+      setSearch(searchParam);
+      setSeries(seriesParam ?? []);
+      setYears(yearsParam ?? []);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [initialLives, searchParam, seriesParam, yearsParam]);
 
   // Which facet's "Voir plus" sheet is open + its lifted search/pagination state.
   const [facetOpen, setFacetOpen] = useState<"series" | "years" | null>(null);
   const [facetQuery, setFacetQuery] = useState("");
   const [facetLimit, setFacetLimit] = useState(FACET_SHEET_STEP);
 
-  const archive = useMemo(() => lives.filter((l) => l.id !== latest?.id), [lives, latest]);
-  const allSeries = useMemo(() => uniq(archive.map((l) => l.series ?? "")), [archive]);
-  const allYears = useMemo(() => uniq(archive.map(yearOf)).sort((a, b) => b.localeCompare(a)), [archive]);
+  // Debounce and push search / filters update in URL
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (search) {
+        params.set("search", search);
+      } else {
+        params.delete("search");
+      }
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return archive.filter((l) => {
-      const matchesSearch = !q || [l.title, l.preacher, l.series].some((v) => v?.toLowerCase().includes(q));
-      const matchesSeries = series.length === 0 || (l.series ? series.includes(l.series) : false);
-      const matchesYear = years.length === 0 || years.includes(yearOf(l));
-      return matchesSearch && matchesSeries && matchesYear;
+      params.delete("series[]");
+      params.delete("year[]");
+
+      series.forEach((s) => params.append("series[]", s));
+      years.forEach((y) => params.append("year[]", y));
+
+      const nextQueryString = params.toString();
+      if (nextQueryString !== searchParams.toString()) {
+        router.push(`${pathname}?${nextQueryString}`, { scroll: false });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, series, years, router, pathname, searchParams]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const res = await getPastLives({
+      search,
+      series,
+      year: years,
+      perPage: STEP,
+      page: nextPage,
     });
-  }, [archive, search, series, years]);
+    setLivesList((prev) => [...prev, ...res.data]);
+    setPage(nextPage);
+    setLoadingMore(false);
+  };
 
-  // Reveal up to `visible`, then group those into chronological month sections.
+  const archive = useMemo(() => livesList.filter((l) => l.id !== latest?.id), [livesList, latest]);
+  const allSeries = meta?.series ?? [];
+  const allYears = meta?.years ?? [];
+
+  // Group items into chronological month sections.
   const monthGroups = useMemo(() => {
     const map = new Map<string, PastLive[]>();
-    for (const live of filtered.slice(0, visible)) {
+    for (const live of archive) {
       const key = cap(live.monthLabel) || "Sans date";
       (map.get(key) ?? map.set(key, []).get(key)!).push(live);
     }
     return [...map.entries()];
-  }, [filtered, visible]);
+  }, [archive]);
 
   const activeCount = series.length + years.length;
-  const reveal = (next: () => void) => {
-    next();
-    setVisible(STEP);
-  };
   const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) =>
-    reveal(() => setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value])));
-  const resetFilters = () => reveal(() => { setSeries([]); setYears([]); setSearch(""); });
+    setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  const resetFilters = () => { setSeries([]); setYears([]); setSearch(""); };
 
   const openFacet = (key: "series" | "years") => {
     setFacetOpen(key);
@@ -74,6 +141,9 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
       : facetOpen === "years"
         ? { title: "Années", options: allYears, selected: years, onToggle: (v: string) => toggle(setYears, v) }
         : null;
+
+  const totalCount = meta?.total ?? initialLives.length;
+  const hasMore = livesList.length < totalCount;
 
   return (
     <div className="min-h-screen bg-ink pb-[clamp(56px,8vw,96px)]">
@@ -115,7 +185,7 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
             <Search className="size-4 text-white/40" />
             <input
               value={search}
-              onChange={(e) => reveal(() => setSearch(e.target.value))}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher par titre, prédicateur ou série…"
               className="w-full bg-transparent text-[14px] text-white outline-none placeholder:text-white/35"
             />
@@ -125,7 +195,7 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
         </div>
 
         <div className="mb-7 flex items-center gap-3 text-[13px] font-semibold text-white/45">
-          <span>{filtered.length} rediffusion(s)</span>
+          <span>{totalCount} rediffusion(s)</span>
           {(activeCount > 0 || search) && (
             <button onClick={resetFilters} className="inline-flex cursor-pointer items-center gap-1 text-gold/80 transition hover:text-gold">
               <X className="size-3.5" /> Réinitialiser
@@ -143,7 +213,7 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
           </section>
         ))}
 
-        {filtered.length === 0 && (
+        {archive.length === 0 && (
           <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-16 text-center">
             <p className="text-sm font-semibold text-white/80">Aucune rediffusion</p>
             <p className="mt-1 text-xs text-white/45">Ajustez votre recherche ou vos filtres.</p>
@@ -151,14 +221,22 @@ export function LivesArchive({ latest, lives }: { latest: PastLive | null; lives
         )}
 
         {/* ── Load more ────────────────────────────────────────── */}
-        {filtered.length > visible && (
+        {hasMore && (
           <div className="mt-4 flex justify-center">
             <button
-              onClick={() => setVisible((v) => v + STEP)}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-white/5 px-7 py-3 text-sm font-bold text-white transition hover:border-gold hover:text-gold"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-white/5 px-7 py-3 text-sm font-bold text-white transition hover:border-gold hover:text-gold disabled:opacity-50"
             >
-              <ChevronDown className="size-4" /> Charger plus
-              <span className="text-white/40">({filtered.length - visible})</span>
+              {loadingMore ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+              {loadingMore ? "Chargement..." : "Charger plus"}
+              {!loadingMore && (
+                <span className="text-white/40">({totalCount - livesList.length})</span>
+              )}
             </button>
           </div>
         )}

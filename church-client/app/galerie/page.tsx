@@ -9,8 +9,21 @@ export const metadata: Metadata = {
   description: "Découvrez en images la vie de notre église, les moments de louange et les séminaires de la Maison du Feu.",
 };
 
-export default async function GaleriePage() {
-  const albums = await getAlbums();
+export default async function GaleriePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; category?: string; year?: string }>;
+}) {
+  const { page, category, year } = await searchParams;
+  const pageNum = page ? Number(page) : 1;
+  const yearNum = year ? Number(year) : undefined;
+
+  const { data: albums, meta } = await getAlbums({
+    page: pageNum,
+    perPage: 9,
+    category,
+    year: yearNum,
+  });
 
   return (
     <section className="min-h-screen bg-cream px-6 pt-[clamp(96px,11vw,120px)] pb-[90px]">
@@ -20,7 +33,7 @@ export default async function GaleriePage() {
           title="La vie de l'église en images"
           intro="Parcourez nos albums photos et revivez en images les grands moments de louange, d'adoration, et de fraternité."
         />
-        <GalleryGrid albums={albums} />
+        <GalleryGrid albums={albums} initialMeta={meta} />
       </div>
     </section>
   );

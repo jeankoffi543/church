@@ -5,10 +5,37 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Keky\QueryMaster\Concerns\HasFilters;
+use Keky\QueryMaster\Concerns\IsSearchable;
+use Keky\QueryMaster\Concerns\IsSortable;
+use Keky\QueryMaster\Enums\SearchOperator;
+use Keky\QueryMaster\Filter;
 
 class HomeGroupApplication extends Model
 {
-    use HasFactory;
+    use HasFactory, HasFilters, IsSearchable, IsSortable;
+
+    protected array $searchable = [
+        'name' => SearchOperator::LIKE,
+        'email' => SearchOperator::LIKE,
+        'motivation' => SearchOperator::LIKE,
+    ];
+
+    protected array $sortable = [
+        'name',
+        'status',
+        'created_at',
+    ];
+
+    public function filters(): array
+    {
+        return [
+            Filter::make('status', 'status'),
+            Filter::make('home_group_id', 'home_group_id'),
+            Filter::make('user_id', 'user_id'),
+            Filter::make('name', 'name'),
+        ];
+    }
 
     protected $fillable = [
         'user_id',

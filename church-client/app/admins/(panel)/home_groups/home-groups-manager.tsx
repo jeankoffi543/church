@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition } from "react";
 import { 
   Plus, 
   Search, 
@@ -15,17 +15,21 @@ import {
   ChevronDown,
   ChevronsUpDown,
   SlidersHorizontal,
+  Clock,
   X
 } from "lucide-react";
-import { createHomeGroup, updateHomeGroup, deleteHomeGroup, type AdminUser } from "@/lib/admin-api";
+import { createHomeGroup, updateHomeGroup, deleteHomeGroup, getAdminHomeGroupsPaginated, type AdminUser, type AdminListMeta } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SearchableSelect } from "../_components/searchable-select";
 import { LocationPicker } from "../_components/location-picker";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const HOME_GROUPS_PER_PAGE = 10;
 
 type HomeGroup = {
   id: number;
@@ -36,45 +40,55 @@ type HomeGroup = {
   latitude: number | null;
   longitude: number | null;
   zone_name: string | null;
+  meeting_day: string | null;
+  meeting_time: string | null;
   schedule: string | null;
   coordinates: { top?: string; left?: string; lat?: number; lng?: number } | null;
   sort_order: number;
   is_active: boolean;
 };
 
+/** Days of the week, in calendar order — stored verbatim as `meeting_day`. */
+const WEEK_DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"] as const;
+
+/** Compose the human-readable schedule the public site shows (e.g. "Mardi · 19h00"). */
+function composeSchedule(day: string, time: string): string {
+  const d = day.trim();
+  const t = time.trim();
+  if (d && t) return `${d} · ${t}`;
+  return d || t;
+}
+
 const filterFields: FilterField[] = [
   { id: "name", label: "Nom", type: "text" },
   { id: "leader", label: "Responsable", type: "text" },
   { id: "address", label: "Quartier / Adresse", type: "text" },
-  { 
-    id: "is_active", 
-    label: "Statut", 
-    type: "select", 
+  {
+    id: "meeting_day",
+    label: "Jour",
+    type: "select",
+    options: WEEK_DAYS.map((d) => ({ value: d, label: d })),
+  },
+  {
+    id: "is_active",
+    label: "Statut",
+    type: "select",
     options: [
       { value: "active", label: "Actif" },
       { value: "inactive", label: "Inactif" }
-    ] 
+    ]
   }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function HomeGroupsManager({
   initialHomeGroups,
+  initialMeta,
   users = [],
 }: {
   initialHomeGroups: HomeGroup[];
+  initialMeta: AdminListMeta;
   users?: AdminUser[];
 }) {
-  const [homeGroups, setHomeGroups] = useState<HomeGroup[]>(initialHomeGroups);
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -86,7 +100,32 @@ export function HomeGroupsManager({
 
   // Pagination states
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(HOME_GROUPS_PER_PAGE);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const homeGroupFilters: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (homeGroupFilters.is_active__eq) {
+    homeGroupFilters.is_active__eq = homeGroupFilters.is_active__eq === "active" ? "1" : "0";
+  }
+
+  const {
+    items: homeGroups,
+    setItems: setHomeGroups,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<HomeGroup>({
+    fetcher: getAdminHomeGroupsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: sortBy, dir: sortOrder } : null,
+      filters: homeGroupFilters,
+    },
+    initialData: initialHomeGroups,
+    initialMeta,
+  });
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -97,7 +136,8 @@ export function HomeGroupsManager({
   const [leader, setLeader] = useState("");
   const [leaderId, setLeaderId] = useState<number | "">("");
   const [address, setAddress] = useState("");
-  const [schedule, setSchedule] = useState("");
+  const [meetingDay, setMeetingDay] = useState("");
+  const [meetingTime, setMeetingTime] = useState("");
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [zoneName, setZoneName] = useState<string | null>(null);
@@ -110,7 +150,8 @@ export function HomeGroupsManager({
     setLeader("");
     setLeaderId("");
     setAddress("");
-    setSchedule("Mensuel · 1er dimanche");
+    setMeetingDay("");
+    setMeetingTime("");
     setLatitude(null);
     setLongitude(null);
     setZoneName(null);
@@ -125,7 +166,8 @@ export function HomeGroupsManager({
     setLeader(group.leader ?? "");
     setLeaderId(group.leader_id || "");
     setAddress(group.address);
-    setSchedule(group.schedule ?? "");
+    setMeetingDay(group.meeting_day ?? "");
+    setMeetingTime(group.meeting_time ?? "");
     setLatitude(group.latitude ?? null);
     setLongitude(group.longitude ?? null);
     setZoneName(group.zone_name ?? null);
@@ -147,6 +189,7 @@ export function HomeGroupsManager({
       try {
         await deleteHomeGroup(id);
         setHomeGroups(homeGroups.filter((g) => g.id !== id));
+        refresh();
         setStatus({ type: "success", message: `Le groupe "${name}" a été supprimé.` });
       } catch (err) {
         const error = err as Error;
@@ -162,6 +205,7 @@ export function HomeGroupsManager({
     setStatus(null);
     startTransition(async () => {
       try {
+        const composedSchedule = composeSchedule(meetingDay, meetingTime);
         const payload = {
           name,
           leader: leader || null,
@@ -170,7 +214,10 @@ export function HomeGroupsManager({
           latitude,
           longitude,
           zone_name: zoneName,
-          schedule: schedule || null,
+          meeting_day: meetingDay || null,
+          meeting_time: meetingTime || null,
+          // Keep `schedule` in sync so the public site's "when" label stays accurate.
+          schedule: composedSchedule || null,
           sort_order: Number(formSortOrder),
           is_active: isActive,
         };
@@ -179,11 +226,13 @@ export function HomeGroupsManager({
           const res = await updateHomeGroup(editingHomeGroup.id, payload);
           const updated = res.data as HomeGroup;
           setHomeGroups(homeGroups.map((g) => (g.id === updated.id ? updated : g)));
+          refresh();
           setStatus({ type: "success", message: `Le groupe de maison "${name}" a été mis à jour.` });
         } else {
           const res = await createHomeGroup(payload);
           const created = res.data as HomeGroup;
           setHomeGroups([...homeGroups, created]);
+          refresh();
           setStatus({ type: "success", message: `Le groupe de maison "${name}" a été créé.` });
         }
         closeModal();
@@ -207,6 +256,7 @@ export function HomeGroupsManager({
   };
 
   const handleSort = (column: "name" | "leader" | "address" | "is_active") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -235,70 +285,11 @@ export function HomeGroupsManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Home Groups (combined filters + sorting)
-  const processedHomeGroups = useMemo(() => {
-    let result = homeGroups.filter((g) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const nameMatch = g.name.toLowerCase().includes(q);
-        const leaderMatch = g.leader ? g.leader.toLowerCase().includes(q) : false;
-        const addrMatch = g.address.toLowerCase().includes(q);
-        if (!nameMatch && !leaderMatch && !addrMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(g.name, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "leader") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(g.leader ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "address") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(g.address, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "is_active") {
-          if (filter.value === "") continue;
-          const targetActive = filter.value === "active";
-          if (g.is_active !== targetActive) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "name") {
-          valA = a.name;
-          valB = b.name;
-        } else if (sortBy === "leader") {
-          valA = a.leader ?? "";
-          valB = b.leader ?? "";
-        } else if (sortBy === "address") {
-          valA = a.address;
-          valB = b.address;
-        } else if (sortBy === "is_active") {
-          const numA = a.is_active ? 1 : 0;
-          const numB = b.is_active ? 1 : 0;
-          return sortOrder === "asc" ? numA - numB : numB - numA;
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [homeGroups, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedHomeGroups.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedHomeGroups.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
+  const paged = homeGroups;
 
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
@@ -389,7 +380,7 @@ export function HomeGroupsManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="bg-cream border-b border-[rgba(40,25,80,0.08)] text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -496,7 +487,7 @@ export function HomeGroupsManager({
                 </tr>
               ))}
 
-              {processedHomeGroups.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-10 text-center text-xs text-body">
                     Aucun groupe de maison trouvé.
@@ -507,11 +498,11 @@ export function HomeGroupsManager({
           </table>
         </div>
 
-        {processedHomeGroups.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedHomeGroups.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {
@@ -578,16 +569,51 @@ export function HomeGroupsManager({
                 }}
               />
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 <span className="text-xs font-bold text-body-strong uppercase tracking-wide">Programme des réunions</span>
-                <input
-                  type="text"
-                  value={schedule}
-                  onChange={(e) => setSchedule(e.target.value)}
-                  placeholder="ex: Chaque mardi de 19:00 à 20:30"
-                  className="w-full rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-4 py-3 text-sm text-indigo outline-none focus:border-gold"
-                />
-              </label>
+                {/* Day of the week — single, canonical selection (keeps `meeting_day` clean). */}
+                <div className="flex flex-wrap gap-1.5">
+                  {WEEK_DAYS.map((d) => {
+                    const active = meetingDay === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setMeetingDay(active ? "" : d)}
+                        aria-pressed={active}
+                        className={cn(
+                          "cursor-pointer rounded-full px-3 py-1.5 text-[12px] font-bold transition",
+                          active
+                            ? "bg-gradient-to-br from-gold to-gold-dark text-indigo shadow-sm"
+                            : "border border-[rgba(40,25,80,0.12)] bg-white text-body hover:border-gold hover:text-indigo"
+                        )}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Time + live preview of the schedule label. */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-2.5 focus-within:border-gold">
+                    <Clock className="size-4 shrink-0 text-faint" />
+                    <input
+                      type="time"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="bg-transparent text-sm text-indigo outline-none [color-scheme:light]"
+                    />
+                  </label>
+                  {(meetingDay || meetingTime) && (
+                    <span className="text-[12px] text-body">
+                      Aperçu&nbsp;:{" "}
+                      <span className="font-bold text-indigo">
+                        {composeSchedule(meetingDay, meetingTime) || "—"}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <label className="flex flex-col gap-2">

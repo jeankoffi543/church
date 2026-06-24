@@ -25,8 +25,10 @@ import {
   createBranch,
   updateBranch,
   deleteBranch,
+  getAdminBranchesPaginated,
   type AdminBranch,
-  type AdminUser
+  type AdminUser,
+  type AdminListMeta
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -35,9 +37,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { BrandButton } from "@/components/ui/brand-button";
 import { SearchableSelect, type SearchableOption } from "../_components/searchable-select";
 import { Pagination } from "../_components/pagination";
+import { useServerList } from "../_components/use-server-list";
 import { LocationPicker } from "../_components/location-picker";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const BRANCHES_PER_PAGE = 10;
+
+/** UI sort columns → QueryMaster sortable model fields (pastor is a relation, not sortable). */
+const BRANCH_SORT_FIELD: Record<string, string | undefined> = {
+  title: "title",
+  address: "address",
+  pastor: undefined,
+};
 
 const slugify = (text: string) => {
   return text
@@ -58,24 +70,15 @@ const filterFields: FilterField[] = [
   { id: "pastor", label: "Pasteur", type: "async-select" }
 ];
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function BranchesManager({
   initialBranches,
+  initialMeta,
   users,
 }: {
   initialBranches: AdminBranch[];
+  initialMeta: AdminListMeta;
   users: AdminUser[];
 }) {
-  const [branches, setBranches] = useState<AdminBranch[]>(initialBranches);
   const [search, setSearch] = useState("");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -90,7 +93,28 @@ export function BranchesManager({
 
   // Pagination states
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(BRANCHES_PER_PAGE);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const branchSort = sortBy ? BRANCH_SORT_FIELD[sortBy] : undefined;
+  const {
+    items: branches,
+    setItems: setBranches,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminBranch>({
+    fetcher: getAdminBranchesPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: branchSort && sortOrder ? { field: branchSort, dir: sortOrder } : null,
+      filters: serializeFiltersForQueryMaster(activeFilters),
+    },
+    initialData: initialBranches,
+    initialMeta,
+  });
 
   // Form states
   const [title, setTitle] = useState("");
@@ -183,10 +207,12 @@ export function BranchesManager({
         if (editingBranch) {
           const res = await updateBranch(editingBranch.id, payload);
           setBranches((prev) => prev.map((item) => (item.id === editingBranch.id ? res.data : item)));
+          refresh();
           setStatus({ type: "success", message: "La branche a été mise à jour avec succès." });
         } else {
           const res = await createBranch(payload);
           setBranches((prev) => [...prev, res.data]);
+          refresh();
           setStatus({ type: "success", message: "La branche a été créée avec succès." });
         }
         setIsModalOpen(false);
@@ -203,6 +229,7 @@ export function BranchesManager({
       try {
         await deleteBranch(b.id);
         setBranches((prev) => prev.filter((item) => item.id !== b.id));
+        refresh();
         setStatus({ type: "success", message: "La branche a été supprimée." });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Suppression impossible." });
@@ -217,6 +244,7 @@ export function BranchesManager({
   };
 
   const handleSort = (column: "title" | "address" | "pastor") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -245,68 +273,11 @@ export function BranchesManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Branches (combined filters + sorting)
-  const processedBranches = useMemo(() => {
-    let result = branches.filter((b) => {
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const titleMatch = b.title.toLowerCase().includes(q);
-        const addrMatch = b.address.toLowerCase().includes(q);
-        const pastorMatch = b.pastor ? b.pastor.name.toLowerCase().includes(q) : false;
-        if (!titleMatch && !addrMatch && !pastorMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "title") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(b.title, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "address") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(b.address, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "pastor") {
-          if (filter.value === "") continue;
-          const pastorIdValue = Number(filter.value);
-          if (b.pastor_id !== pastorIdValue) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "title") {
-          valA = a.title;
-          valB = b.title;
-        } else if (sortBy === "address") {
-          valA = a.address;
-          valB = b.address;
-        } else if (sortBy === "pastor") {
-          valA = a.pastor?.name ?? "";
-          valB = b.pastor?.name ?? "";
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    } else {
-      // Default sort
-      result = [...result].sort((a, b) => a.title.localeCompare(b.title));
-    }
-
-    return result;
-  }, [branches, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedBranches.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedBranches.slice((currentPage - 1) * perPage, currentPage * perPage);
-
-  const sorted = processedBranches;
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = branches;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   // Searchable select options for pastors
   const userOptions = useMemo<SearchableOption[]>(() => {
@@ -328,7 +299,7 @@ export function BranchesManager({
           <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
             Campus &amp; Extensions
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {branches.length}
+              {total}
             </span>
           </h1>
           <p className="mt-1 text-sm text-body">
@@ -408,7 +379,7 @@ export function BranchesManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -490,7 +461,7 @@ export function BranchesManager({
                   </td>
                 </tr>
               ))}
-              {processedBranches.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-12">
                     <div className="flex flex-col items-center justify-center text-center">
@@ -504,11 +475,11 @@ export function BranchesManager({
           </table>
         </div>
 
-        {processedBranches.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedBranches.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n) => {

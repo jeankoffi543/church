@@ -1,7 +1,7 @@
-import { getAdminMe, getAdminBranches, getAdminUsers } from "@/lib/admin-api";
+import { getAdminMe, getAdminBranchesPaginated, getAdminUsers } from "@/lib/admin-api";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { AccessRestricted } from "../_components/access-restricted";
-import { BranchesManager } from "./branches-manager";
+import { BranchesManager, BRANCHES_PER_PAGE } from "./branches-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +12,10 @@ export default async function AdminBranchesPage() {
     return <AccessRestricted />;
   }
 
-  const [branches, users] = await Promise.all([
-    getAdminBranches(),
+  const [list, users] = await Promise.all([
+    getAdminBranchesPaginated({ perPage: BRANCHES_PER_PAGE }),
     getAdminUsers(),
   ]);
 
-  return <BranchesManager initialBranches={branches} users={users} />;
+  return <BranchesManager initialBranches={list.data} initialMeta={list.meta} users={users} />;
 }

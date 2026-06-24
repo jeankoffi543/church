@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import {
   Search,
   CheckCircle,
@@ -20,19 +20,23 @@ import {
   X,
 } from "lucide-react";
 
-import type { AdminMe, AdminContactMessage } from "@/lib/admin-api";
+import type { AdminMe, AdminContactMessage, AdminListMeta } from "@/lib/admin-api";
 import {
   updateContactStatus,
   archiveContact,
   replyContact,
   updateAdminSettings,
+  getAdminContactsPaginated,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 import { Pagination } from "../_components/pagination";
-import { QueryBuilder } from "@/components/admin/query-builder";
-import type { FilterField, ActiveFilter, FilterOperator } from "@/components/admin/query-builder";
+import { useServerList } from "../_components/use-server-list";
+import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
+import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+
+export const CONTACTS_PER_PAGE = 10;
 
 type StatusFilter = "all" | "pending" | "read" | "archived";
 
@@ -52,26 +56,19 @@ const STATUS_CONFIG: Record<
   archived: { label: "Archivé", bg: "bg-faint/10", text: "text-faint", dot: "bg-faint" },
 };
 
-const matchString = (value: string, term: string, operator: FilterOperator): boolean => {
-  const v = value.toLowerCase();
-  const t = term.toLowerCase();
-  if (operator === "contains") return v.includes(t);
-  if (operator === "equals") return v === t;
-  if (operator === "starts_with") return v.startsWith(t);
-  if (operator === "ends_with") return v.endsWith(t);
-  return true;
-};
-
 export function ContactsManager({
   initialMessages,
+  initialMeta,
+  initialPendingCount,
   initialSubjects,
   me,
 }: {
   initialMessages: AdminContactMessage[];
+  initialMeta: AdminListMeta;
+  initialPendingCount: number;
   initialSubjects: string[];
   me: AdminMe;
 }) {
-  const [messages, setMessages] = useState<AdminContactMessage[]>(initialMessages);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -84,12 +81,45 @@ export function ContactsManager({
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const [perPage, setPerPage] = useState(CONTACTS_PER_PAGE);
 
   const [activeTab, setActiveTab] = useState<"messages" | "subjects">("messages");
   const [subjects, setSubjects] = useState<string[]>(initialSubjects);
   const [newSubject, setNewSubject] = useState("");
   const [savingSubjects, setSavingSubjects] = useState(false);
+
+  // Server-side list (search / filters / sort / pagination via QueryMaster).
+  const filterParams: Record<string, string> = { ...serializeFiltersForQueryMaster(activeFilters) };
+  if (statusFilter !== "all") {
+    filterParams.status = statusFilter;
+  }
+
+  const {
+    items: messages,
+    setItems: setMessages,
+    meta,
+    isLoading,
+    refresh,
+  } = useServerList<AdminContactMessage>({
+    fetcher: getAdminContactsPaginated,
+    params: {
+      page,
+      perPage,
+      search,
+      sort: sortBy && sortOrder ? { field: sortBy, dir: sortOrder } : null,
+      filters: filterParams,
+    },
+    initialData: initialMessages,
+    initialMeta,
+  });
+
+  // The "pending" badge needs the global count, not just the visible page.
+  const [pendingCount, setPendingCount] = useState(initialPendingCount);
+  const refreshPending = useCallback(() => {
+    getAdminContactsPaginated({ filters: { status: "pending" }, perPage: 1 })
+      .then((res) => setPendingCount(res.meta.total))
+      .catch(() => {});
+  }, []);
 
   const handleAddSubject = () => {
     const val = newSubject.trim();
@@ -155,6 +185,7 @@ export function ContactsManager({
   };
 
   const handleSort = (column: "name" | "subject" | "status" | "phone" | "created_at") => {
+    setPage(1);
     if (sortBy !== column) {
       setSortBy(column);
       setSortOrder("asc");
@@ -183,81 +214,20 @@ export function ContactsManager({
     return <ChevronsUpDown className="size-3 text-faint shrink-0" />;
   };
 
-  // Processed Messages (combined filters + sorting)
-  const processedMessages = useMemo(() => {
-    let result = messages.filter((msg) => {
-      // Existing Status Filter Tab
-      if (statusFilter !== "all" && msg.status !== statusFilter) return false;
-
-      // Primary Search Bar
-      if (search.trim() !== "") {
-        const q = search.toLowerCase();
-        const nameMatch = msg.name.toLowerCase().includes(q);
-        const emailMatch = msg.email.toLowerCase().includes(q);
-        const subMatch = msg.subject.toLowerCase().includes(q);
-        const phoneMatch = msg.phone ? msg.phone.includes(search) : false;
-        if (!nameMatch && !emailMatch && !subMatch && !phoneMatch) return false;
-      }
-
-      // Query Builder Active Filters
-      for (const filter of activeFilters) {
-        if (filter.fieldId === "name") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(msg.name, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "email") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(msg.email, filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "phone") {
-          if (!filter.value || filter.value.trim() === "") continue;
-          if (!matchString(msg.phone ?? "", filter.value, filter.operator)) return false;
-        } else if (filter.fieldId === "subject") {
-          if (filter.value === "") continue;
-          if (msg.subject !== filter.value) return false;
-        }
-      }
-      return true;
-    });
-
-    // Sorting
-    if (sortBy && sortOrder) {
-      result = [...result].sort((a, b) => {
-        let valA = "";
-        let valB = "";
-
-        if (sortBy === "name") {
-          valA = a.name;
-          valB = b.name;
-        } else if (sortBy === "subject") {
-          valA = a.subject;
-          valB = b.subject;
-        } else if (sortBy === "status") {
-          valA = a.status;
-          valB = b.status;
-        } else if (sortBy === "phone") {
-          valA = a.phone ?? "";
-          valB = b.phone ?? "";
-        } else if (sortBy === "created_at") {
-          valA = a.created_at ?? "";
-          valB = b.created_at ?? "";
-        }
-
-        const cmp = valA.localeCompare(valB, "fr", { numeric: true, sensitivity: "base" });
-        return sortOrder === "asc" ? cmp : -cmp;
-      });
-    }
-
-    return result;
-  }, [messages, statusFilter, search, activeFilters, sortBy, sortOrder]);
-
-  const pageCount = Math.max(1, Math.ceil(processedMessages.length / perPage));
-  const currentPage = Math.min(page, pageCount);
-  const paged = processedMessages.slice((currentPage - 1) * perPage, currentPage * perPage);
+  // The API already returns the filtered + sorted page; render it directly.
+  const paged = messages;
+  const total = meta.total;
+  const pageCount = Math.max(1, meta.last_page);
+  const currentPage = meta.current_page;
 
   const selected = messages.find((m) => m.id === selectedId) ?? null;
-  const pendingCount = messages.filter((m) => m.status === "pending").length;
 
-  const replaceInList = (updated: AdminContactMessage) =>
+  /** Optimistically patch the visible row, then resync the page + badge. */
+  const replaceInList = (updated: AdminContactMessage) => {
     setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    refresh();
+    refreshPending();
+  };
 
   const handleStatusChange = (msg: AdminContactMessage, nextStatus: "pending" | "read" | "archived") => {
     setStatus(null);
@@ -345,7 +315,7 @@ export function ContactsManager({
           <h1 className="mt-1 flex items-center gap-3 font-display text-[34px] font-semibold text-indigo italic">
             Messages de contact
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo/10 px-3 py-1 text-[13px] font-bold not-italic text-indigo">
-              {messages.length}
+              {total}
               {pendingCount > 0 && (
                 <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-gold text-[10px] font-black text-indigo">
                   {pendingCount}
@@ -474,7 +444,7 @@ export function ContactsManager({
 
       {/* Table grid (z-10 relative) */}
       <div className="overflow-hidden rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white shadow-[0_1px_3px_rgba(22,15,51,0.04)] relative z-10">
-        <div className="overflow-x-auto">
+        <div className={cn("overflow-x-auto transition-opacity", isLoading && "pointer-events-none opacity-60")}>
           <table className="w-full text-left text-sm text-indigo">
             <thead className="border-b border-[rgba(40,25,80,0.08)] bg-cream text-xs font-bold tracking-wider text-body uppercase select-none">
               <tr>
@@ -570,7 +540,7 @@ export function ContactsManager({
                 );
               })}
 
-              {processedMessages.length === 0 && (
+              {paged.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -586,11 +556,11 @@ export function ContactsManager({
             </tbody>
           </table>
         </div>
-        {processedMessages.length > 0 && (
+        {total > 0 && (
           <Pagination
             page={currentPage}
             pageCount={pageCount}
-            total={processedMessages.length}
+            total={total}
             perPage={perPage}
             onPageChange={setPage}
             onPerPageChange={(n: number) => {

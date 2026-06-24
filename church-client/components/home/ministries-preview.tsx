@@ -9,7 +9,7 @@ import { MinistryCard } from "@/components/cards/ministry-card";
 const PREVIEW_COUNT = 4;
 
 export async function MinistriesPreview() {
-  const ministries = await getMinistries();
+  const { data: ministries } = await getMinistries({ perPage: 100 });
   const preview = ministries.slice(0, PREVIEW_COUNT);
   const hasMore = ministries.length > PREVIEW_COUNT;
 
