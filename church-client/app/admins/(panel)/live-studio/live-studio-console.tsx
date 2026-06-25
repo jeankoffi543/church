@@ -27,6 +27,7 @@ import {
   MessageSquare,
   AlertTriangle,
   Square,
+  Maximize,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ import {
   searchBible,
   navigateBible,
   getBibleTranslations,
+  getCurrentScripture,
   DEFAULT_STUDIO_SETTINGS,
   type ScriptureVerse,
   type StudioSettings,
@@ -68,6 +70,283 @@ type Status = { type: "success" | "error"; message: string } | null;
 
 const HLS_BASE = (process.env.NEXT_PUBLIC_HLS_BASE_URL || "http://localhost:8088/hls").replace(/\/+$/, "");
 
+const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
+  {
+    name: "Culte Dominical Doré",
+    settings: {
+      layout: "lower_third",
+      animation: "clip_reveal",
+      font: "Cormorant Garamond",
+      background: "gradient_purple",
+      duration: 0,
+      fontRefFamily: "Plus Jakarta Sans",
+      fontRefWeight: "700",
+      fontRefStyle: "normal",
+      fontRefTransform: "uppercase",
+      fontRefDecoration: "none",
+      fontRefSpacing: 2.5,
+      fontRefSize: 13,
+      fontRefLineHeight: 1.2,
+      fontRefColor: "#e2b85f",
+      fontBodyFamily: "Cormorant Garamond",
+      fontBodyWeight: "500",
+      fontBodyStyle: "normal",
+      fontBodyTransform: "none",
+      fontBodyDecoration: "none",
+      fontBodySpacing: 0,
+      fontBodySize: 28,
+      fontBodyLineHeight: 1.3,
+      fontBodyColor: "#ffffff",
+      fontVerFamily: "Plus Jakarta Sans",
+      fontVerWeight: "600",
+      fontVerStyle: "italic",
+      fontVerTransform: "uppercase",
+      fontVerDecoration: "none",
+      fontVerSpacing: 1,
+      fontVerSize: 11,
+      fontVerLineHeight: 1.2,
+      fontVerColor: "#e2b85f",
+      containerShape: "rounded_rectangle",
+      containerBg: "rgba(22, 15, 51, 0.95)",
+      containerBorderRadius: 16,
+      containerBorderWidth: 1.5,
+      containerBorderStyle: "solid",
+      containerBorderColor: "rgba(226, 184, 95, 0.25)",
+      containerPaddingX: 28,
+      containerPaddingY: 24,
+      shadowBlur: 35,
+      shadowSpread: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 12,
+      shadowColor: "rgba(0, 0, 0, 0.6)",
+      positionMode: "predefined",
+      predefinedPosition: "centered_bottom",
+      customX: 10,
+      customY: 70,
+      customWidth: 80,
+      customHeight: 20,
+      animDuration: 600,
+      animEasing: "ease-out"
+    }
+  },
+  {
+    name: "Jeunesse Néon Vif",
+    settings: {
+      layout: "lower_third",
+      animation: "scale",
+      font: "Plus Jakarta Sans",
+      background: "solid_dark",
+      duration: 0,
+      fontRefFamily: "Inter",
+      fontRefWeight: "800",
+      fontRefStyle: "normal",
+      fontRefTransform: "uppercase",
+      fontRefDecoration: "none",
+      fontRefSpacing: 2,
+      fontRefSize: 12,
+      fontRefLineHeight: 1.2,
+      fontRefColor: "#ff007f",
+      fontBodyFamily: "Plus Jakarta Sans",
+      fontBodyWeight: "700",
+      fontBodyStyle: "normal",
+      fontBodyTransform: "none",
+      fontBodyDecoration: "none",
+      fontBodySpacing: 0.5,
+      fontBodySize: 25,
+      fontBodyLineHeight: 1.2,
+      fontBodyColor: "linear-gradient(90deg, #ff007f 0%, #00e5ff 100%)",
+      fontVerFamily: "Plus Jakarta Sans",
+      fontVerWeight: "600",
+      fontVerStyle: "italic",
+      fontVerTransform: "uppercase",
+      fontVerDecoration: "none",
+      fontVerSpacing: 1,
+      fontVerSize: 11,
+      fontVerLineHeight: 1.2,
+      fontVerColor: "#00e5ff",
+      containerShape: "asymmetric",
+      containerBg: "rgba(10, 5, 25, 0.96)",
+      containerBorderRadius: 16,
+      containerBorderWidth: 2,
+      containerBorderStyle: "glow",
+      containerBorderColor: "#ff007f",
+      containerPaddingX: 24,
+      containerPaddingY: 20,
+      shadowBlur: 20,
+      shadowSpread: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 8,
+      shadowColor: "rgba(255, 0, 127, 0.25)",
+      positionMode: "predefined",
+      predefinedPosition: "lower_third_left",
+      customX: 10,
+      customY: 70,
+      customWidth: 80,
+      customHeight: 20,
+      animDuration: 400,
+      animEasing: "ease-out"
+    }
+  },
+  {
+    name: "Ticker Transparent Bas",
+    settings: {
+      layout: "lower_third",
+      animation: "slide_left",
+      font: "Inter",
+      background: "none",
+      duration: 0,
+      fontRefFamily: "Inter",
+      fontRefWeight: "700",
+      fontRefStyle: "normal",
+      fontRefTransform: "uppercase",
+      fontRefDecoration: "none",
+      fontRefSpacing: 3,
+      fontRefSize: 11,
+      fontRefLineHeight: 1.2,
+      fontRefColor: "#00e5ff",
+      fontBodyFamily: "Inter",
+      fontBodyWeight: "500",
+      fontBodyStyle: "normal",
+      fontBodyTransform: "none",
+      fontBodyDecoration: "none",
+      fontBodySpacing: 0,
+      fontBodySize: 18,
+      fontBodyLineHeight: 1.2,
+      fontBodyColor: "#ffffff",
+      fontVerFamily: "Inter",
+      fontVerWeight: "600",
+      fontVerStyle: "italic",
+      fontVerTransform: "uppercase",
+      fontVerDecoration: "none",
+      fontVerSpacing: 1,
+      fontVerSize: 10,
+      fontVerLineHeight: 1.2,
+      fontVerColor: "#00e5ff",
+      containerShape: "transparent",
+      containerBg: "transparent",
+      containerBorderRadius: 0,
+      containerBorderWidth: 0,
+      containerBorderStyle: "none",
+      containerBorderColor: "transparent",
+      containerPaddingX: 20,
+      containerPaddingY: 10,
+      shadowBlur: 0,
+      shadowSpread: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      shadowColor: "transparent",
+      positionMode: "predefined",
+      predefinedPosition: "ticker",
+      customX: 0,
+      customY: 86,
+      customWidth: 100,
+      customHeight: 14,
+      animDuration: 800,
+      animEasing: "linear"
+    }
+  }
+];
+
+const getElementStyle = (prefix: "fontRef" | "fontBody" | "fontVer", s: StudioSettings): React.CSSProperties => {
+  const colorVal = s[`${prefix}Color` as keyof StudioSettings] as string;
+  const isGradient = colorVal?.includes("gradient");
+
+  const baseStyle: React.CSSProperties = {
+    fontFamily: s[`${prefix}Family` as keyof StudioSettings] as string,
+    fontSize: `${s[`${prefix}Size` as keyof StudioSettings]}px`,
+    fontWeight: s[`${prefix}Weight` as keyof StudioSettings] as string,
+    fontStyle: s[`${prefix}Style` as keyof StudioSettings] as string,
+    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as any,
+    textDecoration: s[`${prefix}Decoration` as keyof StudioSettings] as string,
+    letterSpacing: `${s[`${prefix}Spacing` as keyof StudioSettings]}px`,
+    lineHeight: s[`${prefix}LineHeight` as keyof StudioSettings] as number,
+  };
+
+  if (isGradient) {
+    return {
+      ...baseStyle,
+      backgroundImage: colorVal,
+      WebkitBackgroundClip: "text",
+      WebkitTextFillColor: "transparent",
+      display: "inline-block",
+    };
+  }
+
+  return {
+    ...baseStyle,
+    color: colorVal,
+  };
+};
+
+const getContainerStyle = (s: StudioSettings): React.CSSProperties => {
+  if (s.containerShape === "transparent") {
+    return {
+      backgroundColor: "transparent",
+      backgroundImage: "none",
+      borderStyle: "none",
+      borderWidth: "0px",
+      boxShadow: "none",
+      padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
+    };
+  }
+
+  let borderRadius = `${s.containerBorderRadius}px`;
+  if (s.containerShape === "rectangle") borderRadius = "0px";
+  if (s.containerShape === "capsule") borderRadius = "9999px";
+  if (s.containerShape === "asymmetric") borderRadius = "32px 6px 32px 6px";
+
+  const isGradient = s.containerBg?.includes("gradient");
+
+  const baseStyle: React.CSSProperties = {
+    backgroundColor: isGradient ? "transparent" : s.containerBg,
+    backgroundImage: isGradient ? s.containerBg : "none",
+    borderRadius,
+    padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
+  };
+
+  const borderW = s.containerBorderWidth;
+  const borderCol = s.containerBorderColor || "rgba(255, 255, 255, 0.15)";
+  
+  if (s.containerBorderStyle === "none") {
+    baseStyle.borderStyle = "none";
+    baseStyle.borderWidth = "0px";
+  } else if (s.containerBorderStyle === "glow") {
+    baseStyle.borderStyle = "solid";
+    baseStyle.borderWidth = `${borderW}px`;
+    baseStyle.borderColor = borderCol;
+    baseStyle.boxShadow = `0 0 20px ${borderCol}, inset 0 0 10px ${borderCol}`;
+  } else {
+    baseStyle.borderStyle = s.containerBorderStyle;
+    baseStyle.borderWidth = `${borderW}px`;
+    baseStyle.borderColor = borderCol;
+  }
+
+  const shadowStr = `${s.shadowOffsetX}px ${s.shadowOffsetY}px ${s.shadowBlur}px ${s.shadowSpread}px ${s.shadowColor}`;
+  if (baseStyle.boxShadow) {
+    baseStyle.boxShadow = `${baseStyle.boxShadow}, ${shadowStr}`;
+  } else {
+    baseStyle.boxShadow = shadowStr;
+  }
+
+  return baseStyle;
+};
+
+const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties => {
+  switch (pos) {
+    case "lower_third_left":
+      return { left: "6%", top: "72%", width: "40%", height: "20%" };
+    case "lower_third_right":
+      return { right: "6%", top: "72%", width: "40%", height: "20%" };
+    case "ticker":
+      return { left: "0%", top: "86%", width: "100%", height: "14%" };
+    case "full_screen_cinema":
+      return { left: "10%", top: "10%", width: "80%", height: "80%" };
+    case "centered_bottom":
+    default:
+      return { left: "10%", top: "72%", width: "80%", height: "20%" };
+  }
+};
+
 export function LiveStudioConsole({
   initialPrepared,
   initialSettings,
@@ -81,6 +360,158 @@ export function LiveStudioConsole({
   const [suggestions, setSuggestions] = useState<ScriptureVerse[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Extended UI/UX Design States
+  const [styleTab, setStyleTab] = useState<"layout" | "typo" | "container" | "anim" | "presets">("layout");
+  const [typoElement, setTypoElement] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
+  const [showFullscreenPreview, setShowFullscreenPreview] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const previewScreenRef = useRef<HTMLDivElement>(null);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+
+  // Re-hydrated presets state
+  const [presets, setPresets] = useState<Array<{ name: string; settings: StudioSettings }>>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const dbPresets = liveStyles.live_presets as Array<{ name: string; settings: StudioSettings }> || [];
+    return dbPresets.length > 0 ? dbPresets : PRELOADED_PRESETS;
+  });
+
+  // Load typography fonts dynamically
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&family=Inter:wght@100..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Outfit:wght@100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap";
+    document.head.appendChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, []);
+
+  const handleSavePreset = async () => {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const updated = [
+      ...presets.filter((p) => p.name !== name),
+      { name, settings: { ...settings } }
+    ];
+    setPresets(updated);
+    localStorage.setItem("studio_presets", JSON.stringify(updated));
+    setNewPresetName("");
+    setStatus({ type: "success", message: `Preset "${name}" enregistré !` });
+    try {
+      await updateAdminSettings([
+        { key: "live_presets", value: updated, group: "live_broadcast_styles" }
+      ]);
+    } catch (e) {
+      console.error("Failed to save preset to database", e);
+    }
+  };
+
+  const handleLoadPreset = (presetSettings: StudioSettings) => {
+    setSettings(presetSettings);
+    setStatus({ type: "success", message: "Preset appliqué !" });
+  };
+
+  const handleDeletePreset = async (name: string) => {
+    const updated = presets.filter((p) => p.name !== name);
+    setPresets(updated);
+    localStorage.setItem("studio_presets", JSON.stringify(updated));
+    try {
+      await updateAdminSettings([
+        { key: "live_presets", value: updated, group: "live_broadcast_styles" }
+      ]);
+    } catch (e) {
+      console.error("Failed to delete preset from database", e);
+    }
+  };
+
+  // Fullscreen Handlers
+  const toggleNativeFullscreen = async () => {
+    if (!modalContainerRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await modalContainerRef.current.requestFullscreen();
+        setIsNativeFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsNativeFullscreen(false);
+      }
+    } catch (err) {
+      console.error("Fullscreen error", err);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsNativeFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent, action: "move" | "nw" | "ne" | "se" | "sw") => {
+    e.preventDefault();
+    const rect = previewScreenRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startLeft = settings.customX;
+    const startTop = settings.customY;
+    const startWidth = settings.customWidth;
+    const startHeight = settings.customHeight;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = ((moveEvent.clientX - startX) / rect.width) * 100;
+      const deltaY = ((moveEvent.clientY - startY) / rect.height) * 100;
+
+      if (action === "move") {
+        const nextX = Math.max(0, Math.min(100 - startWidth, startLeft + deltaX));
+        const nextY = Math.max(0, Math.min(100 - startHeight, startTop + deltaY));
+        setStudio("customX", Math.round(nextX));
+        setStudio("customY", Math.round(nextY));
+      } else if (action === "se") {
+        const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
+        const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
+        setStudio("customWidth", Math.round(nextWidth));
+        setStudio("customHeight", Math.round(nextHeight));
+      } else if (action === "sw") {
+        const nextWidth = Math.max(10, startWidth - deltaX);
+        const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
+        const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
+        setStudio("customWidth", Math.round(nextWidth));
+        setStudio("customX", Math.round(nextX));
+        setStudio("customHeight", Math.round(nextHeight));
+      } else if (action === "ne") {
+        const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
+        const nextHeight = Math.max(10, startHeight - deltaY);
+        const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
+        setStudio("customWidth", Math.round(nextWidth));
+        setStudio("customHeight", Math.round(nextHeight));
+        setStudio("customY", Math.round(nextY));
+      } else if (action === "nw") {
+        const nextWidth = Math.max(10, startWidth - deltaX);
+        const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
+        const nextHeight = Math.max(10, startHeight - deltaY);
+        const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
+        setStudio("customWidth", Math.round(nextWidth));
+        setStudio("customX", Math.round(nextX));
+        setStudio("customHeight", Math.round(nextHeight));
+        setStudio("customY", Math.round(nextY));
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
   // Dynamic versions/translations selection
   const [allTranslations, setAllTranslations] = useState<string[]>([]);
   const [visibleTranslationsCount, setVisibleTranslationsCount] = useState(10);
@@ -88,7 +519,34 @@ export function LiveStudioConsole({
 
   const [preview, setPreview] = useState<ScriptureVerse | null>(null);
   const [live, setLive] = useState<ScriptureVerse | null>(null);
-  const [settings, setSettings] = useState<StudioSettings>(DEFAULT_STUDIO_SETTINGS);
+  const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, any>) || {};
+    const typo = (liveStyles.live_typography as Record<string, any>) || {};
+    const container = (liveStyles.live_container as Record<string, any>) || {};
+    const anim = (liveStyles.live_animations as Record<string, any>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
+  const [settings, setSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, any>) || {};
+    const typo = (liveStyles.live_typography as Record<string, any>) || {};
+    const container = (liveStyles.live_container as Record<string, any>) || {};
+    const anim = (liveStyles.live_animations as Record<string, any>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
 
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
   const [busy, setBusy] = useState(false);
@@ -189,6 +647,110 @@ export function LiveStudioConsole({
     return () => clearTimeout(t);
   }, [status]);
 
+  // Recover state: fetch the currently broadcasted scripture and on-air settings
+  useEffect(() => {
+    getCurrentScripture()
+      .then((payload) => {
+        if (payload && payload.action === "show" && payload.verse) {
+          setLive(payload.verse);
+          if (payload.settings) {
+            setOnAirSettings(payload.settings);
+          }
+        } else {
+          setLive(null);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to recover live state", err);
+      });
+  }, []);
+
+  // Debounced auto-save settings to database
+  const lastSettingsRef = useRef<StudioSettings>(settings);
+  useEffect(() => {
+    if (JSON.stringify(lastSettingsRef.current) === JSON.stringify(settings)) {
+      return;
+    }
+    lastSettingsRef.current = settings;
+
+    const timer = setTimeout(async () => {
+      const split = {
+        live_layout: {
+          layout: settings.layout,
+          predefinedPosition: settings.predefinedPosition,
+          customX: settings.customX,
+          customY: settings.customY,
+          customWidth: settings.customWidth,
+          customHeight: settings.customHeight,
+          positionMode: settings.positionMode,
+        },
+        live_typography: {
+          font: settings.font,
+          fontRefFamily: settings.fontRefFamily,
+          fontRefWeight: settings.fontRefWeight,
+          fontRefStyle: settings.fontRefStyle,
+          fontRefTransform: settings.fontRefTransform,
+          fontRefDecoration: settings.fontRefDecoration,
+          fontRefSpacing: settings.fontRefSpacing,
+          fontRefSize: settings.fontRefSize,
+          fontRefLineHeight: settings.fontRefLineHeight,
+          fontRefColor: settings.fontRefColor,
+          fontBodyFamily: settings.fontBodyFamily,
+          fontBodyWeight: settings.fontBodyWeight,
+          fontBodyStyle: settings.fontBodyStyle,
+          fontBodyTransform: settings.fontBodyTransform,
+          fontBodyDecoration: settings.fontBodyDecoration,
+          fontBodySpacing: settings.fontBodySpacing,
+          fontBodySize: settings.fontBodySize,
+          fontBodyLineHeight: settings.fontBodyLineHeight,
+          fontBodyColor: settings.fontBodyColor,
+          fontVerFamily: settings.fontVerFamily,
+          fontVerWeight: settings.fontVerWeight,
+          fontVerStyle: settings.fontVerStyle,
+          fontVerTransform: settings.fontVerTransform,
+          fontVerDecoration: settings.fontVerDecoration,
+          fontVerSpacing: settings.fontVerSpacing,
+          fontVerSize: settings.fontVerSize,
+          fontVerLineHeight: settings.fontVerLineHeight,
+          fontVerColor: settings.fontVerColor,
+        },
+        live_container: {
+          containerShape: settings.containerShape,
+          containerBg: settings.containerBg,
+          containerBorderRadius: settings.containerBorderRadius,
+          containerBorderWidth: settings.containerBorderWidth,
+          containerBorderStyle: settings.containerBorderStyle,
+          containerBorderColor: settings.containerBorderColor,
+          containerPaddingX: settings.containerPaddingX,
+          containerPaddingY: settings.containerPaddingY,
+          shadowBlur: settings.shadowBlur,
+          shadowSpread: settings.shadowSpread,
+          shadowOffsetX: settings.shadowOffsetX,
+          shadowOffsetY: settings.shadowOffsetY,
+          shadowColor: settings.shadowColor,
+        },
+        live_animations: {
+          animation: settings.animation,
+          duration: settings.duration,
+          animDuration: settings.animDuration,
+          animEasing: settings.animEasing,
+        },
+      };
+      try {
+        await updateAdminSettings([
+          { key: "live_layout", value: split.live_layout, group: "live_broadcast_styles" },
+          { key: "live_typography", value: split.live_typography, group: "live_broadcast_styles" },
+          { key: "live_container", value: split.live_container, group: "live_broadcast_styles" },
+          { key: "live_animations", value: split.live_animations, group: "live_broadcast_styles" },
+        ]);
+      } catch (err) {
+        console.error("Autosave failed", err);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [settings]);
+
   const performSearch = useCallback(async (
     q: string,
     currentVisible: string[],
@@ -249,6 +811,7 @@ export function LiveStudioConsole({
       try {
         await broadcastScripture({ action: "show", verse, settings: nextSettings });
         setLive(verse);
+        setOnAirSettings(nextSettings);
         setStatus({ type: "success", message: `Diffusé : ${verse.reference}` });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Diffusion impossible." });
@@ -305,7 +868,10 @@ export function LiveStudioConsole({
   useEffect(() => {
     if (!liveRef.current) return;
     const t = setTimeout(() => {
-      if (liveRef.current) void broadcastScripture({ action: "show", verse: liveRef.current, settings });
+      if (liveRef.current) {
+        void broadcastScripture({ action: "show", verse: liveRef.current, settings });
+        setOnAirSettings(settings);
+      }
     }, 250);
     return () => clearTimeout(t);
   }, [settings]);
@@ -995,8 +1561,21 @@ export function LiveStudioConsole({
 
         {/* ── Center: Control Deck ─────────────────────────────────── */}
         <section className="flex flex-col gap-3">
-          <Deck label="À l’antenne" tone="live" verse={live} settings={settings} mini />
-          <Deck label="En attente (preview)" tone="preview" verse={preview} settings={settings} />
+          <Deck
+            label="À l’antenne"
+            tone="live"
+            verse={live}
+            settings={onAirSettings}
+            mini
+            onFullscreen={() => setShowFullscreenPreview(true)}
+          />
+          <Deck
+            label="En attente (preview)"
+            tone="preview"
+            verse={preview}
+            settings={settings}
+            onFullscreen={() => setShowFullscreenPreview(true)}
+          />
 
           {/* Dynamic action row */}
           <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#0d0820] border border-white/10 rounded-xl p-3">
@@ -1030,9 +1609,14 @@ export function LiveStudioConsole({
                 type="button"
                 onClick={masquer}
                 disabled={!live || busy}
-                className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/10 border border-white/12 px-4 py-2.5 text-xs font-extrabold tracking-wide text-white/80 transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                className={cn(
+                  "flex cursor-pointer items-center gap-1.5 rounded-lg border px-4 py-2.5 text-xs font-extrabold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40",
+                  !live
+                    ? "bg-red-500/20 border-red-500/30 text-red-400 opacity-90 cursor-not-allowed font-semibold"
+                    : "bg-white/10 border-white/12 text-white/80 hover:bg-white/15"
+                )}
               >
-                <EyeOff className="size-3.5" /> ÉCRAN VIDE
+                <EyeOff className="size-3.5" /> ÉCRAN VIDE {!live && " (ACTIF)"}
               </button>
               <button
                 type="button"
@@ -1067,32 +1651,526 @@ export function LiveStudioConsole({
         </section>
 
         {/* ── Right: Studio style Configurator ───────────────────────────── */}
-        <aside className="flex flex-col gap-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <span className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Studio · Style</span>
-
-          <Selector icon={ImageIcon} label="Disposition" value={settings.layout} options={LAYOUTS} onChange={(v) => setStudio("layout", v as StudioLayout)} />
-          <Selector icon={Sparkles} label="Animation Overlay" value={settings.animation} options={ANIMATIONS} onChange={(v) => setStudio("animation", v as StudioAnimation)} />
-          <Selector icon={Type} label="Police de caractère" value={settings.font} options={FONTS.map((f) => ({ value: f, label: f }))} onChange={(v) => setStudio("font", v)} />
-          <Selector icon={ImageIcon} label="Style visuel" value={settings.background} options={BACKGROUNDS} onChange={(v) => setStudio("background", v)} />
-
-          <div>
-            <label className="mb-2 flex items-center justify-between text-[11px] font-bold tracking-wider text-white/50 uppercase">
-              <span className="flex items-center gap-2">
-                <Clock className="size-3.5" /> Durée auto
-              </span>
-              <span className="text-[#e2b85f]">{settings.duration === 0 ? "Manuel" : `${settings.duration}s`}</span>
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={60}
-              step={5}
-              value={settings.duration}
-              onChange={(e) => setStudio("duration", Number(e.target.value))}
-              className="w-full accent-[#e2b85f]"
-            />
-            <p className="mt-1 text-[10px] text-white/30">0 = reste affiché jusqu’au masquage manuel.</p>
+        {/* ── Right: Studio style Configurator ───────────────────────────── */}
+        <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 h-[75vh] overflow-y-auto w-full lg:w-[320px] shrink-0">
+          <span className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Studio · Style Pro</span>
+          
+          <div className="flex border-b border-white/10 p-0.5 bg-black/20 rounded-xl mb-1 text-[10px] font-bold">
+            {(["layout", "typo", "container", "anim", "presets"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setStyleTab(tab)}
+                className={cn(
+                  "flex-1 py-1.5 rounded-lg text-center cursor-pointer transition capitalize",
+                  styleTab === tab ? "bg-[#e2b85f] text-[#160f33]" : "text-white/60 hover:text-white"
+                )}
+              >
+                {tab === "container" ? "Cadre" : tab === "anim" ? "Anim" : tab}
+              </button>
+            ))}
           </div>
+
+          {/* TAB 1: LAYOUT & POSITIONING */}
+          {styleTab === "layout" && (
+            <div className="flex flex-col gap-3.5">
+              <div>
+                <label className="mb-2 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Mode Position</label>
+                <div className="flex bg-black/20 p-0.5 rounded-lg text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setStudio("positionMode", "predefined")}
+                    className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "predefined" ? "bg-white/10 text-white" : "text-white/40")}
+                  >
+                    Prédéfini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudio("positionMode", "custom")}
+                    className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "custom" ? "bg-white/10 text-white" : "text-white/40")}
+                  >
+                    Libre (D&D)
+                  </button>
+                </div>
+              </div>
+
+              {settings.positionMode === "predefined" ? (
+                <Selector
+                  icon={ImageIcon}
+                  label="Disposition standard"
+                  value={settings.predefinedPosition || "centered_bottom"}
+                  options={[
+                    { value: "centered_bottom", label: "Centré bas" },
+                    { value: "lower_third_left", label: "Tiers bas gauche" },
+                    { value: "lower_third_right", label: "Tiers bas droite" },
+                    { value: "ticker", label: "Bandeau ticker défilant" },
+                    { value: "full_screen_cinema", label: "Plein écran cinéma" },
+                  ]}
+                  onChange={(v) => setStudio("predefinedPosition", v as any)}
+                />
+              ) : (
+                <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
+                  <span className="block text-[10px] font-bold text-white/40 uppercase">Coordonnées (%)</span>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>Position X (Gauche)</span>
+                      <span className="font-mono text-[#e2b85f]">{settings.customX}%</span>
+                    </div>
+                    <input
+                      type="range" min={0} max={100} value={settings.customX}
+                      onChange={(e) => setStudio("customX", Number(e.target.value))}
+                      className="w-full accent-[#e2b85f]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>Position Y (Haut)</span>
+                      <span className="font-mono text-[#e2b85f]">{settings.customY}%</span>
+                    </div>
+                    <input
+                      type="range" min={0} max={100} value={settings.customY}
+                      onChange={(e) => setStudio("customY", Number(e.target.value))}
+                      className="w-full accent-[#e2b85f]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>Largeur</span>
+                      <span className="font-mono text-[#e2b85f]">{settings.customWidth}%</span>
+                    </div>
+                    <input
+                      type="range" min={10} max={100} value={settings.customWidth}
+                      onChange={(e) => setStudio("customWidth", Number(e.target.value))}
+                      className="w-full accent-[#e2b85f]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>Hauteur</span>
+                      <span className="font-mono text-[#e2b85f]">{settings.customHeight}%</span>
+                    </div>
+                    <input
+                      type="range" min={10} max={100} value={settings.customHeight}
+                      onChange={(e) => setStudio("customHeight", Number(e.target.value))}
+                      className="w-full accent-[#e2b85f]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowFullscreenPreview(true)}
+                className="w-full mt-2 cursor-pointer flex items-center justify-center gap-1.5 rounded-xl border border-[#e2b85f]/30 bg-[#e2b85f]/10 hover:bg-[#e2b85f]/20 py-2.5 text-xs font-bold text-[#e2b85f] transition-all"
+              >
+                <Tv className="size-4" /> Prévisualiser en plein écran
+              </button>
+            </div>
+          )}
+
+          {/* TAB 2: TYPOGRAPHY ELEMENT STYLING */}
+          {styleTab === "typo" && (
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Élément de texte</label>
+                <select
+                  value={typoElement}
+                  onChange={(e) => setTypoElement(e.target.value as any)}
+                  className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs font-semibold text-white outline-none focus:border-[#e2b85f]"
+                >
+                  <option value="fontRef">Titre / Référence</option>
+                  <option value="fontBody">Corps / Verset</option>
+                  <option value="fontVer">Code de version</option>
+                </select>
+              </div>
+
+              <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
+                <Selector
+                  icon={Type}
+                  label="Police"
+                  value={settings[`${typoElement}Family` as keyof StudioSettings] as string}
+                  options={[
+                    { value: "Plus Jakarta Sans", label: "Plus Jakarta Sans" },
+                    { value: "Cormorant Garamond", label: "Cormorant Garamond" },
+                    { value: "Inter", label: "Inter" },
+                    { value: "Roboto", label: "Roboto" },
+                    { value: "Playfair Display", label: "Playfair Display" },
+                    { value: "Montserrat", label: "Montserrat" },
+                    { value: "Outfit", label: "Outfit" },
+                  ]}
+                  onChange={(v) => setStudio(`${typoElement}Family` as any, v)}
+                />
+
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Graisse</label>
+                  <select
+                    value={settings[`${typoElement}Weight` as keyof StudioSettings] as string}
+                    onChange={(e) => setStudio(`${typoElement}Weight` as any, e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
+                  >
+                    {["100", "200", "300", "400", "500", "600", "700", "800", "900"].map((w) => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Style variation toggles */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStudio(`${typoElement}Style` as any, settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "normal" : "italic")}
+                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
+                  >
+                    Italique
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudio(`${typoElement}Transform` as any, settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "none" : "uppercase")}
+                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
+                  >
+                    MAJUSCULE
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudio(`${typoElement}Decoration` as any, settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "none" : "underline")}
+                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
+                  >
+                    Souligné
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
+                    <span>Taille texte</span>
+                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}Size` as keyof StudioSettings]}px</span>
+                  </div>
+                  <input
+                    type="range" min={10} max={80} value={settings[`${typoElement}Size` as keyof StudioSettings] as number}
+                    onChange={(e) => setStudio(`${typoElement}Size` as any, Number(e.target.value))}
+                    className="w-full accent-[#e2b85f]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
+                    <span>Hauteur de ligne</span>
+                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}LineHeight` as keyof StudioSettings]}x</span>
+                  </div>
+                  <input
+                    type="range" min={1} max={2.5} step={0.1} value={settings[`${typoElement}LineHeight` as keyof StudioSettings] as number}
+                    onChange={(e) => setStudio(`${typoElement}LineHeight` as any, Number(e.target.value))}
+                    className="w-full accent-[#e2b85f]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
+                    <span>Espacement lettres</span>
+                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}Spacing` as keyof StudioSettings]}px</span>
+                  </div>
+                  <input
+                    type="range" min={-2} max={15} step={0.5} value={settings[`${typoElement}Spacing` as keyof StudioSettings] as number}
+                    onChange={(e) => setStudio(`${typoElement}Spacing` as any, Number(e.target.value))}
+                    className="w-full accent-[#e2b85f]"
+                  />
+                </div>
+
+                {/* Color picker selection */}
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Couleur ou Dégradé</label>
+                  <div className="grid grid-cols-5 gap-1 mb-2">
+                    {["#ffffff", "#e2b85f", "#ffb300", "#00e5ff", "#ff4081", "linear-gradient(90deg, #ff007f 0%, #00e5ff 100%)", "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setStudio(`${typoElement}Color` as any, col)}
+                        style={{ background: col.includes("gradient") ? col : undefined, backgroundColor: col.includes("gradient") ? undefined : col }}
+                        className={cn("aspect-square rounded border cursor-pointer border-white/10 hover:scale-105 transition", settings[`${typoElement}Color` as keyof StudioSettings] === col && "ring-2 ring-white")}
+                        title={col}
+                      />
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={settings[`${typoElement}Color` as keyof StudioSettings] as string}
+                    onChange={(e) => setStudio(`${typoElement}Color` as any, e.target.value)}
+                    placeholder="Couleur (ex: #fff ou RGBA ou dégradé)"
+                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1 text-[11px] font-mono text-white outline-none focus:border-[#e2b85f]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: CONTAINER & GEOMETRY STYLE */}
+          {styleTab === "container" && (
+            <div className="flex flex-col gap-3">
+              <Selector
+                icon={ImageIcon}
+                label="Forme conteneur"
+                value={settings.containerShape}
+                options={[
+                  { value: "rounded_rectangle", label: "Rectangle arrondi" },
+                  { value: "rectangle", label: "Rectangle droit" },
+                  { value: "capsule", label: "Capsule" },
+                  { value: "asymmetric", label: "Asymétrique" },
+                  { value: "transparent", label: "Transparent" },
+                ]}
+                onChange={(v) => setStudio("containerShape", v as any)}
+              />
+
+              {settings.containerShape !== "transparent" && (
+                <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Arrière-plan conteneur</label>
+                    <input
+                      type="text"
+                      value={settings.containerBg}
+                      onChange={(e) => setStudio("containerBg", e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
+                      placeholder="rgba(22, 15, 51, 0.95)"
+                    />
+                  </div>
+
+                  {settings.containerShape === "rounded_rectangle" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Arrondi des angles</span>
+                        <span className="font-mono text-[#e2b85f]">{settings.containerBorderRadius}px</span>
+                      </div>
+                      <input
+                        type="range" min={0} max={60} value={settings.containerBorderRadius}
+                        onChange={(e) => setStudio("containerBorderRadius", Number(e.target.value))}
+                        className="w-full accent-[#e2b85f]"
+                      />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-white/50 font-medium">Bordure (px)</span>
+                      <input
+                        type="number" min={0} max={10} value={settings.containerBorderWidth}
+                        onChange={(e) => setStudio("containerBorderWidth", Number(e.target.value))}
+                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-white/50 font-medium">Style Bordure</span>
+                      <select
+                        value={settings.containerBorderStyle}
+                        onChange={(e) => setStudio("containerBorderStyle", e.target.value as any)}
+                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
+                      >
+                        <option value="solid">Plein (Solid)</option>
+                        <option value="dashed">Pointillé (Dashed)</option>
+                        <option value="glow">Néon (Glow)</option>
+                        <option value="none">Aucun</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Couleur bordure</label>
+                    <input
+                      type="text"
+                      value={settings.containerBorderColor}
+                      onChange={(e) => setStudio("containerBorderColor", e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
+                      placeholder="rgba(255,255,255,0.15)"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-white/50 font-medium">Marge Interne X</span>
+                      <input
+                        type="number" min={5} max={100} value={settings.containerPaddingX}
+                        onChange={(e) => setStudio("containerPaddingX", Number(e.target.value))}
+                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-white/50 font-medium">Marge Interne Y</span>
+                      <input
+                        type="number" min={5} max={100} value={settings.containerPaddingY}
+                        onChange={(e) => setStudio("containerPaddingY", Number(e.target.value))}
+                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Shadow Portee Settings */}
+              <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
+                <span className="block text-[10px] font-bold text-white/40 uppercase">Ombre portée (Broadcast)</span>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span>Flou (Blur)</span>
+                    <span className="font-mono text-[#e2b85f]">{settings.shadowBlur}px</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={100} value={settings.shadowBlur}
+                    onChange={(e) => setStudio("shadowBlur", Number(e.target.value))}
+                    className="w-full accent-[#e2b85f]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <span className="block text-[10px] text-white/50 font-medium">Décalage X</span>
+                    <input
+                      type="number" min={-50} max={50} value={settings.shadowOffsetX}
+                      onChange={(e) => setStudio("shadowOffsetX", Number(e.target.value))}
+                      className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="block text-[10px] text-white/50 font-medium">Décalage Y</span>
+                    <input
+                      type="number" min={-50} max={50} value={settings.shadowOffsetY}
+                      onChange={(e) => setStudio("shadowOffsetY", Number(e.target.value))}
+                      className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Couleur Ombre</label>
+                  <input
+                    type="text"
+                    value={settings.shadowColor}
+                    onChange={(e) => setStudio("shadowColor", e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
+                    placeholder="rgba(0, 0, 0, 0.5)"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: ANIMATIONS TIMING */}
+          {styleTab === "anim" && (
+            <div className="flex flex-col gap-3.5">
+              <Selector
+                icon={Sparkles}
+                label="Effet d'apparition"
+                value={settings.animation}
+                options={[
+                  { value: "fade_slide", label: "Fondu & Glissement" },
+                  { value: "scale", label: "Zoom" },
+                  { value: "slide_left", label: "Glissement Gauche" },
+                  { value: "slide_right", label: "Glissement Droite" },
+                  { value: "clip_reveal", label: "Déploiement (Clip-path)" },
+                  { value: "typewriter", label: "Machine à écrire" },
+                ]}
+                onChange={(v) => setStudio("animation", v as any)}
+              />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span>Durée de transition</span>
+                  <span className="font-mono text-[#e2b85f]">{settings.animDuration} ms</span>
+                </div>
+                <input
+                  type="range" min={100} max={3000} step={100} value={settings.animDuration}
+                  onChange={(e) => setStudio("animDuration", Number(e.target.value))}
+                  className="w-full accent-[#e2b85f]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Courbe (Easing)</label>
+                <select
+                  value={settings.animEasing}
+                  onChange={(e) => setStudio("animEasing", e.target.value as any)}
+                  className="w-full cursor-pointer rounded-xl border border-white/12 bg-[#0d0820] px-3.5 py-2.5 text-sm font-semibold text-white outline-none focus:border-[#e2b85f]"
+                >
+                  <option value="ease-out">Facilité fin (Ease-out)</option>
+                  <option value="ease-in">Facilité début (Ease-in)</option>
+                  <option value="ease-in-out">Facilité totale (Ease-in-out)</option>
+                  <option value="linear">Linéaire</option>
+                  <option value="bounce">Élastique (Bounce)</option>
+                </select>
+              </div>
+
+              <div className="border-t border-white/5 pt-3">
+                <label className="mb-2 flex items-center justify-between text-[11px] font-bold tracking-wider text-white/50 uppercase">
+                  <span className="flex items-center gap-2">
+                    <Clock className="size-3.5" /> Durée d'affichage
+                  </span>
+                  <span className="text-[#e2b85f]">{settings.duration === 0 ? "Manuel" : `${settings.duration}s`}</span>
+                </label>
+                <input
+                  type="range" min={0} max={60} step={5} value={settings.duration}
+                  onChange={(e) => setStudio("duration", Number(e.target.value))}
+                  className="w-full accent-[#e2b85f]"
+                />
+                <p className="mt-1 text-[10px] text-white/30">0 = reste affiché jusqu’au masquage manuel.</p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: PRESETS MANAGER */}
+          {styleTab === "presets" && (
+            <div className="flex flex-col gap-3.5">
+              <div className="bg-black/15 p-3 rounded-xl border border-white/5 flex flex-col gap-2">
+                <span className="block text-[10px] font-bold text-white/40 uppercase">Enregistrer style actuel</span>
+                <input
+                  type="text"
+                  value={newPresetName}
+                  onChange={(e) => setNewPresetName(e.target.value)}
+                  placeholder="Nom du preset..."
+                  className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
+                />
+                <button
+                  type="button"
+                  onClick={handleSavePreset}
+                  disabled={!newPresetName.trim()}
+                  className="w-full py-1.5 text-xs font-bold text-[#160f33] bg-[#e2b85f] hover:brightness-105 rounded-lg disabled:opacity-50 transition cursor-pointer"
+                >
+                  Sauvegarder Preset
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <span className="block text-[10px] font-bold text-white/40 uppercase">Presets Sauvegardés</span>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                  {presets.map((preset) => (
+                    <div
+                      key={preset.name}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleLoadPreset(preset.settings)}
+                        className="text-left text-xs font-semibold text-white/90 truncate flex-1 cursor-pointer"
+                      >
+                        {preset.name}
+                      </button>
+                      
+                      {/* Delete icon unless preloaded defaults */}
+                      {!PRELOADED_PRESETS.some((p) => p.name === preset.name) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreset(preset.name)}
+                          className="text-white/30 hover:text-live p-1 rounded cursor-pointer"
+                        >
+                          <Trash className="size-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </aside>
       </div>
 
@@ -1141,6 +2219,122 @@ export function LiveStudioConsole({
           </div>
         </div>
       )}
+
+      {/* Interactive Drag & Resize Fullscreen Preview Modal */}
+      {showFullscreenPreview && (
+        <div 
+          ref={modalContainerRef}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-6 backdrop-blur-md"
+        >
+          <div className="mb-4 flex w-full max-w-5xl items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-white font-sans">Éditeur de Position Intéractif</h3>
+              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l'aide des poignées d'ancrage aux coins.</p>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={toggleNativeFullscreen}
+                className="rounded-lg bg-white/10 hover:bg-white/15 px-4 py-2 text-xs font-bold text-white transition cursor-pointer flex items-center gap-1.5"
+              >
+                <Maximize className="size-3.5" />
+                {isNativeFullscreen ? "Quitter le Plein Écran" : "Plein Écran Réel"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (document.fullscreenElement) {
+                    void document.exitFullscreen();
+                  }
+                  setShowFullscreenPreview(false);
+                }}
+                className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
+              >
+                Fermer l'éditeur
+              </button>
+            </div>
+          </div>
+
+          {/* Simulated 16:9 Screen */}
+          <div 
+            ref={previewScreenRef}
+            className="relative aspect-video w-full max-w-5xl bg-[#160f33]/40 border-2 border-white/20 overflow-hidden shadow-2xl rounded-xl"
+            style={{
+              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)",
+              backgroundSize: "20px 20px"
+            }}
+          >
+            {/* Broadcast visual indicators */}
+            <div className="absolute top-4 left-4 flex items-center gap-1.5 rounded bg-red-600 px-2.5 py-1 text-[9px] font-black text-white tracking-widest animate-pulse">
+              <span className="size-1.5 rounded-full bg-white" /> REC
+            </div>
+            <div className="absolute top-4 right-4 text-[9px] font-mono text-white/30">
+              1920 x 1080 | SIMULATEUR D'OVERLAY
+            </div>
+
+            {/* Draggable container box */}
+            <div
+              style={{
+                ...getContainerStyle(settings),
+                position: "absolute",
+                left: settings.positionMode === "custom" ? `${settings.customX}%` : undefined,
+                top: settings.positionMode === "custom" ? `${settings.customY}%` : undefined,
+                width: settings.positionMode === "custom" ? `${settings.customWidth}%` : undefined,
+                height: settings.positionMode === "custom" ? `${settings.customHeight}%` : undefined,
+                ...(settings.positionMode === "predefined" && getPredefinedAbsolutePosition(settings.predefinedPosition || "centered_bottom")),
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+              }}
+              onPointerDown={(e) => {
+                if (settings.positionMode === "custom") {
+                  handlePointerDown(e, "move");
+                }
+              }}
+              className={cn(
+                "select-none ring-1 ring-white/10 group",
+                settings.positionMode === "custom" ? "cursor-move hover:ring-[#e2b85f]/40" : ""
+              )}
+            >
+              {/* Resize Handles (rendered at corners, visible on hover) */}
+              {settings.positionMode === "custom" && (
+                <>
+                  <div 
+                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "nw"); }}
+                    className="absolute -top-1.5 -left-1.5 size-3 cursor-nw-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
+                  />
+                  <div 
+                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "ne"); }}
+                    className="absolute -top-1.5 -right-1.5 size-3 cursor-ne-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
+                  />
+                  <div 
+                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "sw"); }}
+                    className="absolute -bottom-1.5 -left-1.5 size-3 cursor-sw-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
+                  />
+                  <div 
+                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "se"); }}
+                    className="absolute -bottom-1.5 -right-1.5 size-3 cursor-se-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
+                  />
+                </>
+              )}
+
+              {/* Simulated visual layout matching LiveVideoOverlay */}
+              <span style={getElementStyle("fontRef", settings)} className="block mb-2 text-center pointer-events-none">
+                {preview?.reference || "Jean 3:16"}
+              </span>
+
+              <div className="grid grid-cols-1 gap-2 pointer-events-none">
+                <p style={getElementStyle("fontBody", settings)} className="text-center">
+                  {preview?.text || "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle."}
+                </p>
+                <span style={getElementStyle("fontVer", settings)} className="text-center mt-1 block">
+                  {preview?.translation || "LSG"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1160,62 +2354,103 @@ function Deck({
   verse,
   settings,
   mini = false,
+  onFullscreen,
 }: {
   label: string;
   tone: "live" | "preview";
   verse: ScriptureVerse | null;
   settings: StudioSettings;
   mini?: boolean;
+  onFullscreen?: () => void;
 }) {
+  // We scale down fonts and paddings for miniature rendering inside the Deck
+  const scaleFactor = mini ? 0.35 : 0.45;
+  const scaledContainerStyle: React.CSSProperties = {
+    ...getContainerStyle(settings),
+    padding: `${Math.round(settings.containerPaddingY * scaleFactor)}px ${Math.round(settings.containerPaddingX * scaleFactor)}px`,
+    borderRadius: settings.containerShape === "capsule" ? "9999px" : (settings.containerShape === "rectangle" ? "0px" : `${Math.round(settings.containerBorderRadius * scaleFactor)}px`),
+    borderWidth: `${Math.max(1, Math.round(settings.containerBorderWidth * scaleFactor))}px`,
+    position: "absolute",
+    left: "5%",
+    right: "5%",
+    width: "90%",
+    bottom: "6%",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "center",
+    alignItems: "center",
+    maxHeight: "85%",
+  };
+
+  const scaleFont = (size: number) => `${Math.max(8, Math.round(size * scaleFactor))}px`;
+  const scaleSpacing = (spacing: number) => `${spacing * scaleFactor}px`;
+
+  const refStyle: React.CSSProperties = {
+    ...getElementStyle("fontRef", settings),
+    fontSize: scaleFont(settings.fontRefSize),
+    letterSpacing: scaleSpacing(settings.fontRefSpacing),
+    lineHeight: 1.1,
+    marginBottom: "4px",
+  };
+
+  const bodyStyle: React.CSSProperties = {
+    ...getElementStyle("fontBody", settings),
+    fontSize: scaleFont(settings.fontBodySize),
+    letterSpacing: scaleSpacing(settings.fontBodySpacing),
+    lineHeight: 1.2,
+  };
+
+  const verStyle: React.CSSProperties = {
+    ...getElementStyle("fontVer", settings),
+    fontSize: scaleFont(settings.fontVerSize),
+    letterSpacing: scaleSpacing(settings.fontVerSpacing),
+    lineHeight: 1.1,
+    marginTop: "2px",
+  };
+
   return (
     <div
       className={cn(
-        "rounded-xl border p-1",
+        "rounded-xl border p-1 relative",
         tone === "live" ? "border-live/40 bg-live/[0.06]" : "border-white/12 bg-white/[0.03]",
       )}
     >
       <div className="flex items-center justify-between px-3 py-1">
-        <span className={cn("text-[10px] font-bold tracking-[0.18em] uppercase", tone === "live" ? "text-live" : "text-white/40")}>
-          {label}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={cn("text-[10px] font-bold tracking-[0.18em] uppercase", tone === "live" ? "text-live" : "text-white/40")}>
+            {label}
+          </span>
+          {onFullscreen && (
+            <button
+              type="button"
+              onClick={onFullscreen}
+              className="text-white/40 hover:text-white transition cursor-pointer"
+              title="Agrandir en plein écran"
+            >
+              <Maximize className="size-3" />
+            </button>
+          )}
+        </div>
         {verse && <span className="text-[11px] font-bold text-[#e2b85f]">{verse.reference}</span>}
       </div>
-      {/* Expanded preview of what the faithful see, taking all available space with container padding */}
-      <div className={cn("relative grid h-[90px] sm:h-[110px] md:h-[130px] w-full place-items-center overflow-hidden rounded-xl px-4 py-2", DECK_BG[settings.background] ?? DECK_BG.gradient_purple)}>
+      
+      <div className={cn(
+        "relative grid h-[110px] sm:h-[130px] md:h-[150px] w-full place-items-center overflow-hidden rounded-xl bg-black/50 border border-white/5",
+        DECK_BG[settings.background] ?? DECK_BG.gradient_purple
+      )}>
         {verse ? (
-          <div
-            className={cn(
-              "text-center w-full",
-              settings.layout === "lower_third" && "absolute inset-x-0 bottom-2 px-4",
-              settings.layout === "sidebar" && "absolute inset-y-2 right-4 flex w-1/2 flex-col justify-center text-left px-0",
-            )}
-          >
-            {verse.texts && Object.keys(verse.texts).length > 1 ? (
-              <div className={cn("space-y-1.5 text-left w-full overflow-y-auto px-1.5", mini ? "max-h-[60px] sm:max-h-[75px]" : "max-h-[65px] sm:max-h-[85px]")}>
-                {Object.entries(verse.texts).map(([ver, txt]) => (
-                  <div key={ver} className="border-l border-[#e2b85f]/40 pl-1.5 py-0.5">
-                    <p className={cn("text-white leading-tight", mini ? "text-[9px] sm:text-[10px]" : "text-[10px] sm:text-[11px]")}>{txt}</p>
-                    <span className="block text-[8px] font-semibold text-[#e2b85f] italic mt-0.5">{ver}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                <span className="text-[8px] sm:text-[9px] font-bold tracking-[0.2em] text-[#e2b85f] uppercase">{verse.reference}</span>
-                <p
-                  className={cn(
-                    "mt-0.5 leading-snug text-white",
-                    settings.font === "Plus Jakarta Sans" ? "font-sans" : "font-display italic",
-                    mini ? "line-clamp-2 text-[10px] sm:text-[11px]" : "line-clamp-3 text-[11px] sm:text-[12px]",
-                  )}
-                >
-                  {verse.text}
-                </p>
-                <span className="block mt-0.5 text-[8px] sm:text-[9px] font-semibold text-[#e2b85f] italic">
-                  {verse.texts ? Object.keys(verse.texts)[0] : (verse.translation || "LSG")}
-                </span>
-              </>
-            )}
+          <div style={scaledContainerStyle} className="shadow-lg text-center">
+            <span style={refStyle} className="block font-bold">
+              {verse.reference}
+            </span>
+            <div className="w-full">
+              <p style={bodyStyle} className="line-clamp-2 leading-tight">
+                {verse.text}
+              </p>
+              <span style={verStyle} className="block italic mt-0.5">
+                {verse.texts ? Object.keys(verse.texts)[0] : (verse.translation || "LSG")}
+              </span>
+            </div>
           </div>
         ) : (
           <span className="text-[10px] font-semibold text-white/25">{tone === "live" ? "Rien à l’antenne" : "Sélectionnez un verset"}</span>

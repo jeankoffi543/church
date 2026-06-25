@@ -30,11 +30,6 @@ class ScriptureBroadcastRequest extends FormRequest
 
             // Graphic settings.
             'settings' => ['nullable', 'array'],
-            'settings.layout' => ['nullable', 'in:lower_third,full_screen,sidebar'],
-            'settings.animation' => ['nullable', 'in:fade_slide,typewriter,scale'],
-            'settings.font' => ['nullable', 'string', 'max:60'],
-            'settings.background' => ['nullable', 'string', 'max:60'],
-            'settings.duration' => ['nullable', 'integer', 'min:0', 'max:120'],
         ];
     }
 }
