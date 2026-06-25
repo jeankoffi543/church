@@ -19,10 +19,13 @@ import {
   type ReactionType,
 } from "@/lib/live";
 
+import { getCurrentScripture, type ScripturePayload } from "@/lib/studio";
+
 import { HlsPlayer } from "./hls-player";
 import { LiveChat, PseudonymGate } from "./live-chat";
 import { DescriptionTab, NotesTab, PrayerTab, type LiveTab } from "./live-panel";
 import { LiveReactions, type ReactionsHandle } from "./live-reactions";
+import { LiveVideoOverlay } from "./live-video-overlay";
 
 /** Normalise a stored stream URL (YouTube or Facebook) into an autoplay embed. */
 function toEmbedUrl(url: string): string {
@@ -48,6 +51,7 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
   const [config, setConfig] = useState<LiveConfig>(initialConfig);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [audience, setAudience] = useState(0);
+  const [scripture, setScripture] = useState<ScripturePayload | null>(null);
   const [pseudonym, setPseudonym] = useState<string | null>(null);
   const [askPseudonym, setAskPseudonym] = useState(false);
   // True for the rest of the session after a live ends (cleared on reload).
@@ -73,6 +77,10 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
       setMessages(list);
       setPseudonym(getPseudonym());
     });
+    // Catch up to whatever scripture the régie currently has on screen.
+    getCurrentScripture().then((current) => {
+      if (active && current) setScripture(current);
+    });
     return () => {
       active = false;
     };
@@ -83,6 +91,8 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
     onChat: appendMessage,
     onAudience: setAudience,
     onReaction: ({ type }) => reactionsRef.current?.spawn(type as ReactionType),
+    // Scripture overlay pushed by the régie console.
+    onScripture: setScripture,
     // Instant reaction to a live starting/ending — no reload, no poll wait.
     onLiveState: ({ is_live, started_at }) => {
       startedAtRef.current = started_at;
@@ -267,6 +277,9 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
               </div>
             </div>
           )}
+
+          {/* Régie scripture overlay — rendered above the player. */}
+          <LiveVideoOverlay payload={scripture} />
 
           {/* Ephemeral reactions — only while on air. */}
           {config.isLive && <LiveReactions ref={reactionsRef} onReact={handleReact} />}

@@ -87,7 +87,7 @@ export default async function AdminPanelLayout({
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar — live status visible on every admin page */}
-        <header className="sticky top-0 z-30 flex items-center justify-end gap-3 border-b border-[rgba(40,25,80,0.08)] bg-white/80 px-6 py-3 backdrop-blur-md md:px-10">
+        <header id="admin-topbar" className="sticky top-0 z-30 flex items-center justify-end gap-3 border-b border-[rgba(40,25,80,0.08)] bg-white/80 px-6 py-3 backdrop-blur-md md:px-10">
           <LiveStatusControl initialIsLive={initialIsLive} />
         </header>
 

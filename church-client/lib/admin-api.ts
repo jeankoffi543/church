@@ -1,6 +1,7 @@
 "use server";
 
 import { getAdminSession } from "@/lib/auth/session";
+import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { revalidatePath, revalidateTag } from "next/cache";
 
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL || ""}/admin`;
@@ -1388,3 +1389,30 @@ export async function getAdminHomeGroupApplicationsPaginated(
   );
 }
 
+
+/* ── Live Studio régie ───────────────────────────────────────────── */
+
+/** Push (or hide) a scripture overlay on every live viewer's screen. */
+export async function broadcastScripture(payload: {
+  action: "show" | "hide";
+  verse?: ScriptureVerse;
+  settings?: StudioSettings;
+}): Promise<void> {
+  await adminFetch<{ data: { action: string } }>("/live/scripture", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getPreparedVerses(): Promise<ScriptureVerse[]> {
+  const res = await adminFetch<{ data: ScriptureVerse[] }>("/live/scripture/prepared");
+  return res.data;
+}
+
+export async function setPreparedVerses(verses: ScriptureVerse[]): Promise<ScriptureVerse[]> {
+  const res = await adminFetch<{ data: ScriptureVerse[] }>("/live/scripture/prepared", {
+    method: "PUT",
+    body: JSON.stringify({ verses }),
+  });
+  return res.data;
+}

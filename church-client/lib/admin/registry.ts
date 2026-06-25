@@ -16,6 +16,7 @@ import {
   Wallet,
   Landmark,
   Church,
+  RadioTower,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,6 +57,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "dashboard", path: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, permission: [], group: "overview" },
 
   // Contenu & Diffusion
+  { key: "live-studio", path: "/admins/live-studio", label: "Régie Live (Studio)", icon: RadioTower, permission: [PERMISSIONS.manageLive], group: "content" },
   { key: "sermons", path: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, permission: [PERMISSIONS.manageSermons], group: "content" },
   { key: "past-lives", path: "/admins/past-lives", label: "Archives des lives", icon: Clapperboard, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
   { key: "gallery", path: "/admins/gallery", label: "Galerie (Albums)", icon: Images, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
