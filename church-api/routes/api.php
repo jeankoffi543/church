@@ -73,6 +73,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('live/react', [Public\LiveController::class, 'react'])->name('live.react');
         Route::post('live/presence', [Public\LiveController::class, 'presence'])->name('live.presence');
         Route::post('live/leave', [Public\LiveController::class, 'leave'])->name('live.leave');
+        // Scripture overlay: current state (catch-up) + the express Bible engine.
+        Route::get('live/scripture', [Public\LiveController::class, 'scripture'])->name('live.scripture');
+        Route::get('bible/search', [Public\BibleController::class, 'search'])->name('bible.search');
+        Route::get('bible/navigate', [Public\BibleController::class, 'navigate'])->name('bible.navigate');
+        Route::get('bible/translations', [Public\BibleController::class, 'translations'])->name('bible.translations');
         // Time-synced chat replay for an archived broadcast.
         Route::get('past-lives/{pastLive:slug}/chat', [Public\LiveController::class, 'archivedChat'])->name('past-lives.chat');
 
@@ -118,6 +123,13 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('settings/{key}', [Admin\SettingController::class, 'destroy'])
                 ->middleware('permission:manage_settings|manage_live|manage_prayer_settings')
                 ->name('settings.destroy');
+
+            // Live Studio régie — push scripture overlays + prepared-verses deck.
+            Route::middleware('permission:manage_live')->group(function (): void {
+                Route::post('live/scripture', [Admin\LiveScriptureController::class, 'broadcast'])->name('live.scripture.broadcast');
+                Route::get('live/scripture/prepared', [Admin\LiveScriptureController::class, 'prepared'])->name('live.scripture.prepared');
+                Route::put('live/scripture/prepared', [Admin\LiveScriptureController::class, 'updatePrepared'])->name('live.scripture.prepared.update');
+            });
 
             // Médiathèque / messages
             Route::apiResource('sermons', Admin\SermonController::class)

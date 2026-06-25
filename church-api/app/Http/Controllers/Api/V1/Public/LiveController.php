@@ -102,6 +102,20 @@ class LiveController extends Controller
     }
 
     /**
+     * The scripture overlay currently on screen — lets a viewer who joins
+     * mid-broadcast catch up to whatever the régie is showing.
+     */
+    public function scripture(): JsonResponse
+    {
+        $current = Setting::get('live_current_scripture');
+        if (! is_array($current) || ($current['action'] ?? 'hide') !== 'show') {
+            return response()->json(['data' => ['action' => 'hide', 'verse' => null, 'settings' => null]]);
+        }
+
+        return response()->json(['data' => $current]);
+    }
+
+    /**
      * Seconds elapsed since the broadcast started (0 if not live / unknown).
      */
     private function currentOffset(): int

@@ -5,6 +5,7 @@ import Pusher from "pusher-js";
 import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "@/lib/live";
+import type { ScripturePayload } from "@/lib/studio";
 
 type ReverbEcho = Echo<"reverb">;
 
@@ -38,6 +39,8 @@ export type LiveHandlers = {
   onReaction?: (reaction: { type: string; total: number }) => void;
   onAudience?: (count: number) => void;
   onLiveState?: (state: { is_live: boolean; started_at: string }) => void;
+  /** Régie pushed a scripture overlay (show/hide) onto the stream. */
+  onScripture?: (payload: ScripturePayload) => void;
 };
 
 /**
@@ -62,6 +65,7 @@ export function useLiveChannel(handlers: LiveHandlers): void {
     channel.listen(".reaction", (d: { type: string; total: number }) => ref.current.onReaction?.(d));
     channel.listen(".audience", (d: { count: number }) => ref.current.onAudience?.(d.count));
     channel.listen(".live.state", (d: { is_live: boolean; started_at: string }) => ref.current.onLiveState?.(d));
+    channel.listen(".scripture", (d: ScripturePayload) => ref.current.onScripture?.(d));
 
     return () => {
       echo.leaveChannel("live");
