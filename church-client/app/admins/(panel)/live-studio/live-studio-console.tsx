@@ -25,7 +25,6 @@ import {
   Check,
   Trash,
   Tv,
-  MessageSquare,
   AlertTriangle,
   Square,
   Maximize,
@@ -52,27 +51,6 @@ import {
   type NavigateDirection,
 } from "@/lib/studio";
 import { broadcastScripture, setPreparedVerses, updateAdminSettings } from "@/lib/admin-api";
-
-/* ── Option catalogues ──────────────────────────────────────────── */
-
-const LAYOUTS: { value: StudioLayout; label: string }[] = [
-  { value: "lower_third", label: "Bandeau bas" },
-  { value: "full_screen", label: "Plein écran" },
-  { value: "sidebar", label: "Latéral" },
-];
-const ANIMATIONS: { value: StudioAnimation; label: string }[] = [
-  { value: "fade_slide", label: "Fondu & Glissement" },
-  { value: "typewriter", label: "Machine à écrire" },
-  { value: "scale", label: "Zoom" },
-  { value: "neon_slide", label: "Néon Slide" },
-];
-const FONTS = ["Cormorant Garamond", "Plus Jakarta Sans"];
-const BACKGROUNDS: { value: string; label: string }[] = [
-  { value: "gradient_purple", label: "Dégradé spirituel" },
-  { value: "blur", label: "Verre dépoli" },
-  { value: "solid_dark", label: "Sombre uni" },
-  { value: "none", label: "Transparent" },
-];
 
 type Status = { type: "success" | "error"; message: string } | null;
 
@@ -386,6 +364,42 @@ export function LiveStudioConsole({
     return dbPresets.length > 0 ? dbPresets : PRELOADED_PRESETS;
   });
 
+  const [preview, setPreview] = useState<ScriptureVerse | null>(null);
+  const [live, setLive] = useState<ScriptureVerse | null>(null);
+  const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
+  const [settings, setSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
+
+  /** Setter for dynamically-computed keys (template-literal element styling). */
+  const setStudioField = useCallback(<K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => {
+    setSettings((s) => ({ ...s, [key]: value }));
+  }, []);
+
   // Load typography fonts dynamically
   useEffect(() => {
     const link = document.createElement("link");
@@ -480,36 +494,36 @@ export function LiveStudioConsole({
       if (action === "move") {
         const nextX = Math.max(0, Math.min(100 - startWidth, startLeft + deltaX));
         const nextY = Math.max(0, Math.min(100 - startHeight, startTop + deltaY));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customY", Math.round(nextY));
       } else if (action === "se") {
         const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
         const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customHeight", Math.round(nextHeight));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customHeight", Math.round(nextHeight));
       } else if (action === "sw") {
         const nextWidth = Math.max(10, startWidth - deltaX);
         const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
         const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customHeight", Math.round(nextHeight));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customHeight", Math.round(nextHeight));
       } else if (action === "ne") {
         const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
         const nextHeight = Math.max(10, startHeight - deltaY);
         const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customHeight", Math.round(nextHeight));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customHeight", Math.round(nextHeight));
+        setStudioField("customY", Math.round(nextY));
       } else if (action === "nw") {
         const nextWidth = Math.max(10, startWidth - deltaX);
         const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
         const nextHeight = Math.max(10, startHeight - deltaY);
         const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customHeight", Math.round(nextHeight));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customHeight", Math.round(nextHeight));
+        setStudioField("customY", Math.round(nextY));
       }
     };
 
@@ -526,37 +540,6 @@ export function LiveStudioConsole({
   const [allTranslations, setAllTranslations] = useState<string[]>([]);
   const [visibleTranslationsCount, setVisibleTranslationsCount] = useState(10);
   const [translationSearch, setTranslationSearch] = useState("");
-
-  const [preview, setPreview] = useState<ScriptureVerse | null>(null);
-  const [live, setLive] = useState<ScriptureVerse | null>(null);
-  const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
-    const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
-    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
-    const container = (liveStyles.live_container as Record<string, unknown>) || {};
-    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
-    return {
-      ...DEFAULT_STUDIO_SETTINGS,
-      ...layout,
-      ...typo,
-      ...container,
-      ...anim,
-    };
-  });
-  const [settings, setSettings] = useState<StudioSettings>(() => {
-    const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
-    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
-    const container = (liveStyles.live_container as Record<string, unknown>) || {};
-    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
-    return {
-      ...DEFAULT_STUDIO_SETTINGS,
-      ...layout,
-      ...typo,
-      ...container,
-      ...anim,
-    };
-  });
 
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
   const [busy, setBusy] = useState(false);
@@ -937,13 +920,6 @@ export function LiveStudioConsole({
     },
     [prepared, persistPrepared],
   );
-
-  const setStudio = <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) =>
-    setSettings((s) => ({ ...s, [key]: value }));
-
-  /** Setter for dynamically-computed keys (template-literal element styling). */
-  const setStudioField = (key: keyof StudioSettings, value: StudioSettings[keyof StudioSettings]) =>
-    setSettings((s) => ({ ...s, [key]: value }) as StudioSettings);
 
   // Media & Settings Handlers
   const getPreviewUrl = (urlOrBlob: string) => {
@@ -1721,7 +1697,6 @@ export function LiveStudioConsole({
         </section>
 
         {/* ── Right: Studio style Configurator ───────────────────────────── */}
-        {/* ── Right: Studio style Configurator ───────────────────────────── */}
         <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 h-[75vh] overflow-y-auto w-full lg:w-[320px] shrink-0">
           <span className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Studio · Style Pro</span>
           
@@ -1749,14 +1724,14 @@ export function LiveStudioConsole({
                 <div className="flex bg-black/20 p-0.5 rounded-lg text-xs font-semibold">
                   <button
                     type="button"
-                    onClick={() => setStudio("positionMode", "predefined")}
+                    onClick={() => setStudioField("positionMode", "predefined")}
                     className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "predefined" ? "bg-white/10 text-white" : "text-white/40")}
                   >
                     Prédéfini
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStudio("positionMode", "custom")}
+                    onClick={() => setStudioField("positionMode", "custom")}
                     className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "custom" ? "bg-white/10 text-white" : "text-white/40")}
                   >
                     Libre (D&D)
@@ -1789,7 +1764,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={0} max={100} value={settings.customX}
-                      onChange={(e) => setStudio("customX", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customX", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1801,7 +1776,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={0} max={100} value={settings.customY}
-                      onChange={(e) => setStudio("customY", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customY", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1813,7 +1788,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={10} max={100} value={settings.customWidth}
-                      onChange={(e) => setStudio("customWidth", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customWidth", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1825,7 +1800,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={10} max={100} value={settings.customHeight}
-                      onChange={(e) => setStudio("customHeight", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customHeight", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -2000,7 +1975,7 @@ export function LiveStudioConsole({
                     <input
                       type="text"
                       value={settings.containerBg}
-                      onChange={(e) => setStudio("containerBg", e.target.value)}
+                      onChange={(e) => setStudioField("containerBg", e.target.value)}
                       className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                       placeholder="rgba(22, 15, 51, 0.95)"
                     />
@@ -2014,7 +1989,7 @@ export function LiveStudioConsole({
                       </div>
                       <input
                         type="range" min={0} max={60} value={settings.containerBorderRadius}
-                        onChange={(e) => setStudio("containerBorderRadius", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerBorderRadius", Number(e.target.value))}
                         className="w-full accent-[#e2b85f]"
                       />
                     </div>
@@ -2025,7 +2000,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Bordure (px)</span>
                       <input
                         type="number" min={0} max={10} value={settings.containerBorderWidth}
-                        onChange={(e) => setStudio("containerBorderWidth", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerBorderWidth", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
                       />
                     </div>
@@ -2049,7 +2024,7 @@ export function LiveStudioConsole({
                     <input
                       type="text"
                       value={settings.containerBorderColor}
-                      onChange={(e) => setStudio("containerBorderColor", e.target.value)}
+                      onChange={(e) => setStudioField("containerBorderColor", e.target.value)}
                       className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                       placeholder="rgba(255,255,255,0.15)"
                     />
@@ -2060,7 +2035,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Marge Interne X</span>
                       <input
                         type="number" min={5} max={100} value={settings.containerPaddingX}
-                        onChange={(e) => setStudio("containerPaddingX", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerPaddingX", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                       />
                     </div>
@@ -2068,7 +2043,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Marge Interne Y</span>
                       <input
                         type="number" min={5} max={100} value={settings.containerPaddingY}
-                        onChange={(e) => setStudio("containerPaddingY", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerPaddingY", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                       />
                     </div>
@@ -2087,7 +2062,7 @@ export function LiveStudioConsole({
                   </div>
                   <input
                     type="range" min={0} max={100} value={settings.shadowBlur}
-                    onChange={(e) => setStudio("shadowBlur", Number(e.target.value))}
+                    onChange={(e) => setStudioField("shadowBlur", Number(e.target.value))}
                     className="w-full accent-[#e2b85f]"
                   />
                 </div>
@@ -2097,7 +2072,7 @@ export function LiveStudioConsole({
                     <span className="block text-[10px] text-white/50 font-medium">Décalage X</span>
                     <input
                       type="number" min={-50} max={50} value={settings.shadowOffsetX}
-                      onChange={(e) => setStudio("shadowOffsetX", Number(e.target.value))}
+                      onChange={(e) => setStudioField("shadowOffsetX", Number(e.target.value))}
                       className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                     />
                   </div>
@@ -2105,7 +2080,7 @@ export function LiveStudioConsole({
                     <span className="block text-[10px] text-white/50 font-medium">Décalage Y</span>
                     <input
                       type="number" min={-50} max={50} value={settings.shadowOffsetY}
-                      onChange={(e) => setStudio("shadowOffsetY", Number(e.target.value))}
+                      onChange={(e) => setStudioField("shadowOffsetY", Number(e.target.value))}
                       className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                     />
                   </div>
@@ -2116,7 +2091,7 @@ export function LiveStudioConsole({
                   <input
                     type="text"
                     value={settings.shadowColor}
-                    onChange={(e) => setStudio("shadowColor", e.target.value)}
+                    onChange={(e) => setStudioField("shadowColor", e.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                     placeholder="rgba(0, 0, 0, 0.5)"
                   />
@@ -2150,7 +2125,7 @@ export function LiveStudioConsole({
                 </div>
                 <input
                   type="range" min={100} max={3000} step={100} value={settings.animDuration}
-                  onChange={(e) => setStudio("animDuration", Number(e.target.value))}
+                  onChange={(e) => setStudioField("animDuration", Number(e.target.value))}
                   className="w-full accent-[#e2b85f]"
                 />
               </div>
@@ -2179,7 +2154,7 @@ export function LiveStudioConsole({
                 </label>
                 <input
                   type="range" min={0} max={60} step={5} value={settings.duration}
-                  onChange={(e) => setStudio("duration", Number(e.target.value))}
+                  onChange={(e) => setStudioField("duration", Number(e.target.value))}
                   className="w-full accent-[#e2b85f]"
                 />
                 <p className="mt-1 text-[10px] text-white/30">0 = reste affiché jusqu’au masquage manuel.</p>
@@ -2430,7 +2405,7 @@ export function LiveStudioConsole({
                       </div>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d'encodage (CPU Usage)</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d&apos;encodage (CPU Usage)</span>
                         <select value={advancedConfig.live_encoder_profile} onChange={(e) => updateAdvancedConfig("live_encoder_profile", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="veryfast">veryfast (Faible utilisation CPU)</option>
                           <option value="fast">fast</option>
@@ -2442,7 +2417,7 @@ export function LiveStudioConsole({
                       <div className="border-t border-white/10 pt-6 space-y-4">
                         <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Enregistrement Local</h4>
                         <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d'enregistrement</span>
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d&apos;enregistrement</span>
                           <div className="flex gap-2">
                             <input type="text" value={advancedConfig.live_record_path} onChange={(e) => updateAdvancedConfig("live_record_path", e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
                             <button type="button" className="bg-white/10 hover:bg-white/20 rounded-lg px-4 text-sm font-semibold transition cursor-pointer">Parcourir</button>
@@ -2487,7 +2462,7 @@ export function LiveStudioConsole({
 
                         <label className="flex items-center gap-3 cursor-pointer pt-4">
                           <input type="checkbox" checked={advancedConfig.live_noise_suppression} onChange={(e) => updateAdvancedConfig("live_noise_suppression", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                          <span className="text-sm font-medium">Activer l'atténuation du bruit (RNNoise)</span>
+                          <span className="text-sm font-medium">Activer l&apos;atténuation du bruit (RNNoise)</span>
                         </label>
                       </div>
                     </div>
@@ -2510,7 +2485,7 @@ export function LiveStudioConsole({
                       </label>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l'échelle)</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l&apos;échelle)</span>
                         <select value={advancedConfig.live_output_resolution} onChange={(e) => updateAdvancedConfig("live_output_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="1920x1080">1920x1080</option>
                           <option value="1280x720">1280x720</option>
@@ -2570,7 +2545,7 @@ export function LiveStudioConsole({
                       </label>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l'Interface</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l&apos;Interface</span>
                         <select value={advancedConfig.live_ui_text_size} onChange={(e) => updateAdvancedConfig("live_ui_text_size", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="small">Petit</option>
                           <option value="medium">Moyen (Défaut)</option>
@@ -2683,7 +2658,7 @@ export function LiveStudioConsole({
           <div className="mb-4 flex w-full max-w-5xl items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-white font-sans">Éditeur de Position Intéractif</h3>
-              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l'aide des poignées d'ancrage aux coins.</p>
+              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l&apos;aide des poignées d&apos;ancrage aux coins.</p>
             </div>
             <div className="flex items-center gap-2.5">
               <button
@@ -2704,7 +2679,7 @@ export function LiveStudioConsole({
                 }}
                 className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
               >
-                Fermer l'éditeur
+                Fermer l&apos;éditeur
               </button>
             </div>
           </div>
@@ -2723,7 +2698,7 @@ export function LiveStudioConsole({
               <span className="size-1.5 rounded-full bg-white" /> REC
             </div>
             <div className="absolute top-4 right-4 text-[9px] font-mono text-white/30">
-              1920 x 1080 | SIMULATEUR D'OVERLAY
+              1920 x 1080 | SIMULATEUR D&apos;OVERLAY
             </div>
 
             {/* Draggable container box */}
@@ -2779,7 +2754,7 @@ export function LiveStudioConsole({
 
               <div className="grid grid-cols-1 gap-2 pointer-events-none">
                 <p style={getElementStyle("fontBody", settings)} className="text-center">
-                  {preview?.text || "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle."}
+                  {preview?.text || "Car Dieu a tant aimé le monde qu&apos;il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu&apos;il ait la vie éternelle."}
                 </p>
                 <span style={getElementStyle("fontVer", settings)} className="text-center mt-1 block">
                   {preview?.translation || "LSG"}
