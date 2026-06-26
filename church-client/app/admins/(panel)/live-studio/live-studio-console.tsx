@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Plus,
@@ -28,6 +29,13 @@ import {
   AlertTriangle,
   Square,
   Maximize,
+  Globe,
+  HardDrive,
+  Volume2,
+  Monitor,
+  Keyboard,
+  Accessibility,
+  Settings2,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -256,7 +264,7 @@ const getElementStyle = (prefix: "fontRef" | "fontBody" | "fontVer", s: StudioSe
     fontSize: `${s[`${prefix}Size` as keyof StudioSettings]}px`,
     fontWeight: s[`${prefix}Weight` as keyof StudioSettings] as string,
     fontStyle: s[`${prefix}Style` as keyof StudioSettings] as string,
-    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as any,
+    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as React.CSSProperties["textTransform"],
     textDecoration: s[`${prefix}Decoration` as keyof StudioSettings] as string,
     letterSpacing: `${s[`${prefix}Spacing` as keyof StudioSettings]}px`,
     lineHeight: s[`${prefix}LineHeight` as keyof StudioSettings] as number,
@@ -356,6 +364,8 @@ export function LiveStudioConsole({
 }) {
   // Navigation & UI States
   const [activeLeftTab, setActiveLeftTab] = useState<"bible" | "flux" | "chants">("bible");
+  const [showGeneralConfig, setShowGeneralConfig] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState("general");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<ScriptureVerse[]>([]);
   const [searching, setSearching] = useState(false);
@@ -521,10 +531,10 @@ export function LiveStudioConsole({
   const [live, setLive] = useState<ScriptureVerse | null>(null);
   const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
     const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, any>) || {};
-    const typo = (liveStyles.live_typography as Record<string, any>) || {};
-    const container = (liveStyles.live_container as Record<string, any>) || {};
-    const anim = (liveStyles.live_animations as Record<string, any>) || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
     return {
       ...DEFAULT_STUDIO_SETTINGS,
       ...layout,
@@ -535,10 +545,10 @@ export function LiveStudioConsole({
   });
   const [settings, setSettings] = useState<StudioSettings>(() => {
     const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, any>) || {};
-    const typo = (liveStyles.live_typography as Record<string, any>) || {};
-    const container = (liveStyles.live_container as Record<string, any>) || {};
-    const anim = (liveStyles.live_animations as Record<string, any>) || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
     return {
       ...DEFAULT_STUDIO_SETTINGS,
       ...layout,
@@ -551,6 +561,11 @@ export function LiveStudioConsole({
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
+  // Gate the toast portal until after mount (createPortal needs `document`).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Transferred Live Configuration States
   const liveSettings = initialSettings.live || {};
@@ -565,10 +580,40 @@ export function LiveStudioConsole({
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
   const [sermonTitle, setSermonTitle] = useState((liveSettings.live_sermon_title as string) ?? "");
+  const [sermonPreacher, setSermonPreacher] = useState((liveSettings.live_sermon_preacher as string) ?? "");
   const [sermonReference, setSermonReference] = useState((liveSettings.live_sermon_reference as string) ?? "");
   const [sermonPoints, setSermonPoints] = useState<Array<{ id: string; text: string; verse: string }>>(
     (liveSettings.live_sermon_points as Array<{ id: string; text: string; verse: string }>) ?? []
   );
+
+  const [advancedConfig, setAdvancedConfig] = useState({
+    live_lang: (liveSettings.live_lang as string) ?? "fr",
+    live_show_in_feed: liveSettings.live_show_in_feed !== false,
+    live_stream_platform: (liveSettings.live_stream_platform as string) ?? "custom",
+    live_stream_server: (liveSettings.live_stream_server as string) ?? "rtmp://localhost/live",
+    live_video_bitrate: (liveSettings.live_video_bitrate as string) ?? "4500",
+    live_audio_bitrate: (liveSettings.live_audio_bitrate as string) ?? "128",
+    live_encoder_profile: (liveSettings.live_encoder_profile as string) ?? "high",
+    live_record_path: (liveSettings.live_record_path as string) ?? "C:/Videos/OBS",
+    live_audio_mic: (liveSettings.live_audio_mic as string) ?? "default",
+    live_audio_monitor: (liveSettings.live_audio_monitor as string) ?? "default",
+    live_audio_gain: (liveSettings.live_audio_gain as number) ?? 0,
+    live_noise_suppression: liveSettings.live_noise_suppression !== false,
+    live_base_resolution: (liveSettings.live_base_resolution as string) ?? "1920x1080",
+    live_output_resolution: (liveSettings.live_output_resolution as string) ?? "1920x1080",
+    live_fps: (liveSettings.live_fps as string) ?? "60",
+    live_ui_contrast: (liveSettings.live_ui_contrast as string) ?? "normal",
+    live_ui_text_size: (liveSettings.live_ui_text_size as string) ?? "medium",
+    live_audio_cues: Boolean(liveSettings.live_audio_cues),
+    live_process_priority: (liveSettings.live_process_priority as string) ?? "high",
+    live_stream_delay: (liveSettings.live_stream_delay as number) ?? 0,
+    live_auto_reconnect: liveSettings.live_auto_reconnect !== false,
+    live_db_cache: (liveSettings.live_db_cache as string) ?? "aggressive",
+  });
+
+  const updateAdvancedConfig = (key: keyof typeof advancedConfig, value: unknown) => {
+    setAdvancedConfig((prev) => ({ ...prev, [key]: value }));
+  };
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
@@ -896,6 +941,10 @@ export function LiveStudioConsole({
   const setStudio = <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) =>
     setSettings((s) => ({ ...s, [key]: value }));
 
+  /** Setter for dynamically-computed keys (template-literal element styling). */
+  const setStudioField = (key: keyof StudioSettings, value: StudioSettings[keyof StudioSettings]) =>
+    setSettings((s) => ({ ...s, [key]: value }) as StudioSettings);
+
   // Media & Settings Handlers
   const getPreviewUrl = (urlOrBlob: string) => {
     if (!urlOrBlob) return "";
@@ -956,10 +1005,16 @@ export function LiveStudioConsole({
           group: "live" 
         },
         { key: "live_sermon_title", value: sermonTitle, group: "live" },
+        { key: "live_sermon_preacher", value: sermonPreacher, group: "live" },
         { key: "live_sermon_reference", value: sermonReference, group: "live" },
         { key: "live_sermon_points", value: sermonPoints, group: "live" },
         { key: "bible_visible_versions", value: visibleVersions, group: "live" },
         { key: "bible_default_version", value: defaultVersion, group: "live" },
+        ...Object.entries(advancedConfig).map(([key, value]) => ({
+          key,
+          value,
+          group: "live"
+        }))
       ];
 
       const files: Record<string, File | null> = {};
@@ -1065,9 +1120,19 @@ export function LiveStudioConsole({
           <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#160f33]">
             <Radio className="size-5" />
           </span>
-          <div>
-            <span className="text-[10px] font-bold tracking-[0.25em] text-[#e2b85f] uppercase">Régie Live</span>
-            <h1 className="font-display text-2xl leading-tight font-bold text-white italic">MFM Studio Control</h1>
+          <div className="flex items-center gap-3">
+            <div>
+              <span className="text-[10px] font-bold tracking-[0.25em] text-[#e2b85f] uppercase">Régie Live</span>
+              <h1 className="font-display text-2xl leading-tight font-bold text-white italic">MFM Studio Control</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowGeneralConfig(true)}
+              className="ml-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-[#e2b85f] transition cursor-pointer"
+              title="Paramètres de la Régie"
+            >
+              <Settings2 className="size-5" />
+            </button>
           </div>
         </div>
 
@@ -1101,19 +1166,24 @@ export function LiveStudioConsole({
         </div>
       </header>
 
-      {status && (
-        <div
-          className={cn(
-            "mb-4 flex items-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm font-semibold",
-            status.type === "success"
-              ? "border-online/30 bg-online/10 text-online"
-              : "border-live/30 bg-live/10 text-[#ff9a9a]",
-          )}
-        >
-          {status.type === "success" ? <CheckCircle className="size-4" /> : <AlertCircle className="size-4" />}
-          {status.message}
-        </div>
-      )}
+      {mounted &&
+        status &&
+        createPortal(
+          <div className="pointer-events-none fixed top-6 right-6 z-[9999] animate-in fade-in slide-in-from-top-4 duration-300">
+            <div
+              className={cn(
+                "pointer-events-auto flex items-center gap-3 rounded-xl border px-5 py-3 text-sm font-bold shadow-2xl backdrop-blur-md",
+                status.type === "success"
+                  ? "border-emerald-500/30 bg-emerald-500/20 text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.15)]"
+                  : "border-red-500/30 bg-red-500/20 text-[#ff9a9a] shadow-[0_0_30px_rgba(239,68,68,0.15)]",
+              )}
+            >
+              {status.type === "success" ? <CheckCircle className="size-5" /> : <AlertCircle className="size-5" />}
+              {status.message}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[380px_1fr_300px]">
         {/* ── Left: Source Panel (Onglets) ─────────────────────────── */}
@@ -1706,7 +1776,7 @@ export function LiveStudioConsole({
                     { value: "ticker", label: "Bandeau ticker défilant" },
                     { value: "full_screen_cinema", label: "Plein écran cinéma" },
                   ]}
-                  onChange={(v) => setStudio("predefinedPosition", v as any)}
+                  onChange={(v) => setStudioField("predefinedPosition", v)}
                 />
               ) : (
                 <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
@@ -1779,7 +1849,7 @@ export function LiveStudioConsole({
                 <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Élément de texte</label>
                 <select
                   value={typoElement}
-                  onChange={(e) => setTypoElement(e.target.value as any)}
+                  onChange={(e) => setTypoElement(e.target.value as "fontRef" | "fontBody" | "fontVer")}
                   className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs font-semibold text-white outline-none focus:border-[#e2b85f]"
                 >
                   <option value="fontRef">Titre / Référence</option>
@@ -1802,14 +1872,14 @@ export function LiveStudioConsole({
                     { value: "Montserrat", label: "Montserrat" },
                     { value: "Outfit", label: "Outfit" },
                   ]}
-                  onChange={(v) => setStudio(`${typoElement}Family` as any, v)}
+                  onChange={(v) => setStudioField(`${typoElement}Family` as keyof StudioSettings, v)}
                 />
 
                 <div>
                   <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Graisse</label>
                   <select
                     value={settings[`${typoElement}Weight` as keyof StudioSettings] as string}
-                    onChange={(e) => setStudio(`${typoElement}Weight` as any, e.target.value)}
+                    onChange={(e) => setStudioField(`${typoElement}Weight` as keyof StudioSettings, e.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
                   >
                     {["100", "200", "300", "400", "500", "600", "700", "800", "900"].map((w) => (
@@ -1822,21 +1892,21 @@ export function LiveStudioConsole({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setStudio(`${typoElement}Style` as any, settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "normal" : "italic")}
+                    onClick={() => setStudioField(`${typoElement}Style` as keyof StudioSettings, settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "normal" : "italic")}
                     className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
                   >
                     Italique
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStudio(`${typoElement}Transform` as any, settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "none" : "uppercase")}
+                    onClick={() => setStudioField(`${typoElement}Transform` as keyof StudioSettings, settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "none" : "uppercase")}
                     className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
                   >
                     MAJUSCULE
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStudio(`${typoElement}Decoration` as any, settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "none" : "underline")}
+                    onClick={() => setStudioField(`${typoElement}Decoration` as keyof StudioSettings, settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "none" : "underline")}
                     className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
                   >
                     Souligné
@@ -1850,7 +1920,7 @@ export function LiveStudioConsole({
                   </div>
                   <input
                     type="range" min={10} max={80} value={settings[`${typoElement}Size` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudio(`${typoElement}Size` as any, Number(e.target.value))}
+                    onChange={(e) => setStudioField(`${typoElement}Size` as keyof StudioSettings, Number(e.target.value))}
                     className="w-full accent-[#e2b85f]"
                   />
                 </div>
@@ -1862,7 +1932,7 @@ export function LiveStudioConsole({
                   </div>
                   <input
                     type="range" min={1} max={2.5} step={0.1} value={settings[`${typoElement}LineHeight` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudio(`${typoElement}LineHeight` as any, Number(e.target.value))}
+                    onChange={(e) => setStudioField(`${typoElement}LineHeight` as keyof StudioSettings, Number(e.target.value))}
                     className="w-full accent-[#e2b85f]"
                   />
                 </div>
@@ -1874,7 +1944,7 @@ export function LiveStudioConsole({
                   </div>
                   <input
                     type="range" min={-2} max={15} step={0.5} value={settings[`${typoElement}Spacing` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudio(`${typoElement}Spacing` as any, Number(e.target.value))}
+                    onChange={(e) => setStudioField(`${typoElement}Spacing` as keyof StudioSettings, Number(e.target.value))}
                     className="w-full accent-[#e2b85f]"
                   />
                 </div>
@@ -1887,7 +1957,7 @@ export function LiveStudioConsole({
                       <button
                         key={col}
                         type="button"
-                        onClick={() => setStudio(`${typoElement}Color` as any, col)}
+                        onClick={() => setStudioField(`${typoElement}Color` as keyof StudioSettings, col)}
                         style={{ background: col.includes("gradient") ? col : undefined, backgroundColor: col.includes("gradient") ? undefined : col }}
                         className={cn("aspect-square rounded border cursor-pointer border-white/10 hover:scale-105 transition", settings[`${typoElement}Color` as keyof StudioSettings] === col && "ring-2 ring-white")}
                         title={col}
@@ -1897,7 +1967,7 @@ export function LiveStudioConsole({
                   <input
                     type="text"
                     value={settings[`${typoElement}Color` as keyof StudioSettings] as string}
-                    onChange={(e) => setStudio(`${typoElement}Color` as any, e.target.value)}
+                    onChange={(e) => setStudioField(`${typoElement}Color` as keyof StudioSettings, e.target.value)}
                     placeholder="Couleur (ex: #fff ou RGBA ou dégradé)"
                     className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1 text-[11px] font-mono text-white outline-none focus:border-[#e2b85f]"
                   />
@@ -1920,7 +1990,7 @@ export function LiveStudioConsole({
                   { value: "asymmetric", label: "Asymétrique" },
                   { value: "transparent", label: "Transparent" },
                 ]}
-                onChange={(v) => setStudio("containerShape", v as any)}
+                onChange={(v) => setStudioField("containerShape", v)}
               />
 
               {settings.containerShape !== "transparent" && (
@@ -1963,7 +2033,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Style Bordure</span>
                       <select
                         value={settings.containerBorderStyle}
-                        onChange={(e) => setStudio("containerBorderStyle", e.target.value as any)}
+                        onChange={(e) => setStudioField("containerBorderStyle", e.target.value)}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
                       >
                         <option value="solid">Plein (Solid)</option>
@@ -2070,7 +2140,7 @@ export function LiveStudioConsole({
                   { value: "clip_reveal", label: "Déploiement (Clip-path)" },
                   { value: "typewriter", label: "Machine à écrire" },
                 ]}
-                onChange={(v) => setStudio("animation", v as any)}
+                onChange={(v) => setStudioField("animation", v)}
               />
 
               <div className="space-y-2">
@@ -2089,7 +2159,7 @@ export function LiveStudioConsole({
                 <label className="mb-2 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Courbe (Easing)</label>
                 <select
                   value={settings.animEasing}
-                  onChange={(e) => setStudio("animEasing", e.target.value as any)}
+                  onChange={(e) => setStudioField("animEasing", e.target.value)}
                   className="w-full cursor-pointer rounded-xl border border-white/12 bg-[#0d0820] px-3.5 py-2.5 text-sm font-semibold text-white outline-none focus:border-[#e2b85f]"
                 >
                   <option value="ease-out">Facilité fin (Ease-out)</option>
@@ -2173,6 +2243,390 @@ export function LiveStudioConsole({
           )}
         </aside>
       </div>
+
+      {/* OBS-Style Settings Modal */}
+      {showGeneralConfig && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6 animate-fade-in"
+          onClick={() => setShowGeneralConfig(false)}
+        >
+          <div 
+            className="flex w-full max-w-5xl h-[80vh] overflow-hidden rounded-xl border border-[#b270ff]/30 bg-[#130d22] shadow-[0_0_50px_-12px_rgba(178,112,255,0.2)] text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Left Sidebar - Tabs */}
+            <div className="w-64 bg-[#0d0918] border-r border-white/5 flex flex-col">
+              <div className="p-5 border-b border-white/5">
+                <h2 className="text-lg font-black tracking-widest text-white/90">PARAMÈTRES</h2>
+              </div>
+              <nav className="flex-1 overflow-y-auto py-3 space-y-1 px-3 custom-scrollbar">
+                {[
+                  { id: "general", label: "Général", icon: Settings2 },
+                  { id: "stream", label: "Stream", icon: Globe },
+                  { id: "output", label: "Sortie", icon: HardDrive },
+                  { id: "audio", label: "Audio", icon: Volume2 },
+                  { id: "video", label: "Vidéo", icon: Monitor },
+                  { id: "hotkeys", label: "Raccourcis clavier", icon: Keyboard },
+                  { id: "accessibility", label: "Accessibilité", icon: Accessibility },
+                  { id: "advanced", label: "Avancé", icon: Settings2 },
+                ].map((t) => {
+                  const active = activeSettingsTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveSettingsTab(t.id)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition cursor-pointer",
+                        active 
+                          ? "bg-[#b270ff]/15 text-[#b270ff] shadow-[inset_2px_0_0_#b270ff]" 
+                          : "text-white/60 hover:bg-white/5 hover:text-white"
+                      )}
+                    >
+                      <t.icon className="size-4" />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </nav>
+              <div className="p-4 border-t border-white/5 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGeneralConfig(false)}
+                  className="w-full rounded-lg bg-white/5 hover:bg-white/10 py-2 text-sm font-bold transition cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { saveLiveSettings(); setShowGeneralConfig(false); }}
+                  className="w-full rounded-lg bg-[#b270ff] hover:bg-[#b270ff]/90 text-white py-2 text-sm font-bold shadow-lg shadow-[#b270ff]/20 transition flex justify-center items-center gap-2 cursor-pointer"
+                >
+                  {savingSettings ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  Appliquer
+                </button>
+              </div>
+            </div>
+
+            {/* Right Panel - Content */}
+            <div className="flex-1 flex flex-col bg-[#130d22] relative overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                
+                {/* TAB: GENERAL */}
+                {activeSettingsTab === "general" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Général</h3>
+                    
+                    <div className="space-y-6 max-w-2xl">
+                      {/* Section Infos */}
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Informations de Diffusion</h4>
+                        
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Titre du Live</span>
+                          <input type="text" value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Description</span>
+                          <textarea value={liveDescription} onChange={(e) => setLiveDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                        </label>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Détails du Sermon</h4>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <label className="block">
+                            <span className="mb-1.5 block text-xs font-bold text-white/50">Titre du Message</span>
+                            <input type="text" value={sermonTitle} onChange={(e) => setSermonTitle(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1.5 block text-xs font-bold text-white/50">Prédicateur</span>
+                            <input type="text" value={sermonPreacher} onChange={(e) => setSermonPreacher(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Interface Utilisateur</h4>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input type="checkbox" checked={advancedConfig.live_show_in_feed} onChange={(e) => updateAdvancedConfig("live_show_in_feed", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
+                          <span className="text-sm font-medium">Afficher ce direct dans le fil public</span>
+                        </label>
+                        <label className="block mt-4">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Langue de la Régie</span>
+                          <select value={advancedConfig.live_lang} onChange={(e) => updateAdvancedConfig("live_lang", e.target.value)} className="w-full max-w-xs rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                            <option value="fr">Français</option>
+                            <option value="en">Anglais</option>
+                          </select>
+                        </label>
+                        <button type="button" className="mt-4 rounded-lg bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-bold text-white transition cursor-pointer">
+                          Réinitialiser tous les paramètres de la console
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: STREAM */}
+                {activeSettingsTab === "stream" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Stream (Flux)</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Service de Streaming</span>
+                        <select value={advancedConfig.live_stream_platform} onChange={(e) => updateAdvancedConfig("live_stream_platform", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="youtube">YouTube - RTMPS</option>
+                          <option value="facebook">Facebook Live</option>
+                          <option value="custom">Serveur RTMP Personnalisé</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Serveur (URL)</span>
+                        <input type="text" value={advancedConfig.live_stream_server} onChange={(e) => updateAdvancedConfig("live_stream_server", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Clé de flux (Stream Key)</span>
+                        <div className="relative">
+                          <input type="password" value={streamKey} onChange={(e) => setStreamKey(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition pr-10" />
+                          <EyeOff className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-white/30" />
+                        </div>
+                        <p className="mt-2 text-[10px] text-yellow-500/80">⚠️ Ne partagez jamais votre clé de flux avec quiconque.</p>
+                      </label>
+
+                      <label className="block pt-4">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Lien Externe Public (Fallback)</span>
+                        <input type="text" value={liveEmbedUrl} onChange={(e) => setLiveEmbedUrl(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" placeholder="Ex: https://youtu.be/..." />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: SORTIE */}
+                {activeSettingsTab === "output" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Sortie & Encodage</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <div className="grid grid-cols-2 gap-6">
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Débit Vidéo (Bitrate)</span>
+                          <div className="flex items-center gap-2">
+                            <input type="number" step="100" value={advancedConfig.live_video_bitrate} onChange={(e) => updateAdvancedConfig("live_video_bitrate", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                            <span className="text-sm text-white/50">Kbps</span>
+                          </div>
+                        </label>
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Débit Audio</span>
+                          <select value={advancedConfig.live_audio_bitrate} onChange={(e) => updateAdvancedConfig("live_audio_bitrate", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                            <option value="128">128 Kbps</option>
+                            <option value="160">160 Kbps</option>
+                            <option value="192">192 Kbps</option>
+                            <option value="320">320 Kbps</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d'encodage (CPU Usage)</span>
+                        <select value={advancedConfig.live_encoder_profile} onChange={(e) => updateAdvancedConfig("live_encoder_profile", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="veryfast">veryfast (Faible utilisation CPU)</option>
+                          <option value="fast">fast</option>
+                          <option value="medium">medium</option>
+                          <option value="slow">slow (Qualité max, CPU très élevé)</option>
+                        </select>
+                      </label>
+
+                      <div className="border-t border-white/10 pt-6 space-y-4">
+                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Enregistrement Local</h4>
+                        <label className="block">
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d'enregistrement</span>
+                          <div className="flex gap-2">
+                            <input type="text" value={advancedConfig.live_record_path} onChange={(e) => updateAdvancedConfig("live_record_path", e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                            <button type="button" className="bg-white/10 hover:bg-white/20 rounded-lg px-4 text-sm font-semibold transition cursor-pointer">Parcourir</button>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: AUDIO */}
+                {activeSettingsTab === "audio" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Périphériques Audio</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Microphone / Entrée Auxiliaire principale</span>
+                        <select value={advancedConfig.live_audio_mic} onChange={(e) => updateAdvancedConfig("live_audio_mic", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="default">Périphérique par défaut</option>
+                          <option value="line1">Ligne In 1 (Interface Focusrite)</option>
+                          <option value="mic1">Microphone USB</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Périphérique de Monitoring (Régie)</span>
+                        <select value={advancedConfig.live_audio_monitor} onChange={(e) => updateAdvancedConfig("live_audio_monitor", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="default">Haut-parleurs par défaut</option>
+                          <option value="headphones">Casque Régie</option>
+                        </select>
+                      </label>
+
+                      <div className="space-y-4 pt-4 border-t border-white/10">
+                        <label className="block">
+                          <span className="mb-2 flex justify-between text-xs font-bold text-white/50">
+                            Gain Global
+                            <span className="text-white">{advancedConfig.live_audio_gain} dB</span>
+                          </span>
+                          <input type="range" min="-30" max="30" value={advancedConfig.live_audio_gain} onChange={(e) => updateAdvancedConfig("live_audio_gain", Number(e.target.value))} className="w-full accent-[#b270ff] cursor-pointer" />
+                        </label>
+
+                        <label className="flex items-center gap-3 cursor-pointer pt-4">
+                          <input type="checkbox" checked={advancedConfig.live_noise_suppression} onChange={(e) => updateAdvancedConfig("live_noise_suppression", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
+                          <span className="text-sm font-medium">Activer l'atténuation du bruit (RNNoise)</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: VIDEO */}
+                {activeSettingsTab === "video" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Vidéo</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Base (Canevas Régie)</span>
+                        <select value={advancedConfig.live_base_resolution} onChange={(e) => updateAdvancedConfig("live_base_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="1920x1080">1920x1080</option>
+                          <option value="1280x720">1280x720</option>
+                          <option value="3840x2160">3840x2160 (4K)</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l'échelle)</span>
+                        <select value={advancedConfig.live_output_resolution} onChange={(e) => updateAdvancedConfig("live_output_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="1920x1080">1920x1080</option>
+                          <option value="1280x720">1280x720</option>
+                          <option value="854x480">854x480</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Valeur FPS (Images par seconde)</span>
+                        <select value={advancedConfig.live_fps} onChange={(e) => updateAdvancedConfig("live_fps", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="30">30 FPS</option>
+                          <option value="60">60 FPS</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: HOTKEYS */}
+                {activeSettingsTab === "hotkeys" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Raccourcis clavier</h3>
+                    
+                    <div className="space-y-4 max-w-2xl">
+                      {[
+                        { action: "Passer à l'antenne / Direct", key: "Espace" },
+                        { action: "Écran Vide (Couper Overlay)", key: "Échap" },
+                        { action: "Verset Suivant", key: "Flèche Bas" },
+                        { action: "Verset Précédent", key: "Flèche Haut" },
+                        { action: "Focus sur la Recherche", key: "Ctrl + F" },
+                      ].map((hk, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:border-white/10 transition">
+                          <span className="text-sm font-semibold">{hk.action}</span>
+                          <button type="button" className="bg-[#090514] border border-white/10 px-4 py-1.5 rounded text-xs font-mono text-[#b270ff] hover:bg-white/5 transition cursor-pointer">
+                            {hk.key}
+                          </button>
+                        </div>
+                      ))}
+                      <p className="text-xs text-white/40 italic mt-4 text-center">Cliquez sur un raccourci pour le réassigner.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: ACCESSIBILITY */}
+                {activeSettingsTab === "accessibility" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Accessibilité & Ergonomie</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Contraste de la Régie</span>
+                        <select value={advancedConfig.live_ui_contrast} onChange={(e) => updateAdvancedConfig("live_ui_contrast", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="normal">Normal (Défaut)</option>
+                          <option value="high">Contraste Élevé</option>
+                          <option value="dimmed">Sombre (Fatigue oculaire réduite)</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l'Interface</span>
+                        <select value={advancedConfig.live_ui_text_size} onChange={(e) => updateAdvancedConfig("live_ui_text_size", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="small">Petit</option>
+                          <option value="medium">Moyen (Défaut)</option>
+                          <option value="large">Grand</option>
+                        </select>
+                      </label>
+
+                      <label className="flex items-center gap-3 cursor-pointer pt-4 border-t border-white/10">
+                        <input type="checkbox" checked={advancedConfig.live_audio_cues} onChange={(e) => updateAdvancedConfig("live_audio_cues", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
+                        <span className="text-sm font-medium">Activer les retours sonores (Bips de transition, Erreurs)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB: ADVANCED */}
+                {activeSettingsTab === "advanced" && (
+                  <div className="space-y-8 animate-fade-in">
+                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Avancé</h3>
+                    
+                    <div className="space-y-6 max-w-xl">
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Priorité du Processus</span>
+                        <select value={advancedConfig.live_process_priority} onChange={(e) => updateAdvancedConfig("live_process_priority", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="high">Haute (Recommandé)</option>
+                          <option value="normal">Normale</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Délai du flux (Stream Delay) - Secondes</span>
+                        <input type="number" min="0" max="60" value={advancedConfig.live_stream_delay} onChange={(e) => updateAdvancedConfig("live_stream_delay", Number(e.target.value))} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
+                      </label>
+
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" checked={advancedConfig.live_auto_reconnect} onChange={(e) => updateAdvancedConfig("live_auto_reconnect", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
+                        <span className="text-sm font-medium">Reconnexion automatique en cas de coupure</span>
+                      </label>
+
+                      <label className="block pt-4 border-t border-white/10">
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Gestion du Cache Base de Données</span>
+                        <select value={advancedConfig.live_db_cache} onChange={(e) => updateAdvancedConfig("live_db_cache", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
+                          <option value="aggressive">Agressif (Temps réel ultra rapide)</option>
+                          <option value="balanced">Équilibré</option>
+                          <option value="minimal">Minimal (Plus de requêtes serveur)</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                )}
+                
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation modal to turn off live stream */}
       {showStopConfirm && (
