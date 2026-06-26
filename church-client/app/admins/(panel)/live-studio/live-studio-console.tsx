@@ -2426,7 +2426,7 @@ export function LiveStudioConsole({
                       </div>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d'encodage (CPU Usage)</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d&apos;encodage (CPU Usage)</span>
                         <select value={advancedConfig.live_encoder_profile} onChange={(e) => updateAdvancedConfig("live_encoder_profile", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="veryfast">veryfast (Faible utilisation CPU)</option>
                           <option value="fast">fast</option>
@@ -2438,7 +2438,7 @@ export function LiveStudioConsole({
                       <div className="border-t border-white/10 pt-6 space-y-4">
                         <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Enregistrement Local</h4>
                         <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d'enregistrement</span>
+                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d&apos;enregistrement</span>
                           <div className="flex gap-2">
                             <input type="text" value={advancedConfig.live_record_path} onChange={(e) => updateAdvancedConfig("live_record_path", e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
                             <button type="button" className="bg-white/10 hover:bg-white/20 rounded-lg px-4 text-sm font-semibold transition cursor-pointer">Parcourir</button>
@@ -2483,7 +2483,7 @@ export function LiveStudioConsole({
 
                         <label className="flex items-center gap-3 cursor-pointer pt-4">
                           <input type="checkbox" checked={advancedConfig.live_noise_suppression} onChange={(e) => updateAdvancedConfig("live_noise_suppression", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                          <span className="text-sm font-medium">Activer l'atténuation du bruit (RNNoise)</span>
+                          <span className="text-sm font-medium">Activer l&apos;atténuation du bruit (RNNoise)</span>
                         </label>
                       </div>
                     </div>
@@ -2506,7 +2506,7 @@ export function LiveStudioConsole({
                       </label>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l'échelle)</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l&apos;échelle)</span>
                         <select value={advancedConfig.live_output_resolution} onChange={(e) => updateAdvancedConfig("live_output_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="1920x1080">1920x1080</option>
                           <option value="1280x720">1280x720</option>
@@ -2566,7 +2566,7 @@ export function LiveStudioConsole({
                       </label>
 
                       <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l'Interface</span>
+                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l&apos;Interface</span>
                         <select value={advancedConfig.live_ui_text_size} onChange={(e) => updateAdvancedConfig("live_ui_text_size", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
                           <option value="small">Petit</option>
                           <option value="medium">Moyen (Défaut)</option>
@@ -2679,7 +2679,7 @@ export function LiveStudioConsole({
           <div className="mb-4 flex w-full max-w-5xl items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-white font-sans">Éditeur de Position Intéractif</h3>
-              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l'aide des poignées d'ancrage aux coins.</p>
+              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l&apos;aide des poignées d&apos;ancrage aux coins.</p>
             </div>
             <div className="flex items-center gap-2.5">
               <button
@@ -2700,7 +2700,7 @@ export function LiveStudioConsole({
                 }}
                 className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
               >
-                Fermer l'éditeur
+                Fermer l&apos;éditeur
               </button>
             </div>
           </div>
@@ -2719,7 +2719,7 @@ export function LiveStudioConsole({
               <span className="size-1.5 rounded-full bg-white" /> REC
             </div>
             <div className="absolute top-4 right-4 text-[9px] font-mono text-white/30">
-              1920 x 1080 | SIMULATEUR D'OVERLAY
+              1920 x 1080 | SIMULATEUR D&apos;OVERLAY
             </div>
 
             {/* Draggable container box */}
@@ -2775,7 +2775,7 @@ export function LiveStudioConsole({
 
               <div className="grid grid-cols-1 gap-2 pointer-events-none">
                 <p style={getElementStyle("fontBody", settings)} className="text-center">
-                  {preview?.text || "Car Dieu a tant aimé le monde qu'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu'il ait la vie éternelle."}
+                  {preview?.text || "Car Dieu a tant aimé le monde qu&apos;il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu&apos;il ait la vie éternelle."}
                 </p>
                 <span style={getElementStyle("fontVer", settings)} className="text-center mt-1 block">
                   {preview?.translation || "LSG"}
