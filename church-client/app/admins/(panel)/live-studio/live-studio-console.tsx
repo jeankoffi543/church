@@ -480,36 +480,36 @@ export function LiveStudioConsole({
       if (action === "move") {
         const nextX = Math.max(0, Math.min(100 - startWidth, startLeft + deltaX));
         const nextY = Math.max(0, Math.min(100 - startHeight, startTop + deltaY));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customY", Math.round(nextY));
       } else if (action === "se") {
         const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
         const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customHeight", Math.round(nextHeight));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customHeight", Math.round(nextHeight));
       } else if (action === "sw") {
         const nextWidth = Math.max(10, startWidth - deltaX);
         const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
         const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customHeight", Math.round(nextHeight));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customHeight", Math.round(nextHeight));
       } else if (action === "ne") {
         const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
         const nextHeight = Math.max(10, startHeight - deltaY);
         const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customHeight", Math.round(nextHeight));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customHeight", Math.round(nextHeight));
+        setStudioField("customY", Math.round(nextY));
       } else if (action === "nw") {
         const nextWidth = Math.max(10, startWidth - deltaX);
         const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
         const nextHeight = Math.max(10, startHeight - deltaY);
         const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudio("customWidth", Math.round(nextWidth));
-        setStudio("customX", Math.round(nextX));
-        setStudio("customHeight", Math.round(nextHeight));
-        setStudio("customY", Math.round(nextY));
+        setStudioField("customWidth", Math.round(nextWidth));
+        setStudioField("customX", Math.round(nextX));
+        setStudioField("customHeight", Math.round(nextHeight));
+        setStudioField("customY", Math.round(nextY));
       }
     };
 
@@ -937,9 +937,6 @@ export function LiveStudioConsole({
     },
     [prepared, persistPrepared],
   );
-
-  const setStudio = <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) =>
-    setSettings((s) => ({ ...s, [key]: value }));
 
   /** Setter for dynamically-computed keys (template-literal element styling). */
   const setStudioField = (key: keyof StudioSettings, value: StudioSettings[keyof StudioSettings]) =>
@@ -1721,7 +1718,6 @@ export function LiveStudioConsole({
         </section>
 
         {/* ── Right: Studio style Configurator ───────────────────────────── */}
-        {/* ── Right: Studio style Configurator ───────────────────────────── */}
         <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 h-[75vh] overflow-y-auto w-full lg:w-[320px] shrink-0">
           <span className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Studio · Style Pro</span>
           
@@ -1749,14 +1745,14 @@ export function LiveStudioConsole({
                 <div className="flex bg-black/20 p-0.5 rounded-lg text-xs font-semibold">
                   <button
                     type="button"
-                    onClick={() => setStudio("positionMode", "predefined")}
+                    onClick={() => setStudioField("positionMode", "predefined")}
                     className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "predefined" ? "bg-white/10 text-white" : "text-white/40")}
                   >
                     Prédéfini
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStudio("positionMode", "custom")}
+                    onClick={() => setStudioField("positionMode", "custom")}
                     className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "custom" ? "bg-white/10 text-white" : "text-white/40")}
                   >
                     Libre (D&D)
@@ -1789,7 +1785,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={0} max={100} value={settings.customX}
-                      onChange={(e) => setStudio("customX", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customX", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1801,7 +1797,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={0} max={100} value={settings.customY}
-                      onChange={(e) => setStudio("customY", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customY", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1813,7 +1809,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={10} max={100} value={settings.customWidth}
-                      onChange={(e) => setStudio("customWidth", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customWidth", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -1825,7 +1821,7 @@ export function LiveStudioConsole({
                     </div>
                     <input
                       type="range" min={10} max={100} value={settings.customHeight}
-                      onChange={(e) => setStudio("customHeight", Number(e.target.value))}
+                      onChange={(e) => setStudioField("customHeight", Number(e.target.value))}
                       className="w-full accent-[#e2b85f]"
                     />
                   </div>
@@ -2000,7 +1996,7 @@ export function LiveStudioConsole({
                     <input
                       type="text"
                       value={settings.containerBg}
-                      onChange={(e) => setStudio("containerBg", e.target.value)}
+                      onChange={(e) => setStudioField("containerBg", e.target.value)}
                       className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                       placeholder="rgba(22, 15, 51, 0.95)"
                     />
@@ -2014,7 +2010,7 @@ export function LiveStudioConsole({
                       </div>
                       <input
                         type="range" min={0} max={60} value={settings.containerBorderRadius}
-                        onChange={(e) => setStudio("containerBorderRadius", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerBorderRadius", Number(e.target.value))}
                         className="w-full accent-[#e2b85f]"
                       />
                     </div>
@@ -2025,7 +2021,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Bordure (px)</span>
                       <input
                         type="number" min={0} max={10} value={settings.containerBorderWidth}
-                        onChange={(e) => setStudio("containerBorderWidth", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerBorderWidth", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
                       />
                     </div>
@@ -2049,7 +2045,7 @@ export function LiveStudioConsole({
                     <input
                       type="text"
                       value={settings.containerBorderColor}
-                      onChange={(e) => setStudio("containerBorderColor", e.target.value)}
+                      onChange={(e) => setStudioField("containerBorderColor", e.target.value)}
                       className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                       placeholder="rgba(255,255,255,0.15)"
                     />
@@ -2060,7 +2056,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Marge Interne X</span>
                       <input
                         type="number" min={5} max={100} value={settings.containerPaddingX}
-                        onChange={(e) => setStudio("containerPaddingX", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerPaddingX", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                       />
                     </div>
@@ -2068,7 +2064,7 @@ export function LiveStudioConsole({
                       <span className="block text-[10px] text-white/50 font-medium">Marge Interne Y</span>
                       <input
                         type="number" min={5} max={100} value={settings.containerPaddingY}
-                        onChange={(e) => setStudio("containerPaddingY", Number(e.target.value))}
+                        onChange={(e) => setStudioField("containerPaddingY", Number(e.target.value))}
                         className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                       />
                     </div>
@@ -2087,7 +2083,7 @@ export function LiveStudioConsole({
                   </div>
                   <input
                     type="range" min={0} max={100} value={settings.shadowBlur}
-                    onChange={(e) => setStudio("shadowBlur", Number(e.target.value))}
+                    onChange={(e) => setStudioField("shadowBlur", Number(e.target.value))}
                     className="w-full accent-[#e2b85f]"
                   />
                 </div>
@@ -2097,7 +2093,7 @@ export function LiveStudioConsole({
                     <span className="block text-[10px] text-white/50 font-medium">Décalage X</span>
                     <input
                       type="number" min={-50} max={50} value={settings.shadowOffsetX}
-                      onChange={(e) => setStudio("shadowOffsetX", Number(e.target.value))}
+                      onChange={(e) => setStudioField("shadowOffsetX", Number(e.target.value))}
                       className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                     />
                   </div>
@@ -2105,7 +2101,7 @@ export function LiveStudioConsole({
                     <span className="block text-[10px] text-white/50 font-medium">Décalage Y</span>
                     <input
                       type="number" min={-50} max={50} value={settings.shadowOffsetY}
-                      onChange={(e) => setStudio("shadowOffsetY", Number(e.target.value))}
+                      onChange={(e) => setStudioField("shadowOffsetY", Number(e.target.value))}
                       className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
                     />
                   </div>
@@ -2116,7 +2112,7 @@ export function LiveStudioConsole({
                   <input
                     type="text"
                     value={settings.shadowColor}
-                    onChange={(e) => setStudio("shadowColor", e.target.value)}
+                    onChange={(e) => setStudioField("shadowColor", e.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
                     placeholder="rgba(0, 0, 0, 0.5)"
                   />
@@ -2150,7 +2146,7 @@ export function LiveStudioConsole({
                 </div>
                 <input
                   type="range" min={100} max={3000} step={100} value={settings.animDuration}
-                  onChange={(e) => setStudio("animDuration", Number(e.target.value))}
+                  onChange={(e) => setStudioField("animDuration", Number(e.target.value))}
                   className="w-full accent-[#e2b85f]"
                 />
               </div>
@@ -2179,7 +2175,7 @@ export function LiveStudioConsole({
                 </label>
                 <input
                   type="range" min={0} max={60} step={5} value={settings.duration}
-                  onChange={(e) => setStudio("duration", Number(e.target.value))}
+                  onChange={(e) => setStudioField("duration", Number(e.target.value))}
                   className="w-full accent-[#e2b85f]"
                 />
                 <p className="mt-1 text-[10px] text-white/30">0 = reste affiché jusqu’au masquage manuel.</p>
