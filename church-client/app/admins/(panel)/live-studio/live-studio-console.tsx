@@ -25,7 +25,6 @@ import {
   Check,
   Trash,
   Tv,
-  MessageSquare,
   AlertTriangle,
   Square,
   Maximize,
@@ -52,27 +51,6 @@ import {
   type NavigateDirection,
 } from "@/lib/studio";
 import { broadcastScripture, setPreparedVerses, updateAdminSettings } from "@/lib/admin-api";
-
-/* ── Option catalogues ──────────────────────────────────────────── */
-
-const LAYOUTS: { value: StudioLayout; label: string }[] = [
-  { value: "lower_third", label: "Bandeau bas" },
-  { value: "full_screen", label: "Plein écran" },
-  { value: "sidebar", label: "Latéral" },
-];
-const ANIMATIONS: { value: StudioAnimation; label: string }[] = [
-  { value: "fade_slide", label: "Fondu & Glissement" },
-  { value: "typewriter", label: "Machine à écrire" },
-  { value: "scale", label: "Zoom" },
-  { value: "neon_slide", label: "Néon Slide" },
-];
-const FONTS = ["Cormorant Garamond", "Plus Jakarta Sans"];
-const BACKGROUNDS: { value: string; label: string }[] = [
-  { value: "gradient_purple", label: "Dégradé spirituel" },
-  { value: "blur", label: "Verre dépoli" },
-  { value: "solid_dark", label: "Sombre uni" },
-  { value: "none", label: "Transparent" },
-];
 
 type Status = { type: "success" | "error"; message: string } | null;
 
@@ -386,6 +364,42 @@ export function LiveStudioConsole({
     return dbPresets.length > 0 ? dbPresets : PRELOADED_PRESETS;
   });
 
+  const [preview, setPreview] = useState<ScriptureVerse | null>(null);
+  const [live, setLive] = useState<ScriptureVerse | null>(null);
+  const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
+  const [settings, setSettings] = useState<StudioSettings>(() => {
+    const liveStyles = initialSettings.live_broadcast_styles || {};
+    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
+    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
+    const container = (liveStyles.live_container as Record<string, unknown>) || {};
+    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      ...layout,
+      ...typo,
+      ...container,
+      ...anim,
+    };
+  });
+
+  /** Setter for dynamically-computed keys (template-literal element styling). */
+  const setStudioField = useCallback(<K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => {
+    setSettings((s) => ({ ...s, [key]: value }));
+  }, []);
+
   // Load typography fonts dynamically
   useEffect(() => {
     const link = document.createElement("link");
@@ -526,37 +540,6 @@ export function LiveStudioConsole({
   const [allTranslations, setAllTranslations] = useState<string[]>([]);
   const [visibleTranslationsCount, setVisibleTranslationsCount] = useState(10);
   const [translationSearch, setTranslationSearch] = useState("");
-
-  const [preview, setPreview] = useState<ScriptureVerse | null>(null);
-  const [live, setLive] = useState<ScriptureVerse | null>(null);
-  const [onAirSettings, setOnAirSettings] = useState<StudioSettings>(() => {
-    const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
-    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
-    const container = (liveStyles.live_container as Record<string, unknown>) || {};
-    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
-    return {
-      ...DEFAULT_STUDIO_SETTINGS,
-      ...layout,
-      ...typo,
-      ...container,
-      ...anim,
-    };
-  });
-  const [settings, setSettings] = useState<StudioSettings>(() => {
-    const liveStyles = initialSettings.live_broadcast_styles || {};
-    const layout = (liveStyles.live_layout as Record<string, unknown>) || {};
-    const typo = (liveStyles.live_typography as Record<string, unknown>) || {};
-    const container = (liveStyles.live_container as Record<string, unknown>) || {};
-    const anim = (liveStyles.live_animations as Record<string, unknown>) || {};
-    return {
-      ...DEFAULT_STUDIO_SETTINGS,
-      ...layout,
-      ...typo,
-      ...container,
-      ...anim,
-    };
-  });
 
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
   const [busy, setBusy] = useState(false);
@@ -937,10 +920,6 @@ export function LiveStudioConsole({
     },
     [prepared, persistPrepared],
   );
-
-  /** Setter for dynamically-computed keys (template-literal element styling). */
-  const setStudioField = (key: keyof StudioSettings, value: StudioSettings[keyof StudioSettings]) =>
-    setSettings((s) => ({ ...s, [key]: value }) as StudioSettings);
 
   // Media & Settings Handlers
   const getPreviewUrl = (urlOrBlob: string) => {
