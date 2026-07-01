@@ -1,0 +1,122 @@
+import type React from "react";
+
+import type { StudioSettings } from "@/lib/studio";
+
+/**
+ * Maps `StudioSettings` to the inline CSS used to render the on-screen verse
+ * overlay. These are intentionally inline styles: the values are data-driven
+ * (operator-chosen fonts, colours, geometry) and cannot be static utilities.
+ *
+ * Extracted verbatim from the original console so the broadcast output is
+ * byte-for-byte identical; shared by the Preview/Program monitors and the
+ * fullscreen overlay simulator.
+ */
+
+export const getElementStyle = (
+  prefix: "fontRef" | "fontBody" | "fontVer",
+  s: StudioSettings,
+): React.CSSProperties => {
+  const colorVal = s[`${prefix}Color` as keyof StudioSettings] as string;
+  const isGradient = colorVal?.includes("gradient");
+
+  const baseStyle: React.CSSProperties = {
+    fontFamily: s[`${prefix}Family` as keyof StudioSettings] as string,
+    fontSize: `${s[`${prefix}Size` as keyof StudioSettings]}px`,
+    fontWeight: s[`${prefix}Weight` as keyof StudioSettings] as string,
+    fontStyle: s[`${prefix}Style` as keyof StudioSettings] as string,
+    textTransform: s[
+      `${prefix}Transform` as keyof StudioSettings
+    ] as React.CSSProperties["textTransform"],
+    textDecoration: s[`${prefix}Decoration` as keyof StudioSettings] as string,
+    letterSpacing: `${s[`${prefix}Spacing` as keyof StudioSettings]}px`,
+    lineHeight: s[`${prefix}LineHeight` as keyof StudioSettings] as number,
+  };
+
+  if (isGradient) {
+    return {
+      ...baseStyle,
+      backgroundImage: colorVal,
+      WebkitBackgroundClip: "text",
+      WebkitTextFillColor: "transparent",
+      display: "inline-block",
+    };
+  }
+
+  return { ...baseStyle, color: colorVal };
+};
+
+export const getContainerStyle = (s: StudioSettings): React.CSSProperties => {
+  if (s.containerShape === "transparent") {
+    return {
+      backgroundColor: "transparent",
+      backgroundImage: "none",
+      borderStyle: "none",
+      borderWidth: "0px",
+      boxShadow: "none",
+      padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
+    };
+  }
+
+  let borderRadius = `${s.containerBorderRadius}px`;
+  if (s.containerShape === "rectangle") borderRadius = "0px";
+  if (s.containerShape === "capsule") borderRadius = "9999px";
+  if (s.containerShape === "asymmetric") borderRadius = "32px 6px 32px 6px";
+
+  const isGradient = s.containerBg?.includes("gradient");
+
+  const baseStyle: React.CSSProperties = {
+    backgroundColor: isGradient ? "transparent" : s.containerBg,
+    backgroundImage: isGradient ? s.containerBg : "none",
+    borderRadius,
+    padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
+  };
+
+  const borderW = s.containerBorderWidth;
+  const borderCol = s.containerBorderColor || "rgba(255, 255, 255, 0.15)";
+
+  if (s.containerBorderStyle === "none") {
+    baseStyle.borderStyle = "none";
+    baseStyle.borderWidth = "0px";
+  } else if (s.containerBorderStyle === "glow") {
+    baseStyle.borderStyle = "solid";
+    baseStyle.borderWidth = `${borderW}px`;
+    baseStyle.borderColor = borderCol;
+    baseStyle.boxShadow = `0 0 20px ${borderCol}, inset 0 0 10px ${borderCol}`;
+  } else {
+    baseStyle.borderStyle = s.containerBorderStyle;
+    baseStyle.borderWidth = `${borderW}px`;
+    baseStyle.borderColor = borderCol;
+  }
+
+  const shadowStr = `${s.shadowOffsetX}px ${s.shadowOffsetY}px ${s.shadowBlur}px ${s.shadowSpread}px ${s.shadowColor}`;
+  baseStyle.boxShadow = baseStyle.boxShadow ? `${baseStyle.boxShadow}, ${shadowStr}` : shadowStr;
+
+  return baseStyle;
+};
+
+export const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties => {
+  switch (pos) {
+    case "lower_third_left":
+      return { left: "6%", top: "72%", width: "40%", height: "20%" };
+    case "lower_third_right":
+      return { right: "6%", top: "72%", width: "40%", height: "20%" };
+    case "ticker":
+      return { left: "0%", top: "86%", width: "100%", height: "14%" };
+    case "full_screen_cinema":
+      return { left: "10%", top: "10%", width: "80%", height: "80%" };
+    case "centered_bottom":
+    default:
+      return { left: "10%", top: "72%", width: "80%", height: "20%" };
+  }
+};
+
+/** Absolute position CSS for the overlay box (custom geometry or a preset). */
+export const getOverlayBoxStyle = (s: StudioSettings): React.CSSProperties =>
+  s.positionMode === "custom"
+    ? {
+        left: `${s.customX}%`,
+        top: `${s.customY}%`,
+        width: `${s.customWidth}%`,
+        height: `${s.customHeight}%`,
+      }
+    : getPredefinedAbsolutePosition(s.predefinedPosition || "centered_bottom");

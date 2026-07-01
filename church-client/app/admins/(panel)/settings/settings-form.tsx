@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   Plus,
   Trash,
@@ -10,14 +10,9 @@ import {
   Clock,
   HeartHandshake,
   PhoneCall,
-  Tv,
   CheckCircle,
   AlertCircle,
   ImagePlus,
-  KeyRound,
-  RefreshCw,
-  Copy,
-  Check,
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
@@ -27,8 +22,6 @@ import { LocationPicker } from "../_components/location-picker";
 const SETTING_INPUT =
   "rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold w-full";
 
-// Base URL of the self-hosted HLS endpoint; the stream key fills in <base>/<key>.m3u8.
-const HLS_BASE = (process.env.NEXT_PUBLIC_HLS_BASE_URL || "http://localhost:8088/hls").replace(/\/+$/, "");
 
 type TabType = "general" | "schedule" | "offerings" | "contact";
 
