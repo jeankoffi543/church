@@ -1,38 +1,75 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Volume2, MicOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MONO } from "./studio-tokens";
+import { LAYER_META, isAudioActive, type StudioLayer } from "./studio-layers";
+import { readAudioLevel, hasAudioProbe } from "./studio-audio";
 
 /**
- * Dock 3 · Audio mixer. OBS chrome — TODO(studio): wire channels to a real audio
- * graph (levels, mutes, VU peaks). The faders/meters operate on local state.
+ * Dock 3 · Audio mixer. Real channels are the audio-bearing sources of the
+ * current scene (`channels`) — Direct externe / Flux VLC / entrées audio. Faders
+ * write straight back to the layer via `onChange` (volume / mute / gain / pan),
+ * so the config persists with the scene. The VU meters are an animated peak
+ * simulation driven off each channel's live level.
  */
-type StubChannel = { name: string; level: number; muted: boolean; vu: number };
+export type AudioPatch = Pick<StudioLayer, "audioLevel" | "audioMuted" | "audioGain" | "audioBalance">;
 
-const DEMO_CHANNELS: StubChannel[] = [
-  { name: "Audio Bureau", level: 62, muted: false, vu: 40 },
-  { name: "Micro Prédicateur", level: 78, muted: false, vu: 22 },
-  { name: "Boucle Média VLC", level: 34, muted: true, vu: 66 },
-];
-
+/** Fader level (0-100) → dB readout, coloured by headroom. */
 function dbLabel(level: number) {
   if (level <= 0) return { v: "-∞", color: "rgba(255,255,255,.4)" };
   const db = Math.round((level / 100) * 60 - 60);
   return { v: db > 0 ? `+${db}` : String(db), color: db > -6 ? "#fbbf24" : "#34d399" };
 }
 
-export function MixerDock() {
-  const [channels, setChannels] = useState<StubChannel[]>(DEMO_CHANNELS);
+const gainLabel = (g: number) => `${g > 0 ? "+" : ""}${g} dB`;
+const panLabel = (p: number) => {
+  if (p === 0) return "Centre";
+  return p < 0 ? `G ${Math.abs(p)}` : `D ${p}`;
+};
 
-  const setLevel = (i: number, level: number) =>
-    setChannels((prev) => prev.map((c, idx) => (idx === i ? { ...c, level } : c)));
-  const toggleMute = (i: number) =>
-    setChannels((prev) => prev.map((c, idx) => (idx === i ? { ...c, muted: !c.muted } : c)));
+export function MixerDock({
+  channels,
+  onChange,
+}: {
+  channels: StudioLayer[];
+  onChange: (id: string, patch: Partial<AudioPatch>) => void;
+}) {
+  // Animated VU peaks per channel id (0-100), random-walk scaled by live level.
+  const [vu, setVu] = useState<Record<string, number>>({});
+  const channelsRef = useRef(channels);
+  useEffect(() => {
+    channelsRef.current = channels;
+  }, [channels]);
+
+  useEffect(() => {
+    if (channels.length === 0) return;
+    const timer = setInterval(() => {
+      setVu((prev) => {
+        const next: Record<string, number> = {};
+        for (const ch of channelsRef.current) {
+          // Prefer the REAL captured level (Web Audio RMS for owned media, or
+          // YouTube player-state sync). Only fall back to a synthesised level
+          // for hardware audio-device inputs, which the browser can't meter.
+          const real = readAudioLevel(ch.id);
+          let target = 0;
+          if (real != null) {
+            target = real;
+          } else if (ch.type === "audio" && isAudioActive(ch)) {
+            target = Math.random() * ((ch.audioLevel ?? 80) * 0.9);
+          }
+          const last = prev[ch.id] ?? 0;
+          next[ch.id] = Math.max(0, Math.min(100, last + (target - last) * 0.4));
+        }
+        return next;
+      });
+    }, 70);
+    return () => clearInterval(timer);
+  }, [channels.length]);
 
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
@@ -41,58 +78,137 @@ export function MixerDock() {
         <span className="text-[11px] font-extrabold tracking-[1.2px] text-white uppercase">
           Table de mixage
         </span>
+        <span className="ml-auto rounded-md bg-white/6 px-1.5 py-[3px] text-[9px] font-bold text-white/50">
+          {channels.length} voie{channels.length > 1 ? "s" : ""}
+        </span>
       </div>
 
-      <ScrollArea className="flex min-h-0 flex-1 flex-col gap-3.5 p-3">
-        {channels.map((ch, i) => {
-          const db = dbLabel(ch.muted ? 0 : ch.level);
-          return (
-            <div key={ch.name}>
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[11.5px] font-bold text-white">{ch.name}</span>
-                <span className={cn("text-[10px]", MONO)} style={{ color: db.color }}>
-                  {db.v} dB
-                </span>
-              </div>
-
-              {/* VU meter (stub fill) */}
-              <div className="relative h-[9px] overflow-hidden rounded-[5px] border border-white/6 bg-[#0a0613]">
-                <div className="absolute inset-0 bg-gradient-to-r from-studio-preview via-[#fbbf24] to-studio-onair" />
-                <div
-                  className="absolute inset-y-0 right-0 bg-[#0a0613]"
-                  style={{ width: `${100 - (ch.muted ? 0 : ch.vu)}%` }}
-                />
-              </div>
-
-              <div className="mt-2 flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => toggleMute(i)}
-                  title={ch.muted ? "Réactiver" : "Couper"}
-                  className={cn(
-                    "flex h-[26px] w-[30px] shrink-0 items-center justify-center rounded-[7px] border transition-colors",
-                    ch.muted
-                      ? "border-studio-onair/40 bg-studio-onair/15 text-studio-onair"
-                      : "border-white/10 bg-white/4 text-white/55 hover:text-white",
+      {channels.length === 0 ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-white/35">
+          <div className="mb-1 text-[12px] font-bold">Aucune voie audio</div>
+          <div className="text-[11px] leading-relaxed">
+            Ajoutez une source « Direct externe », un flux VLC ou une entrée audio pour la mixer ici.
+          </div>
+        </div>
+      ) : (
+        <ScrollArea className="flex min-h-0 flex-1 flex-col gap-4 p-3">
+          {channels.map((ch) => {
+            const level = ch.audioLevel ?? 80;
+            const gain = ch.audioGain ?? 0;
+            const balance = ch.audioBalance ?? 0;
+            const muted = ch.audioMuted ?? false;
+            const hasSrc = ch.type === "audio" ? !!ch.device?.trim() : !!ch.feedUrl?.trim();
+            const probed = hasAudioProbe(ch.id);
+            // "Capturable" = real probe registered, or a hardware audio device.
+            const capturable = probed || ch.type === "audio";
+            const on = hasSrc && ch.visible && !muted && capturable;
+            const db = dbLabel(on ? level : 0);
+            const peak = vu[ch.id] ?? 0;
+            const meta = LAYER_META[ch.type];
+            const stateLabel = !hasSrc
+              ? "Aucune source"
+              : muted
+                ? "Coupé"
+                : !ch.visible
+                  ? "Masqué"
+                  : "Non capté";
+            return (
+              <div key={ch.id} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={cn("size-2 rounded-full transition-opacity", !on && "opacity-30")}
+                      style={{ background: meta.color }}
+                    />
+                    <span className="text-[11.5px] font-bold text-white">{ch.name}</span>
+                  </div>
+                  {on ? (
+                    <span className={cn("text-[10px]", MONO)} style={{ color: db.color }}>
+                      {db.v} dB
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold tracking-wide text-white/30 uppercase">
+                      {stateLabel}
+                    </span>
                   )}
-                >
-                  <MicOff className="size-3.5" />
-                </button>
-                <Slider
-                  min={0}
-                  max={100}
-                  value={ch.level}
-                  onValueChange={(v) => setLevel(i, v)}
-                  className="flex-1"
-                />
-                <span className={cn("w-[30px] text-right text-[10px] text-white/50", MONO)}>
-                  {ch.level}
-                </span>
+                </div>
+
+                {/* Animated VU meter (peak) */}
+                <div className="relative h-[9px] overflow-hidden rounded-[5px] border border-white/6 bg-[#0a0613]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-studio-preview via-[#fbbf24] to-studio-onair" />
+                  <div
+                    className="absolute inset-y-0 right-0 bg-[#0a0613] transition-[width] duration-75 ease-out"
+                    style={{ width: `${100 - peak}%` }}
+                  />
+                </div>
+
+                {/* Volume fader + mute */}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => onChange(ch.id, { audioMuted: !muted })}
+                    title={muted ? "Réactiver" : "Couper"}
+                    className={cn(
+                      "flex h-[26px] w-[30px] shrink-0 items-center justify-center rounded-[7px] border transition-colors",
+                      muted
+                        ? "border-studio-onair/40 bg-studio-onair/15 text-studio-onair"
+                        : "border-white/10 bg-white/4 text-white/55 hover:text-white",
+                    )}
+                  >
+                    <MicOff className="size-3.5" />
+                  </button>
+                  <Slider
+                    min={0}
+                    max={100}
+                    value={level}
+                    onValueChange={(v) => onChange(ch.id, { audioLevel: v })}
+                    className="flex-1"
+                  />
+                  <span className={cn("w-[30px] text-right text-[10px] text-white/50", MONO)}>
+                    {level}
+                  </span>
+                </div>
+
+                {/* Gain (dB) */}
+                <div className="flex items-center gap-2.5">
+                  <span className="w-[30px] shrink-0 text-[9px] font-bold tracking-wide text-white/40 uppercase">
+                    Gain
+                  </span>
+                  <Slider
+                    min={-20}
+                    max={20}
+                    step={1}
+                    value={gain}
+                    onValueChange={(v) => onChange(ch.id, { audioGain: v })}
+                    className="flex-1"
+                  />
+                  <span className={cn("w-[46px] text-right text-[10px] text-white/50", MONO)}>
+                    {gainLabel(gain)}
+                  </span>
+                </div>
+
+                {/* Balance / pan (L ── R) */}
+                <div className="flex items-center gap-2.5">
+                  <span className="w-[30px] shrink-0 text-[9px] font-bold tracking-wide text-white/40 uppercase">
+                    Pan
+                  </span>
+                  <Slider
+                    min={-100}
+                    max={100}
+                    step={5}
+                    value={balance}
+                    onValueChange={(v) => onChange(ch.id, { audioBalance: v })}
+                    className="flex-1"
+                  />
+                  <span className={cn("w-[46px] text-right text-[10px] text-white/50", MONO)}>
+                    {panLabel(balance)}
+                  </span>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </ScrollArea>
+            );
+          })}
+        </ScrollArea>
+      )}
     </div>
   );
 }

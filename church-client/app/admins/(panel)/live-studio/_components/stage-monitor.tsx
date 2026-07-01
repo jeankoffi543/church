@@ -45,6 +45,7 @@ export function StageMonitor({
   onLayerSelect?: (id: string) => void;
   onFullscreen?: () => void;
   black?: boolean;
+  /** Bumping this replays the entrance animations (remounts the layers). */
   animNonce?: number;
 }) {
   const isProgram = tone === "program";
@@ -86,6 +87,7 @@ export function StageMonitor({
                 z={z}
                 selected={!isProgram && layer.id === selectedLayerId}
                 draggable={draggable}
+                audioOwner={!isProgram}
                 onPointerDown={onLayerPointerDown}
                 onResize={onLayerResize}
                 onSelect={onLayerSelect}

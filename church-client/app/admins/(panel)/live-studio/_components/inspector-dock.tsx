@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play, Zap, Square } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, Zap, Square } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -81,7 +81,6 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   bible,
   presets,
   newPresetName,
@@ -98,7 +97,6 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
@@ -121,11 +119,11 @@ export function InspectorDock({
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-studio-purple/20 bg-studio-panel">
       <div className="flex flex-none items-center gap-2 border-b border-white/6 px-3.5 py-2.5">
-        <Sparkles className="size-[15px] text-studio-purple" strokeWidth={1.8} />
+        <Sparkles className="size-3.75 text-studio-purple" strokeWidth={1.8} />
         <span className="text-[11px] font-extrabold tracking-[1px] text-white uppercase">
           Studio · Style Pro
         </span>
-        <span className="ml-auto rounded-md bg-studio-purple/12 px-1.5 py-[3px] text-[9px] font-bold text-studio-purple">
+        <span className="ml-auto rounded-md bg-studio-purple/12 px-1.5 py-0.75 text-[9px] font-bold text-studio-purple">
           {selectedLayer ? LAYER_META[selectedLayer.type].typeLabel : "Aucune"}
         </span>
       </div>
@@ -139,14 +137,14 @@ export function InspectorDock({
         </div>
       ) : (
         <>
-          <div className="flex flex-none flex-wrap gap-[3px] border-b border-white/5 px-2 py-2">
+          <div className="flex flex-none flex-wrap gap-0.75 border-b border-white/5 px-2 py-2">
             {available.map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
                 className={cn(
-                  "min-w-[50px] flex-1 rounded-[7px] px-1 py-1.5 text-[10px] font-bold transition-colors",
+                  "min-w-12.5 flex-1 rounded-[7px] px-1 py-1.5 text-[10px] font-bold transition-colors",
                   activeTab === t
                     ? "bg-studio-purple/15 text-studio-purple"
                     : "text-white/55 hover:text-white",
@@ -168,7 +166,6 @@ export function InspectorDock({
                 layer={selectedLayer}
                 patchLayerData={patchLayerData}
                 onImageFile={onImageFile}
-                onBroadcastEmbed={onBroadcastEmbed}
                 onRestoreDefaults={onRestoreDefaults}
                 bible={bible}
                 onPlayAnim={onPlayAnim}
@@ -216,7 +213,6 @@ function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   onRestoreDefaults,
   bible,
   onPlayAnim,
@@ -224,7 +220,6 @@ function ContentPanel({
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
   onPlayAnim?: () => void;
@@ -247,7 +242,7 @@ function ContentPanel({
       const content = stanzaContent.trim();
       if (!name || !content) return;
 
-      let nextStanzas = [...stanzas];
+      const nextStanzas = [...stanzas];
       if (editIndex !== null) {
         nextStanzas[editIndex] = { name, content };
         setEditIndex(null);
@@ -445,17 +440,8 @@ function ContentPanel({
             className={MONO_FIELD}
           />
         </div>
-        <button
-          type="button"
-          disabled={!layer.feedUrl}
-          onClick={() => layer.feedUrl && onBroadcastEmbed(layer.feedUrl)}
-          className="flex items-center justify-center gap-2 rounded-lg bg-studio-onair py-2.5 text-[12px] font-extrabold text-white transition hover:brightness-110 disabled:opacity-50"
-        >
-          <Radio className="size-3.5" /> Diffuser ce direct à l&apos;antenne
-        </button>
         <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          Le lien est intégré sur la page publique <span className="text-white">/live</span> et le
-          direct passe automatiquement à l&apos;antenne.
+          L&apos;aperçu de la vidéo s&apos;affiche dans les moniteurs.
         </div>
       </>
     );
