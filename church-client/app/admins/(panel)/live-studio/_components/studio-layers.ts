@@ -82,7 +82,7 @@ export const LAYER_META: Record<
   song: { label: "Chant", color: "#b270ff", typeLabel: "Chant · Paroles" },
   image: { label: "Image / Fond", color: "#34d399", typeLabel: "Image / Fond" },
   camera: { label: "Caméra NDI", color: "#c89af0", typeLabel: "Caméra NDI" },
-  video: { label: "Flux VLC", color: "#f0a868", typeLabel: "Flux réseau VLC" },
+  video: { label: "Vidéo", color: "#f0a868", typeLabel: "Vidéo · lien ou fichier" },
   embed: { label: "Direct externe", color: "#ff6b6b", typeLabel: "YouTube / Facebook" },
   audio: { label: "Audio", color: "#86d0e0", typeLabel: "Entrée audio" },
   group: { label: "Groupe", color: "#d0c090", typeLabel: "Groupe de calques" },
