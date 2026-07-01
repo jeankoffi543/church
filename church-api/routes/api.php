@@ -33,6 +33,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('sermons', [Public\SermonController::class, 'index'])->name('sermons.index');
         // Range-capable media stream (HTTP 206) so browsers can play/seek uploaded files.
         Route::get('sermons/{sermon}/stream', [Public\SermonController::class, 'stream'])->name('sermons.stream');
+
+        // Live Studio local video — Range-capable playback of operator uploads.
+        Route::get('studio/media/{file}', [Public\StudioMediaController::class, 'stream'])
+            ->where('file', '[A-Za-z0-9._-]+')
+            ->name('studio.media.stream');
         Route::get('sermons/{sermon}', [Public\SermonController::class, 'show'])->name('sermons.show');
 
         // Events (Phase 3)
@@ -129,6 +134,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('live/scripture', [Admin\LiveScriptureController::class, 'broadcast'])->name('live.scripture.broadcast');
                 Route::get('live/scripture/prepared', [Admin\LiveScriptureController::class, 'prepared'])->name('live.scripture.prepared');
                 Route::put('live/scripture/prepared', [Admin\LiveScriptureController::class, 'updatePrepared'])->name('live.scripture.prepared.update');
+                Route::post('studio/media', [Admin\StudioMediaController::class, 'store'])->name('studio.media.store');
             });
 
             // Médiathèque / messages

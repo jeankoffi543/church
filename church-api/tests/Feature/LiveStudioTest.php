@@ -4,7 +4,9 @@ use App\Events\ScriptureStreamEvent;
 use App\Models\BibleVerse;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Http\Testing\File;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -111,4 +113,48 @@ it('stores and returns the prepared-verses deck', function () {
         ->getJson('/api/v1/admin/live/scripture/prepared')
         ->assertOk()
         ->assertJsonPath('data.0.reference', 'Jean 3:16');
+});
+
+it('uploads a local studio video and returns a Range-capable stream url', function () {
+    Storage::fake('public');
+
+    $data = actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media', [
+            'file' => File::fake()->create('clip.mp4', 200, 'video/mp4'),
+        ])
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['url'])->toContain('/api/v1/public/studio/media/')
+        ->and($data['name'])->toBe('clip.mp4');
+
+    expect(Storage::disk('public')->files('studio/videos'))->toHaveCount(1);
+});
+
+it('rejects a non-video studio upload', function () {
+    Storage::fake('public');
+
+    actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media', [
+            'file' => File::fake()->create('notes.pdf', 20, 'application/pdf'),
+        ])
+        ->assertUnprocessable();
+});
+
+it('forbids studio uploads without the manage_live permission', function () {
+    $user = User::factory()->create();
+
+    actingAs($user, 'sanctum')
+        ->postJson('/api/v1/admin/studio/media', [
+            'file' => File::fake()->create('clip.mp4', 20, 'video/mp4'),
+        ])
+        ->assertForbidden();
+});
+
+it('streams an uploaded studio video and 404s for a missing file', function () {
+    Storage::fake('public');
+    Storage::disk('public')->put('studio/videos/clip.mp4', 'binary-data');
+
+    getJson('/api/v1/public/studio/media/clip.mp4')->assertOk();
+    getJson('/api/v1/public/studio/media/missing.mp4')->assertNotFound();
 });
