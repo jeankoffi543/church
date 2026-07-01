@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play, Zap, Square } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -171,6 +171,7 @@ export function InspectorDock({
                 onBroadcastEmbed={onBroadcastEmbed}
                 onRestoreDefaults={onRestoreDefaults}
                 bible={bible}
+                onPlayAnim={onPlayAnim}
               />
             )}
             {activeTab === "layout" && (
@@ -218,6 +219,7 @@ function ContentPanel({
   onBroadcastEmbed,
   onRestoreDefaults,
   bible,
+  onPlayAnim,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
@@ -225,20 +227,208 @@ function ContentPanel({
   onBroadcastEmbed: (url: string) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
+  onPlayAnim?: () => void;
 }) {
   if (layer.type === "bible") return <BibleContent bible={bible} />;
 
   if (layer.type === "song") {
+    const stanzas = layer.stanzas ?? [];
+    const activeIndex = layer.activeStanzaIndex ?? 0;
+
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [stanzaName, setStanzaName] = useState("");
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [stanzaContent, setStanzaContent] = useState("");
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [editIndex, setEditIndex] = useState<number | null>(null);
+
+    const handleAddOrUpdateStanza = () => {
+      const name = stanzaName.trim();
+      const content = stanzaContent.trim();
+      if (!name || !content) return;
+
+      let nextStanzas = [...stanzas];
+      if (editIndex !== null) {
+        nextStanzas[editIndex] = { name, content };
+        setEditIndex(null);
+      } else {
+        nextStanzas.push({ name, content });
+      }
+
+      patchLayerData({
+        stanzas: nextStanzas,
+        activeStanzaIndex: editIndex !== null ? activeIndex : nextStanzas.length - 1,
+      });
+
+      setStanzaName("");
+      setStanzaContent("");
+    };
+
+    const handleEditStanza = (index: number) => {
+      const target = stanzas[index];
+      if (!target) return;
+      setStanzaName(target.name);
+      setStanzaContent(target.content);
+      setEditIndex(index);
+    };
+
+    const handleDeleteStanza = (index: number) => {
+      const nextStanzas = stanzas.filter((_, idx) => idx !== index);
+      let nextActive = activeIndex;
+      if (nextActive >= nextStanzas.length) {
+        nextActive = Math.max(0, nextStanzas.length - 1);
+      }
+      patchLayerData({
+        stanzas: nextStanzas,
+        activeStanzaIndex: nextActive,
+      });
+    };
+
     return (
-      <div>
-        <Label className="mb-1.5">Paroles (une ligne par vers)</Label>
-        <textarea
-          value={layer.content ?? ""}
-          onChange={(e) => patchLayerData({ content: e.target.value })}
-          rows={6}
-          placeholder="Grâce infinie, quel doux son…"
-          className={cn(FIELD, "resize-y leading-relaxed")}
-        />
+      <div className="flex flex-col gap-4">
+        {/* Form to add or edit a stanza */}
+        <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+          <Label className="text-white/70">{editIndex !== null ? "Modifier le couplet/refrain" : "Ajouter un couplet, refrain, pont..."}</Label>
+          <input
+            value={stanzaName}
+            onChange={(e) => setStanzaName(e.target.value)}
+            placeholder="Ex: Couplet 1, Refrain, Pont..."
+            className={FIELD}
+          />
+          <textarea
+            value={stanzaContent}
+            onChange={(e) => setStanzaContent(e.target.value)}
+            placeholder="Saisissez les paroles..."
+            rows={3}
+            className={cn(FIELD, "resize-y")}
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleAddOrUpdateStanza}
+              disabled={!stanzaName.trim() || !stanzaContent.trim()}
+              className="flex-1 rounded-lg bg-gold py-1.5 text-[11.5px] font-extrabold text-ink transition hover:brightness-105 disabled:opacity-50"
+            >
+              {editIndex !== null ? "Mettre à jour" : "Ajouter au chant"}
+            </button>
+            {editIndex !== null && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStanzaName("");
+                  setStanzaContent("");
+                  setEditIndex(null);
+                }}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-[11.5px] font-bold text-white/75 transition hover:bg-white/5"
+              >
+                Annuler
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Toggle Live Mode for Song (feature/CHR-39) */}
+        <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-white">Mode de diffusion direct (Antenne)</span>
+            <span className="text-[9.5px] text-white/40">
+              {layer.songLiveActive ? "Activé · Clic = Envoi immédiat en direct" : "Désactivé · Clic = Aperçu uniquement"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => patchLayerData({ songLiveActive: !layer.songLiveActive })}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
+              layer.songLiveActive
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-studio-onair hover:brightness-110 text-white"
+            )}
+          >
+            {layer.songLiveActive ? (
+              <span className="flex items-center gap-1">
+                <Square className="size-3 fill-current" />
+                STOPPER
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Zap className="size-3 fill-current" />
+                DÉMARRER
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* List of stanzas */}
+        <div>
+          <Label className="mb-1.5">Liste des couplets & refrains (cliquez pour projeter)</Label>
+          {stanzas.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-[11px] text-white/35">
+              Aucun couplet ou refrain. Créez-en un ci-dessus.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {stanzas.map((st, idx) => {
+                const isActive = idx === activeIndex;
+                return (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors",
+                      isActive
+                        ? "border-gold/45 bg-gold/[0.08]"
+                        : "border-white/5 bg-white/[0.02] hover:bg-white/5"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        patchLayerData({ activeStanzaIndex: idx });
+                        setTimeout(() => onPlayAnim?.(), 50);
+                      }}
+                      className="flex-1 text-left"
+                    >
+                      <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
+                        <span className={cn("size-2 rounded-full", isActive ? "bg-gold" : "bg-white/20")} />
+                        {st.name}
+                      </div>
+                      <div className="mt-0.5 truncate text-[10px] text-white/45">
+                        {st.content.replace(/\n/g, " / ")}
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleEditStanza(idx)}
+                        className="text-white/30 transition hover:text-white"
+                        title="Modifier"
+                      >
+                        <Sparkles className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStanza(idx)}
+                        className="text-white/30 transition hover:text-[#ff8a8a]"
+                        title="Supprimer"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Restore defaults button */}
+        <button
+          type="button"
+          onClick={onRestoreDefaults}
+          className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+        >
+          Réinitialiser aux paramètres par défaut
+        </button>
       </div>
     );
   }

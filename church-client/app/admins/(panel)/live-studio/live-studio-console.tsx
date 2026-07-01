@@ -1121,9 +1121,60 @@ export function LiveStudioConsole({
     [selectedLayerId, setSettings, setLayers],
   );
   const patchSelectedData = useCallback(
-    (patch: Partial<StudioLayer>) =>
-      setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, ...patch } : l))),
-    [selectedLayerId, setLayers],
+    (patch: Partial<StudioLayer>) => {
+      setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, ...patch } : l)));
+      
+      const targetLayer = layers.find((l) => l.id === selectedLayerId);
+      if (targetLayer && targetLayer.type === "song") {
+        const isCurrentlyLive = targetLayer.songLiveActive;
+        const willBeLive = patch.songLiveActive !== undefined ? patch.songLiveActive : isCurrentlyLive;
+        
+        if (willBeLive) {
+          setProgramBlack(false);
+          setProgramLayers((pls) => {
+            const hasSong = pls.some((l) => l.id === selectedLayerId);
+            const targetStanzaIndex = patch.activeStanzaIndex !== undefined ? patch.activeStanzaIndex : targetLayer.activeStanzaIndex;
+            
+            if (hasSong) {
+              return pls.map((l) =>
+                l.id === selectedLayerId
+                  ? { ...l, ...patch, activeStanzaIndex: targetStanzaIndex }
+                  : l
+              );
+            } else {
+              return [...pls, { ...targetLayer, ...patch, activeStanzaIndex: targetStanzaIndex }];
+            }
+          });
+          
+          const targetStanzaIndex = patch.activeStanzaIndex !== undefined ? patch.activeStanzaIndex : targetLayer.activeStanzaIndex;
+          const stanzaChanged = patch.activeStanzaIndex !== undefined && targetLayer.activeStanzaIndex !== patch.activeStanzaIndex;
+          const liveActivated = patch.songLiveActive === true && !isCurrentlyLive;
+          if (stanzaChanged || liveActivated) {
+            setProgramAnimNonce((n) => n + 1);
+          }
+          return;
+        }
+      }
+
+      if (programSceneId === currentSceneIdRef.current && !programBlack) {
+        setProgramLayers((pls) =>
+          pls.map((l) => {
+            if (l.id === selectedLayerId) {
+              if (l.type === "song" && !l.songLiveActive) {
+                const { activeStanzaIndex, ...rest } = patch;
+                return { ...l, ...rest };
+              }
+              if (patch.activeStanzaIndex !== undefined && l.activeStanzaIndex !== patch.activeStanzaIndex) {
+                setProgramAnimNonce((n) => n + 1);
+              }
+              return { ...l, ...patch };
+            }
+            return l;
+          })
+        );
+      }
+    },
+    [layers, selectedLayerId, programSceneId, programBlack, setLayers],
   );
   const restoreLayerDefaults = useCallback(() => {
     if (!selectedLayerId || !selectedLayer) return;
@@ -1172,6 +1223,28 @@ export function LiveStudioConsole({
       );
       setAnimNonce((n) => n + 1);
       setStatus({ type: "success", message: "Paramètres du texte réinitialisés !" });
+    } else if (selectedLayer.type === "song") {
+      setLayers((ls) =>
+        ls.map((l) =>
+          l.id === selectedLayerId
+            ? {
+                ...l,
+                style: {
+                  ...DEFAULT_STUDIO_SETTINGS,
+                  animation: "none",
+                  fontBodyFamily: "Plus Jakarta Sans",
+                  fontBodyWeight: "700",
+                },
+                content: l.content ?? "",
+                stanzas: l.stanzas ?? [],
+                activeStanzaIndex: l.activeStanzaIndex ?? 0,
+                songLiveActive: l.songLiveActive ?? false,
+              }
+            : l,
+        ),
+      );
+      setAnimNonce((n) => n + 1);
+      setStatus({ type: "success", message: "Paramètres du chant réinitialisés !" });
     }
   }, [selectedLayerId, selectedLayer, setLayers]);
   const onImageFile = useCallback(

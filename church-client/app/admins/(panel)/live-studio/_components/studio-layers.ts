@@ -37,6 +37,10 @@ export type StudioLayer = {
   feedUrl?: string;
   // audio
   device?: string;
+  // song stanzas (feature/CHR-39)
+  stanzas?: Array<{ name: string; content: string }>;
+  activeStanzaIndex?: number;
+  songLiveActive?: boolean;
 };
 
 export type StudioScene = {
@@ -93,9 +97,8 @@ export function layerTabs(type: StudioLayerType): InspTab[] {
   switch (type) {
     case "bible":
     case "text":
-      return ["contenu", "layout", "typo", "container", "anim", "presets"];
     case "song":
-      return ["contenu", "layout", "typo", "anim", "presets"];
+      return ["contenu", "layout", "typo", "container", "anim", "presets"];
     case "image":
       return ["contenu", "layout", "container", "anim", "presets"];
     case "camera":
@@ -124,6 +127,14 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       customHeight: 55,
     };
   }
+  if (type === "song") {
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
+      fontBodyFamily: "Plus Jakarta Sans",
+      fontBodyWeight: "700",
+    };
+  }
   return { ...DEFAULT_STUDIO_SETTINGS };
 }
 
@@ -144,6 +155,12 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "song") {
     base.content = "Première ligne du chant\nDeuxième ligne";
+    base.stanzas = [
+      { name: "Couplet 1", content: "Première ligne du chant\nDeuxième ligne" },
+      { name: "Refrain", content: "Ceci est le refrain\nChanté en chœur" }
+    ];
+    base.activeStanzaIndex = 0;
+    base.songLiveActive = false;
     base.style = { ...base.style, fontBodyStyle: "italic", fontBodySize: 34 };
   }
   if (type === "image") {
