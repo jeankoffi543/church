@@ -100,10 +100,24 @@ export const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties 
       return { left: "6%", top: "72%", width: "40%", height: "20%" };
     case "lower_third_right":
       return { right: "6%", top: "72%", width: "40%", height: "20%" };
+    case "centered_top":
+      return { left: "10%", top: "8%", width: "80%", height: "20%" };
     case "ticker":
       return { left: "0%", top: "86%", width: "100%", height: "14%" };
+    case "banner_top":
+      return { left: "0%", top: "0%", width: "100%", height: "14%" };
     case "full_screen_cinema":
       return { left: "10%", top: "10%", width: "80%", height: "80%" };
+    case "full_screen":
+      return { left: "0%", top: "0%", width: "100%", height: "100%" };
+    case "pip_top_left":
+      return { left: "4%", top: "5%", width: "34%", height: "34%" };
+    case "pip_top_right":
+      return { right: "4%", top: "5%", width: "34%", height: "34%" };
+    case "pip_bottom_left":
+      return { left: "4%", top: "61%", width: "34%", height: "34%" };
+    case "pip_bottom_right":
+      return { right: "4%", top: "61%", width: "34%", height: "34%" };
     case "centered_bottom":
     default:
       return { left: "10%", top: "72%", width: "80%", height: "20%" };

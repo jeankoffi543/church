@@ -1,12 +1,22 @@
 "use client";
 
 import type React from "react";
+import { useEffect, useRef } from "react";
 import { motion, type Variants, type Easing } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getContainerStyle, getElementStyle, getOverlayBoxStyle } from "./studio-style";
 import { isBackgroundLayer, imageHatch, type StudioLayer } from "./studio-layers";
+import { resolveEmbed } from "./embed";
+import {
+  attachMediaMeter,
+  attachYouTube,
+  registerAudioProbe,
+  youtubeId,
+  type MediaMeter,
+  type YouTubeController,
+} from "./studio-audio";
 import { MONO } from "./studio-tokens";
 
 const EASING_MAP: Record<string, Easing> = {
@@ -189,6 +199,7 @@ export function CompositeLayer({
   z,
   selected,
   draggable = false,
+  audioOwner = false,
   onPointerDown,
   onResize,
   onSelect,
@@ -198,6 +209,9 @@ export function CompositeLayer({
   z: number;
   selected: boolean;
   draggable?: boolean;
+  /** When true, this instance owns the source's audio (analyser / player). Only
+   *  one monitor should own it to avoid double audio. */
+  audioOwner?: boolean;
   onPointerDown?: (e: React.PointerEvent, id: string) => void;
   onResize?: (e: React.PointerEvent, id: string, corner: ResizeCorner) => void;
   onSelect?: (id: string) => void;
@@ -293,14 +307,39 @@ export function CompositeLayer({
     );
   }
 
-  // Camera / video / external embed (background feed)
-  if (layer.type === "camera" || layer.type === "video" || layer.type === "embed") {
-    const meta =
-      layer.type === "camera"
-        ? { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" }
-        : layer.type === "video"
-          ? { label: "FLUX VLC · HLS", color: "rgba(240,168,104,.7)", hatch: "rgba(240,168,104,.05)", hatch2: "rgba(240,168,104,.1)" }
-          : { label: "DIRECT EXTERNE · YOUTUBE / FACEBOOK", color: "rgba(255,107,107,.8)", hatch: "rgba(255,107,107,.05)", hatch2: "rgba(255,107,107,.1)" };
+  // External live embed (YouTube / Facebook / Vimeo / HLS) — real video preview
+  if (layer.type === "embed") {
+    return (
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        data-layer
+        {...dragProps}
+        className={cn(
+          "absolute overflow-hidden rounded-xl bg-black",
+          movable && "cursor-move",
+          ring,
+        )}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+      >
+        {handles}
+        <EmbedMedia layer={layer} audioOwner={audioOwner} />
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-studio-onair/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+          DIRECT EXTERNE
+        </span>
+      </motion.div>
+    );
+  }
+
+  // Camera / video feed placeholder (background)
+  if (layer.type === "camera" || layer.type === "video") {
+    const isCam = layer.type === "camera";
+    const meta = isCam
+      ? { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" }
+      : { label: "FLUX VLC · HLS", color: "rgba(240,168,104,.7)", hatch: "rgba(240,168,104,.05)", hatch2: "rgba(240,168,104,.1)" };
     return (
       <motion.div
         key={layer.id}
@@ -463,5 +502,112 @@ export function CompositeLayer({
         </>
       )}
     </motion.div>
+  );
+}
+
+/**
+ * The playable media of a "Direct externe" source. When this instance is the
+ * audio owner, it captures/controls the source's sound and publishes a meter
+ * probe: real Web Audio RMS for owned `<video>` media, or YouTube player-state
+ * sync for YouTube embeds. Non-owner instances render muted (no double audio),
+ * and non-YouTube iframes expose no probe (audio not capturable cross-origin).
+ */
+function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boolean }) {
+  const { type, src } = resolveEmbed(layer.feedUrl || "");
+  const ytId = type === "iframe" ? youtubeId(layer.feedUrl || "") : null;
+  const isYouTube = !!ytId;
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const ytHostRef = useRef<HTMLDivElement>(null);
+  const meterRef = useRef<MediaMeter | null>(null);
+  const ytRef = useRef<YouTubeController | null>(null);
+
+  const level = layer.audioLevel ?? 80;
+  const muted = layer.audioMuted ?? false;
+
+  // Owned <video> (direct / HLS) → real Web Audio analyser + gain control.
+  useEffect(() => {
+    if (!audioOwner) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const meter = attachMediaMeter(el);
+    if (!meter) return;
+    meterRef.current = meter;
+    const unregister = registerAudioProbe(layer.id, meter);
+    void el.play?.().catch(() => {});
+    return () => {
+      unregister();
+      meter.dispose();
+      meterRef.current = null;
+    };
+  }, [audioOwner, layer.id, src, type]);
+
+  // YouTube → player-state metering + volume control via the IFrame API.
+  useEffect(() => {
+    if (!audioOwner || !isYouTube || !ytId) return;
+    const host = ytHostRef.current;
+    if (!host) return;
+    const mount = document.createElement("div");
+    mount.style.cssText = "position:absolute;inset:0;";
+    host.appendChild(mount);
+    const yt = attachYouTube(mount, ytId);
+    ytRef.current = yt;
+    const unregister = registerAudioProbe(layer.id, yt);
+    return () => {
+      unregister();
+      yt.dispose();
+      ytRef.current = null;
+      host.innerHTML = "";
+    };
+  }, [audioOwner, isYouTube, ytId, layer.id]);
+
+  // Apply the mixer fader / mute to whichever audio path is live.
+  useEffect(() => {
+    meterRef.current?.setGain(level, muted);
+    ytRef.current?.setVolume(level, muted);
+  }, [level, muted]);
+
+  if (!src) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div className={cn("text-[12px] font-semibold tracking-[2px] text-[#ff8a8a]", MONO)}>
+          DIRECT EXTERNE
+        </div>
+        <div className="text-[10px] text-white/35">Collez un lien YouTube / Facebook…</div>
+      </div>
+    );
+  }
+
+  if (type === "video") {
+    return (
+      <video
+        key={src}
+        ref={videoRef}
+        src={src}
+        className="pointer-events-none absolute inset-0 size-full object-cover"
+        autoPlay
+        muted={!audioOwner}
+        loop
+        playsInline
+      />
+    );
+  }
+
+  // YouTube owner → the IFrame API builds the player inside this host.
+  if (isYouTube && audioOwner) {
+    return <div ref={ytHostRef} className="absolute inset-0" />;
+  }
+
+  // Non-owner YouTube (muted mirror) or another platform iframe (no capture).
+  const iframeSrc = isYouTube
+    ? `${src}${src.includes("?") ? "&" : "?"}autoplay=1&mute=1&controls=0&modestbranding=1&playsinline=1`
+    : src;
+  return (
+    <iframe
+      src={iframeSrc}
+      title={layer.name}
+      className="pointer-events-none absolute inset-0 size-full border-0"
+      allow="autoplay; encrypted-media; picture-in-picture"
+    />
   );
 }

@@ -33,6 +33,7 @@ import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
   createLayer,
+  hasAudio,
   type StudioLayer,
   type StudioLayerType,
   type StudioScene,
@@ -277,7 +278,7 @@ export function LiveStudioConsole({
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [animNonce, setAnimNonce] = useState(0);
-  const playAnim = useCallback(() => setAnimNonce((n) => n + 1), []);
+  const playAnim = () => setAnimNonce((n) => n + 1);
 
   // Re-hydrated presets state
   const [presets, setPresets] = useState<Array<{ name: string; settings: StudioSettings }>>(() => {
@@ -821,7 +822,6 @@ export function LiveStudioConsole({
     return () => clearTimeout(t);
   }, [settings]);
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const persistPrepared = useCallback(async (next: ScriptureVerse[]) => {
     setPrepared(next);
     try {
@@ -886,8 +886,17 @@ export function LiveStudioConsole({
     setStatus(null);
     try {
       const targetStatus = overrideStatus !== undefined ? overrideStatus : liveStreamActive;
+      // Going live broadcasts a visible "Direct externe" source's link if present,
+      // otherwise the link configured in the settings.
+      const embedFromSource =
+        overrideStatus === true
+          ? scenes.flatMap((s) => s.layers).find((l) => l.type === "embed" && l.visible && l.feedUrl)
+              ?.feedUrl
+          : undefined;
+      const effectiveEmbedUrl = embedFromSource ?? liveEmbedUrl;
+      if (effectiveEmbedUrl !== liveEmbedUrl) setLiveEmbedUrl(effectiveEmbedUrl);
       const payload = [
-        { key: "live_embed_url", value: liveEmbedUrl, group: "live" },
+        { key: "live_embed_url", value: effectiveEmbedUrl, group: "live" },
         { key: "live_status", value: targetStatus, group: "live" },
         { key: "live_chat_enabled", value: liveChatEnabled, group: "live" },
         { key: "live_title", value: liveTitle, group: "live" },
@@ -1059,6 +1068,8 @@ export function LiveStudioConsole({
   useEffect(() => {
     currentSceneIdRef.current = currentSceneId;
   }, [currentSceneId]);
+  /* eslint-disable react-hooks/preserve-manual-memoization -- setLayers edits the
+     current scene via a ref, so the compiler can't preserve these memoizations. */
   const setLayers = useCallback((updater: (ls: StudioLayer[]) => StudioLayer[]) => {
     setScenes((scs) =>
       scs.map((s) => (s.id === currentSceneIdRef.current ? { ...s, layers: updater(s.layers) } : s)),
@@ -1202,6 +1213,17 @@ export function LiveStudioConsole({
     },
     [selectedLayerId, patchSelectedData]
   );
+
+  // ── Audio mixer ─────────────────────────────────────────────────────────
+  // Channels are the current scene's audio-bearing sources; the mixer writes
+  // volume/mute/gain/pan straight back onto the layer so it persists.
+  const mixerLayers = layers.filter(hasAudio);
+  const setLayerAudio = useCallback(
+    (id: string, patch: Partial<StudioLayer>) =>
+      setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l))),
+    [setLayers],
+  );
+  /* eslint-enable react-hooks/preserve-manual-memoization */
 
   const addLayer = (type: StudioLayerType) => {
     const count = layers.filter((l) => l.type === type).length;
@@ -1463,22 +1485,6 @@ export function LiveStudioConsole({
     }
   };
 
-  // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
-  // persisting it as the public embed + flipping the live status on.
-  const onBroadcastEmbed = async (url: string) => {
-    setLiveEmbedUrl(url);
-    setLiveStreamActive(true);
-    try {
-      await updateAdminSettings([
-        { key: "live_embed_url", value: url, group: "live" },
-        { key: "live_status", value: true, group: "live" },
-      ]);
-      setStatus({ type: "success", message: "Direct externe diffusé à l'antenne." });
-    } catch {
-      setStatus({ type: "error", message: "Diffusion du direct externe impossible." });
-    }
-  };
-
   const bibleInspectorProps = {
     query,
     onQueryChange: setQuery,
@@ -1596,7 +1602,7 @@ export function LiveStudioConsole({
           onReorder={reorderLayer}
           onRequestDelete={setPendingDeleteId}
         />
-        <MixerDock />
+        <MixerDock channels={mixerLayers} onChange={setLayerAudio} />
         <InspectorDock
           selectedLayer={selectedLayer}
           effectiveStyle={effectiveStyle}
@@ -1605,7 +1611,6 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
-          onBroadcastEmbed={onBroadcastEmbed}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
           bible={bibleInspectorProps}

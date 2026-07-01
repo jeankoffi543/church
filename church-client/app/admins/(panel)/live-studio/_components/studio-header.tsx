@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings2, Radio, TriangleAlert } from "lucide-react";
+import { Settings2, Radio, TriangleAlert, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { MONO } from "./studio-tokens";
@@ -62,27 +62,6 @@ export function StudioHeader({
       )}
 
       <div className="ml-auto flex items-center gap-2.5">
-        <div className="flex rounded-[10px] border border-white/8 bg-studio-rail p-[3px]">
-          {(["preview", "live"] as const).map((m) => {
-            const active = mode === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                onClick={() => onModeChange(m)}
-                className={cn(
-                  "rounded-lg px-3.5 py-[7px] text-[11px] font-extrabold tracking-[0.6px] transition-colors",
-                  active && m === "preview" && "bg-white/10 text-white",
-                  active && m === "live" && "bg-studio-onair text-white",
-                  !active && "text-white/55 hover:text-white",
-                )}
-              >
-                {m === "preview" ? "PREVIEW" : "LIVE"}
-              </button>
-            );
-          })}
-        </div>
-
         {mode === "live" ? (
           <span className="flex animate-onair-pulse items-center gap-1.5 rounded-[10px] border border-studio-onair/32 bg-studio-onair/15 px-3 py-[7px] text-[11px] font-extrabold tracking-[1px] text-[#ff9a9a]">
             <span className="size-2 animate-studio-blink rounded-full bg-studio-onair" />
@@ -105,6 +84,26 @@ export function StudioHeader({
             <span className="size-[9px] animate-rec-blink rounded-full bg-studio-onair" />
             REC {recLabel}
           </span>
+        )}
+
+        {mode === "live" ? (
+          <button
+            type="button"
+            onClick={() => onModeChange("preview")}
+            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-studio-onair/40 bg-studio-onair/15 px-4 py-[7px] text-[11px] font-extrabold tracking-[0.6px] text-[#ff9a9a] transition hover:bg-studio-onair/25"
+          >
+            <Square className="size-3 fill-current" />
+            Arrêter le direct
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onModeChange("live")}
+            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-emerald-400/40 bg-emerald-500/15 px-4 py-[7px] text-[11px] font-extrabold tracking-[0.6px] text-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.18)] transition hover:bg-emerald-500/25"
+          >
+            <Radio className="size-3.5" />
+            Passer en direct
+          </button>
         )}
       </div>
     </header>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -81,7 +81,6 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   bible,
   presets,
   newPresetName,
@@ -98,7 +97,6 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
@@ -168,7 +166,6 @@ export function InspectorDock({
                 layer={selectedLayer}
                 patchLayerData={patchLayerData}
                 onImageFile={onImageFile}
-                onBroadcastEmbed={onBroadcastEmbed}
                 onRestoreDefaults={onRestoreDefaults}
                 bible={bible}
               />
@@ -215,14 +212,12 @@ function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   onRestoreDefaults,
   bible,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
 }) {
@@ -255,17 +250,8 @@ function ContentPanel({
             className={MONO_FIELD}
           />
         </div>
-        <button
-          type="button"
-          disabled={!layer.feedUrl}
-          onClick={() => layer.feedUrl && onBroadcastEmbed(layer.feedUrl)}
-          className="flex items-center justify-center gap-2 rounded-lg bg-studio-onair py-2.5 text-[12px] font-extrabold text-white transition hover:brightness-110 disabled:opacity-50"
-        >
-          <Radio className="size-3.5" /> Diffuser ce direct à l&apos;antenne
-        </button>
         <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          Le lien est intégré sur la page publique <span className="text-white">/live</span> et le
-          direct passe automatiquement à l&apos;antenne.
+          L&apos;aperçu de la vidéo s&apos;affiche dans les moniteurs.
         </div>
       </>
     );

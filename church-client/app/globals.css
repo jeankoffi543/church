@@ -326,3 +326,77 @@
   background: #e2b85f;
   cursor: pointer;
 }
+
+/* ── MFM Live Studio — overlay entrance animations (applied inline) ── */
+@keyframes studioFadeSlide {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes studioScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes studioSlideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes studioSlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes studioClipReveal {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes studioNeonSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: brightness(2.2) saturate(1.6);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: brightness(1) saturate(1);
+  }
+}
+@keyframes studioTypewriter {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}

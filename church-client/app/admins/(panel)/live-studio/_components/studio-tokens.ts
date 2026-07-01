@@ -36,10 +36,17 @@ export const PREDEFINED_POSITIONS: {
   label: string;
 }[] = [
   { value: "centered_bottom", label: "Centré bas" },
+  { value: "centered_top", label: "Centré haut" },
   { value: "lower_third_left", label: "Tiers bas gauche" },
   { value: "lower_third_right", label: "Tiers bas droite" },
-  { value: "ticker", label: "Bandeau ticker" },
+  { value: "ticker", label: "Bandeau bas (ticker)" },
+  { value: "banner_top", label: "Bandeau haut" },
   { value: "full_screen_cinema", label: "Plein écran cinéma" },
+  { value: "full_screen", label: "Plein écran (bord à bord)" },
+  { value: "pip_top_left", label: "Incrustation haut gauche" },
+  { value: "pip_top_right", label: "Incrustation haut droite" },
+  { value: "pip_bottom_left", label: "Incrustation bas gauche" },
+  { value: "pip_bottom_right", label: "Incrustation bas droite" },
 ];
 
 export const CONTAINER_SHAPES: {
