@@ -17,7 +17,7 @@ import {
   type MediaMeter,
   type YouTubeController,
 } from "./studio-audio";
-import { registerVideoController, type VideoController } from "./studio-video";
+import { getVideoController, registerVideoController, type VideoController } from "./studio-video";
 import { MONO } from "./studio-tokens";
 
 const EASING_MAP: Record<string, Easing> = {
@@ -713,6 +713,30 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     window.addEventListener("pointerdown", onGesture, { once: true });
     return () => window.removeEventListener("pointerdown", onGesture);
   }, [audioOwner, primed]);
+
+  // Program (non-owner) = synchronised follower of the Preview: same play/pause
+  // and position, so the transport controls (which drive the Preview) are
+  // mirrored on air. Falls back to independent playback if the Preview isn't up.
+  useEffect(() => {
+    if (audioOwner || !src) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const t = setInterval(() => {
+      const master = getVideoController(layer.id);
+      if (!master) return;
+      const s = master.getState();
+      if (!s.ready) return;
+      if (Math.abs(el.currentTime - s.currentTime) > 0.35) {
+        el.currentTime = s.currentTime;
+      }
+      if (s.paused && !el.paused) {
+        el.pause();
+      } else if (!s.paused && el.paused) {
+        void el.play().catch(() => {});
+      }
+    }, 200);
+    return () => clearInterval(t);
+  }, [audioOwner, layer.id, src]);
 
   // Apply the mixer fader / mute to the captured signal.
   useEffect(() => {
