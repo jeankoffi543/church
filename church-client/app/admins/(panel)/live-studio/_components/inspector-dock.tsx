@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, RotateCcw } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -81,13 +81,14 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   bible,
   presets,
   newPresetName,
   onNewPresetNameChange,
   onSavePreset,
   onDeletePreset,
+  onResetStyle,
+  onPlayAnim,
 }: {
   selectedLayer: StudioLayer | null;
   effectiveStyle: StudioSettings;
@@ -96,13 +97,14 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
   onNewPresetNameChange: (v: string) => void;
-  onSavePreset: () => void;
+  onSavePreset: (style: StudioSettings) => void;
   onDeletePreset: (name: string) => void;
+  onResetStyle: () => void;
+  onPlayAnim: () => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -164,7 +166,6 @@ export function InspectorDock({
                 layer={selectedLayer}
                 patchLayerData={patchLayerData}
                 onImageFile={onImageFile}
-                onBroadcastEmbed={onBroadcastEmbed}
                 bible={bible}
               />
             )}
@@ -184,7 +185,11 @@ export function InspectorDock({
               <ContainerPanel settings={effectiveStyle} setStudioField={patchStyleField} />
             )}
             {activeTab === "anim" && (
-              <AnimPanel settings={effectiveStyle} setStudioField={patchStyleField} />
+              <AnimPanel
+                settings={effectiveStyle}
+                setStudioField={patchStyleField}
+                onPlayAnim={onPlayAnim}
+              />
             )}
             {activeTab === "presets" && (
               <PresetsPanel
@@ -195,6 +200,7 @@ export function InspectorDock({
                 onNewPresetNameChange={onNewPresetNameChange}
                 onSavePreset={onSavePreset}
                 onDeletePreset={onDeletePreset}
+                onResetStyle={onResetStyle}
               />
             )}
           </ScrollArea>
@@ -210,13 +216,11 @@ function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
-  onBroadcastEmbed,
   bible,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
-  onBroadcastEmbed: (url: string) => void;
   bible: InspectorBible;
 }) {
   if (layer.type === "bible") return <BibleContent bible={bible} />;
@@ -248,17 +252,8 @@ function ContentPanel({
             className={MONO_FIELD}
           />
         </div>
-        <button
-          type="button"
-          disabled={!layer.feedUrl}
-          onClick={() => layer.feedUrl && onBroadcastEmbed(layer.feedUrl)}
-          className="flex items-center justify-center gap-2 rounded-lg bg-studio-onair py-2.5 text-[12px] font-extrabold text-white transition hover:brightness-110 disabled:opacity-50"
-        >
-          <Radio className="size-3.5" /> Diffuser ce direct à l&apos;antenne
-        </button>
         <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          Le lien est intégré sur la page publique <span className="text-white">/live</span> et le
-          direct passe automatiquement à l&apos;antenne.
+          L&apos;aperçu de la vidéo s&apos;affiche dans les moniteurs.
         </div>
       </>
     );
@@ -918,9 +913,11 @@ function ContainerPanel({
 function AnimPanel({
   settings,
   setStudioField,
+  onPlayAnim,
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
+  onPlayAnim: () => void;
 }) {
   const durLabel = settings.duration === 0 ? "Manuel" : `${settings.duration}s`;
   return (
@@ -977,6 +974,15 @@ function AnimPanel({
         />
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
+
+      <button
+        type="button"
+        onClick={onPlayAnim}
+        className="flex items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2.5 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
+      >
+        <Play className="size-3.5 fill-current" />
+        Aperçu de l&apos;animation
+      </button>
     </>
   );
 }
@@ -984,25 +990,28 @@ function AnimPanel({
 /* ─────────────────────────── Presets ─────────────────────────── */
 
 function PresetsPanel({
+  effectiveStyle,
   setSelectedStyle,
   presets,
   newPresetName,
   onNewPresetNameChange,
   onSavePreset,
   onDeletePreset,
+  onResetStyle,
 }: {
   effectiveStyle: StudioSettings;
   setSelectedStyle: (s: StudioSettings) => void;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
   onNewPresetNameChange: (v: string) => void;
-  onSavePreset: () => void;
+  onSavePreset: (style: StudioSettings) => void;
   onDeletePreset: (name: string) => void;
+  onResetStyle: () => void;
 }) {
   return (
     <>
       <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
-        <Label>Enregistrer le style actuel</Label>
+        <Label>Enregistrer le style de la source</Label>
         <input
           value={newPresetName}
           onChange={(e) => onNewPresetNameChange(e.target.value)}
@@ -1011,10 +1020,18 @@ function PresetsPanel({
         />
         <button
           type="button"
-          onClick={onSavePreset}
+          onClick={() => onSavePreset(effectiveStyle)}
           className="w-full rounded-lg bg-gold py-2 text-[12px] font-extrabold text-ink transition hover:brightness-105"
         >
           Sauvegarder le preset
+        </button>
+        <button
+          type="button"
+          onClick={onResetStyle}
+          className="flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-white/[0.03] py-2 text-[11.5px] font-bold text-white/65 transition hover:border-studio-onair/40 hover:text-studio-onair"
+        >
+          <RotateCcw className="size-3.5" />
+          Réinitialiser aux valeurs par défaut
         </button>
       </div>
 

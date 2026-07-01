@@ -1,6 +1,25 @@
 import type React from "react";
 
-import type { StudioSettings } from "@/lib/studio";
+import type { StudioAnimation, StudioSettings } from "@/lib/studio";
+
+/** Map each appearance animation to a CSS @keyframes name (see globals.css). */
+const ANIMATION_KEYFRAME: Record<StudioAnimation, string> = {
+  fade_slide: "studioFadeSlide",
+  scale: "studioScaleIn",
+  slide_left: "studioSlideLeft",
+  slide_right: "studioSlideRight",
+  clip_reveal: "studioClipReveal",
+  neon_slide: "studioNeonSlide",
+  typewriter: "studioTypewriter",
+};
+
+/** Inline `animation` shorthand that plays the layer's entrance animation. */
+export function getAnimationStyle(s: StudioSettings): React.CSSProperties {
+  const name = ANIMATION_KEYFRAME[s.animation] ?? "studioFadeSlide";
+  const easing =
+    s.animEasing === "bounce" ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)" : s.animEasing;
+  return { animation: `${name} ${Math.max(80, s.animDuration)}ms ${easing} both` };
+}
 
 /**
  * Maps `StudioSettings` to the inline CSS used to render the on-screen verse
@@ -100,10 +119,24 @@ export const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties 
       return { left: "6%", top: "72%", width: "40%", height: "20%" };
     case "lower_third_right":
       return { right: "6%", top: "72%", width: "40%", height: "20%" };
+    case "centered_top":
+      return { left: "10%", top: "8%", width: "80%", height: "20%" };
     case "ticker":
       return { left: "0%", top: "86%", width: "100%", height: "14%" };
+    case "banner_top":
+      return { left: "0%", top: "0%", width: "100%", height: "14%" };
     case "full_screen_cinema":
       return { left: "10%", top: "10%", width: "80%", height: "80%" };
+    case "full_screen":
+      return { left: "0%", top: "0%", width: "100%", height: "100%" };
+    case "pip_top_left":
+      return { left: "4%", top: "5%", width: "34%", height: "34%" };
+    case "pip_top_right":
+      return { right: "4%", top: "5%", width: "34%", height: "34%" };
+    case "pip_bottom_left":
+      return { left: "4%", top: "61%", width: "34%", height: "34%" };
+    case "pip_bottom_right":
+      return { right: "4%", top: "61%", width: "34%", height: "34%" };
     case "centered_bottom":
     default:
       return { left: "10%", top: "72%", width: "80%", height: "20%" };

@@ -29,6 +29,7 @@ export function StageMonitor({
   onLayerSelect,
   onFullscreen,
   black = false,
+  animNonce = 0,
 }: {
   tone: "preview" | "program";
   layers: StudioLayer[];
@@ -43,6 +44,8 @@ export function StageMonitor({
   onLayerSelect?: (id: string) => void;
   onFullscreen?: () => void;
   black?: boolean;
+  /** Bumping this replays the entrance animations (remounts the layers). */
+  animNonce?: number;
 }) {
   const isProgram = tone === "program";
   const visible = layers.filter((l) => l.visible && isCompositable(l));
@@ -76,12 +79,13 @@ export function StageMonitor({
           const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
           return (
             <CompositeLayer
-              key={layer.id}
+              key={`${layer.id}-${animNonce}`}
               layer={effective}
               verse={layer.type === "bible" ? bibleVerse : undefined}
               z={z}
               selected={!isProgram && layer.id === selectedLayerId}
               draggable={draggable}
+              audioOwner={!isProgram}
               onPointerDown={onLayerPointerDown}
               onResize={onLayerResize}
               onSelect={onLayerSelect}

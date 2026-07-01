@@ -35,9 +35,31 @@ export type StudioLayer = {
   fill?: "cover" | "frame";
   // camera / video / embed (external YouTube/Facebook/HLS link)
   feedUrl?: string;
-  // audio
+  // audio input (audio source device)
   device?: string;
+  // audio mixer config (embed / video / audio sources)
+  audioLevel?: number; // 0-100 fader
+  audioMuted?: boolean;
+  audioGain?: number; // -20..+20 dB
+  audioBalance?: number; // -100 (L) .. +100 (R)
 };
+
+/** Sources that carry an audio channel shown in the mixer. */
+export function hasAudio(l: StudioLayer): boolean {
+  return l.type === "embed" || l.type === "video" || l.type === "audio";
+}
+
+/**
+ * Whether an audio channel is actually producing sound right now: the source
+ * must be visible (not masked), not muted, and have a real input — a feed link
+ * for embed/video, a device for audio. Drives the animated VU meter so it only
+ * moves when the source is genuinely on.
+ */
+export function isAudioActive(l: StudioLayer): boolean {
+  if (!hasAudio(l) || !l.visible || l.audioMuted) return false;
+  if (l.type === "audio") return !!l.device?.trim();
+  return !!l.feedUrl?.trim();
+}
 
 export type StudioScene = {
   id: string;
@@ -76,12 +98,7 @@ export const ADD_TYPES: StudioLayerType[] = [
 
 /** Background layers fill the whole frame and sit behind overlays. */
 export function isBackgroundLayer(l: StudioLayer): boolean {
-  return (
-    l.type === "camera" ||
-    l.type === "video" ||
-    l.type === "embed" ||
-    (l.type === "image" && l.fill !== "frame")
-  );
+  return l.type === "camera" || l.type === "video" || (l.type === "image" && l.fill !== "frame");
 }
 
 /** Audio / group have no visual output — they never render on a monitor. */
@@ -123,6 +140,19 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       customHeight: 55,
     };
   }
+  if (type === "embed") {
+    // A movable / resizable video window (PiP-style); set it full-frame via the
+    // "Plein écran" layout preset.
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      containerShape: "transparent",
+      positionMode: "custom",
+      customX: 8,
+      customY: 8,
+      customWidth: 84,
+      customHeight: 78,
+    };
+  }
   return { ...DEFAULT_STUDIO_SETTINGS };
 }
 
@@ -157,6 +187,12 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "audio") {
     base.device = "Micro Prédicateur";
+  }
+  if (hasAudio(base)) {
+    base.audioLevel = 80;
+    base.audioMuted = false;
+    base.audioGain = 0;
+    base.audioBalance = 0;
   }
   return base;
 }

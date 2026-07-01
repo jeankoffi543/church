@@ -82,7 +82,19 @@ export type StudioSettings = {
 
   // Positionnement Libre
   positionMode: "predefined" | "custom";
-  predefinedPosition: "lower_third_left" | "lower_third_right" | "centered_bottom" | "ticker" | "full_screen_cinema";
+  predefinedPosition:
+    | "lower_third_left"
+    | "lower_third_right"
+    | "centered_bottom"
+    | "centered_top"
+    | "ticker"
+    | "banner_top"
+    | "full_screen_cinema"
+    | "full_screen"
+    | "pip_top_left"
+    | "pip_top_right"
+    | "pip_bottom_left"
+    | "pip_bottom_right";
   customX: number; // %
   customY: number; // %
   customWidth: number; // %

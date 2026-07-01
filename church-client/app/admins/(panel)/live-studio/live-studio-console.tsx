@@ -33,6 +33,8 @@ import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
   createLayer,
+  defaultLayerStyle,
+  hasAudio,
   type StudioLayer,
   type StudioLayerType,
   type StudioScene,
@@ -331,12 +333,12 @@ export function LiveStudioConsole({
     };
   }, []);
 
-  const handleSavePreset = async () => {
+  const handleSavePreset = async (style: StudioSettings) => {
     const name = newPresetName.trim();
     if (!name) return;
     const updated = [
       ...presets.filter((p) => p.name !== name),
-      { name, settings: { ...settings } }
+      { name, settings: { ...style } }
     ];
     setPresets(updated);
     localStorage.setItem("studio_presets", JSON.stringify(updated));
@@ -883,8 +885,17 @@ export function LiveStudioConsole({
     setStatus(null);
     try {
       const targetStatus = overrideStatus !== undefined ? overrideStatus : liveStreamActive;
+      // Going live broadcasts a visible "Direct externe" source's link if present,
+      // otherwise the link configured in the settings.
+      const embedFromSource =
+        overrideStatus === true
+          ? scenes.flatMap((s) => s.layers).find((l) => l.type === "embed" && l.visible && l.feedUrl)
+              ?.feedUrl
+          : undefined;
+      const effectiveEmbedUrl = embedFromSource ?? liveEmbedUrl;
+      if (effectiveEmbedUrl !== liveEmbedUrl) setLiveEmbedUrl(effectiveEmbedUrl);
       const payload = [
-        { key: "live_embed_url", value: liveEmbedUrl, group: "live" },
+        { key: "live_embed_url", value: effectiveEmbedUrl, group: "live" },
         { key: "live_status", value: targetStatus, group: "live" },
         { key: "live_chat_enabled", value: liveChatEnabled, group: "live" },
         { key: "live_title", value: liveTitle, group: "live" },
@@ -1045,6 +1056,9 @@ export function LiveStudioConsole({
   const [programBlack, setProgramBlack] = useState<boolean>(
     () => Boolean(liveSettings.live_program_black),
   );
+  // Bumped to replay overlay entrance animations in the Preview.
+  const [animNonce, setAnimNonce] = useState(0);
+  const playAnim = () => setAnimNonce((n) => n + 1);
 
   const currentScene = scenes.find((s) => s.id === currentSceneId) ?? scenes[0];
   const layers = currentScene?.layers ?? [];
@@ -1056,6 +1070,7 @@ export function LiveStudioConsole({
   useEffect(() => {
     currentSceneIdRef.current = currentSceneId;
   }, [currentSceneId]);
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const setLayers = useCallback((updater: (ls: StudioLayer[]) => StudioLayer[]) => {
     setScenes((scs) =>
       scs.map((s) => (s.id === currentSceneIdRef.current ? { ...s, layers: updater(s.layers) } : s)),
@@ -1099,6 +1114,21 @@ export function LiveStudioConsole({
   const onImageFile = useCallback(
     (file: File) => patchSelectedData({ imageUrl: URL.createObjectURL(file) }),
     [patchSelectedData],
+  );
+  // Reset the selected source's style to the type's factory defaults.
+  const resetSelectedStyle = () => {
+    if (!selectedLayer) return;
+    setSelectedStyle(defaultLayerStyle(selectedLayer.type));
+  };
+
+  // ── Audio mixer ─────────────────────────────────────────────────────────
+  // Channels are the current scene's audio-bearing sources; the mixer writes
+  // volume/mute/gain/pan straight back onto the layer so it persists.
+  const mixerLayers = layers.filter(hasAudio);
+  const setLayerAudio = useCallback(
+    (id: string, patch: Partial<StudioLayer>) =>
+      setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l))),
+    [setLayers],
   );
 
   const addLayer = (type: StudioLayerType) => {
@@ -1348,21 +1378,6 @@ export function LiveStudioConsole({
     if (goingBlack && live) void masquer();
   };
 
-  // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
-  // persisting it as the public embed + flipping the live status on.
-  const onBroadcastEmbed = async (url: string) => {
-    setLiveEmbedUrl(url);
-    setLiveStreamActive(true);
-    try {
-      await updateAdminSettings([
-        { key: "live_embed_url", value: url, group: "live" },
-        { key: "live_status", value: true, group: "live" },
-      ]);
-      setStatus({ type: "success", message: "Direct externe diffusé à l'antenne." });
-    } catch {
-      setStatus({ type: "error", message: "Diffusion du direct externe impossible." });
-    }
-  };
 
   const bibleInspectorProps = {
     query,
@@ -1433,6 +1448,7 @@ export function LiveStudioConsole({
               onLayerPointerDown={handleLayerDrag}
               onLayerResize={handleLayerResize}
               onLayerSelect={setSelectedLayerId}
+              animNonce={animNonce}
               onFullscreen={() => setShowFullscreenPreview(true)}
             />
             <TransitionBar
@@ -1479,7 +1495,7 @@ export function LiveStudioConsole({
           onReorder={reorderLayer}
           onRequestDelete={setPendingDeleteId}
         />
-        <MixerDock />
+        <MixerDock channels={mixerLayers} onChange={setLayerAudio} />
         <InspectorDock
           selectedLayer={selectedLayer}
           effectiveStyle={effectiveStyle}
@@ -1488,13 +1504,14 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
-          onBroadcastEmbed={onBroadcastEmbed}
           bible={bibleInspectorProps}
           presets={presets}
           newPresetName={newPresetName}
           onNewPresetNameChange={setNewPresetName}
           onSavePreset={handleSavePreset}
           onDeletePreset={handleDeletePreset}
+          onResetStyle={resetSelectedStyle}
+          onPlayAnim={playAnim}
         />
         <ControlsDock
           recording={recording}
