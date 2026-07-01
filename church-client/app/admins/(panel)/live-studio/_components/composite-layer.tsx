@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, type Variants, type Easing } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
@@ -17,6 +17,7 @@ import {
   type MediaMeter,
   type YouTubeController,
 } from "./studio-audio";
+import { registerVideoController, type VideoController } from "./studio-video";
 import { MONO } from "./studio-tokens";
 
 const EASING_MAP: Record<string, Easing> = {
@@ -648,29 +649,75 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
   const src = (layer.feedUrl || "").trim();
   const videoRef = useRef<HTMLVideoElement>(null);
   const meterRef = useRef<MediaMeter | null>(null);
+  // Browsers block UNMUTED autoplay; we start muted (so the clip is always
+  // visible in Preview) and unmute once the operator has interacted with the page.
+  const [primed, setPrimed] = useState(false);
 
   const level = layer.audioLevel ?? 80;
-  const muted = layer.audioMuted ?? false;
+  const mutedSetting = layer.audioMuted ?? false;
+  const loop = layer.loop ?? true;
+  // Our own uploads are CORS-enabled → real Web Audio metering; external links
+  // stay same-origin-tainted (meter flat, but playback still works).
+  const isOurMedia = /\/studio\/media\//.test(src);
 
+  // Owner: real audio meter + transport controller registration.
   useEffect(() => {
     if (!audioOwner || !src) return;
     const el = videoRef.current;
     if (!el) return;
     const meter = attachMediaMeter(el);
-    if (!meter) return;
-    meterRef.current = meter;
-    const unregister = registerAudioProbe(layer.id, meter);
-    void el.play?.().catch(() => {});
+    if (meter) meterRef.current = meter;
+    const unregisterProbe = meter ? registerAudioProbe(layer.id, meter) : () => {};
+
+    const controller: VideoController = {
+      play: () => void el.play().catch(() => {}),
+      pause: () => el.pause(),
+      toggle: () => (el.paused ? void el.play().catch(() => {}) : el.pause()),
+      stop: () => {
+        el.pause();
+        el.currentTime = 0;
+      },
+      restart: () => {
+        el.currentTime = 0;
+        void el.play().catch(() => {});
+      },
+      seek: (t) => {
+        el.currentTime = t;
+      },
+      skip: (d) => {
+        const dur = Number.isFinite(el.duration) ? el.duration : 0;
+        el.currentTime = Math.max(0, Math.min(dur || el.currentTime + d, el.currentTime + d));
+      },
+      getState: () => ({
+        currentTime: el.currentTime || 0,
+        duration: Number.isFinite(el.duration) ? el.duration : 0,
+        paused: el.paused,
+        ended: el.ended,
+        ready: el.readyState >= 2,
+      }),
+    };
+    const unregisterCtl = registerVideoController(layer.id, controller);
+    void el.play().catch(() => {});
     return () => {
-      unregister();
-      meter.dispose();
+      unregisterProbe();
+      unregisterCtl();
+      meter?.dispose();
       meterRef.current = null;
     };
   }, [audioOwner, layer.id, src]);
 
+  // Prime the unmute once the operator interacts (autoplay policy needs a gesture).
   useEffect(() => {
-    meterRef.current?.setGain(level, muted);
-  }, [level, muted]);
+    if (!audioOwner || primed) return;
+    const onGesture = () => setPrimed(true);
+    window.addEventListener("pointerdown", onGesture, { once: true });
+    return () => window.removeEventListener("pointerdown", onGesture);
+  }, [audioOwner, primed]);
+
+  // Apply the mixer fader / mute to the captured signal.
+  useEffect(() => {
+    meterRef.current?.setGain(level, mutedSetting);
+  }, [level, mutedSetting]);
 
   if (!src) {
     return (
@@ -688,10 +735,11 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       key={src}
       ref={videoRef}
       src={src}
+      crossOrigin={isOurMedia ? "anonymous" : undefined}
       className="pointer-events-none absolute inset-0 size-full object-cover"
       autoPlay
-      muted={!audioOwner}
-      loop
+      muted={!audioOwner || mutedSetting || !primed}
+      loop={loop}
       playsInline
     />
   );

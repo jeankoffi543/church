@@ -46,6 +46,8 @@ export type StudioLayer = {
   audioMuted?: boolean;
   audioGain?: number; // -20..+20 dB
   audioBalance?: number; // -100 (L) .. +100 (R)
+  // video transport (video source)
+  loop?: boolean;
 };
 
 /** Sources that carry an audio channel shown in the mixer. */
@@ -202,6 +204,9 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "camera" || type === "video" || type === "embed") {
     base.feedUrl = "";
+  }
+  if (type === "video") {
+    base.loop = true;
   }
   if (type === "audio") {
     base.device = "Micro Prédicateur";

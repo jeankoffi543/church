@@ -1,11 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, Zap, Square } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Sparkles,
+  Search,
+  Plus,
+  X,
+  Italic,
+  Underline,
+  Upload,
+  Play,
+  Zap,
+  Square,
+  Pause,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  Repeat,
+} from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { uploadStudioMedia } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
+import { getVideoController, type VideoTransportState } from "./studio-video";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -606,14 +623,43 @@ function ContentPanel({
   );
 }
 
+const fmtTime = (s: number) => {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+};
+
 /**
  * Contenu for a "Vidéo" source: paste a link, OR drag-drop / click to import a
- * local video that is uploaded to the server (persistent stream URL, not a blob).
+ * local video (uploaded → persistent stream URL, not a blob), plus a transport
+ * bar (play / pause / stop / seek / replay) wired to the Preview `<video>` via
+ * the video-controller registry.
  */
 function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transport, setTransport] = useState<VideoTransportState | null>(null);
+
+  const hasSource = !!layer.feedUrl?.trim();
+  const loop = layer.loop ?? true;
+
+  // Poll the Preview video's playback state to drive the scrubber. (setState
+  // lives inside the interval callback, never synchronously in the effect body.)
+  useEffect(() => {
+    if (!hasSource) return;
+    const t = setInterval(() => {
+      setTransport(getVideoController(layer.id)?.getState() ?? null);
+    }, 250);
+    return () => clearInterval(t);
+  }, [hasSource, layer.id]);
+
+  const ctl = () => getVideoController(layer.id);
+  const ready = !!transport?.ready;
+  const paused = transport?.paused ?? true;
+  const duration = transport?.duration ?? 0;
+  const current = transport?.currentTime ?? 0;
 
   const handleFile = async (file: File) => {
     if (!file.type.startsWith("video/")) {
@@ -683,11 +729,105 @@ function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLaye
 
       {error && <div className="text-[10px] leading-relaxed text-[#ff8a8a]">{error}</div>}
 
+      {/* Transport controls (drive the Preview video) */}
+      {hasSource && (
+        <div className="flex flex-col gap-2 rounded-[10px] border border-white/6 bg-black/[0.18] p-3">
+          <div className="flex items-center justify-between">
+            <Label>Lecture</Label>
+            <button
+              type="button"
+              onClick={() => patchLayerData({ loop: !loop })}
+              title={loop ? "Lecture en boucle activée" : "Lecture en boucle désactivée"}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold transition-colors",
+                loop ? "bg-gold/15 text-gold" : "text-white/40 hover:text-white",
+              )}
+            >
+              <Repeat className="size-3" /> Boucle
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <TransportBtn title="Recommencer" onClick={() => ctl()?.restart()} disabled={!ready}>
+              <RotateCcw className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn title="Reculer de 10 s" onClick={() => ctl()?.skip(-10)} disabled={!ready}>
+              <SkipBack className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn
+              title={paused ? "Lire" : "Pause"}
+              onClick={() => ctl()?.toggle()}
+              disabled={!ready}
+              primary
+            >
+              {paused ? <Play className="size-4 fill-current" /> : <Pause className="size-4 fill-current" />}
+            </TransportBtn>
+            <TransportBtn title="Avancer de 10 s" onClick={() => ctl()?.skip(10)} disabled={!ready}>
+              <SkipForward className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn title="Arrêter (retour au début)" onClick={() => ctl()?.stop()} disabled={!ready}>
+              <Square className="size-3.5" />
+            </TransportBtn>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={cn("w-9 text-right text-[10px] text-white/50", MONO)}>{fmtTime(current)}</span>
+            <Slider
+              min={0}
+              max={Math.max(1, Math.floor(duration))}
+              value={Math.min(current, duration || current)}
+              onValueChange={(v) => ctl()?.seek(v)}
+              className="flex-1"
+            />
+            <span className={cn("w-9 text-[10px] text-white/50", MONO)}>{fmtTime(duration)}</span>
+          </div>
+
+          {!ready && (
+            <div className="text-[10px] leading-relaxed text-white/35">
+              Ouvrez l&apos;aperçu (moniteur Aperçu) pour piloter la lecture. Le son démarre après un
+              premier clic dans la page.
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
         L&apos;aperçu s&apos;affiche dans les moniteurs. Déplacez-le et redimensionnez-le dans
         l&apos;aperçu, et réglez son niveau dans la table de mixage.
       </div>
     </>
+  );
+}
+
+function TransportBtn({
+  title,
+  onClick,
+  disabled,
+  primary,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex items-center justify-center rounded-lg border transition-colors disabled:opacity-35",
+        primary ? "h-9 flex-[1.4]" : "h-9 flex-1",
+        primary
+          ? "border-gold/40 bg-gold/15 text-gold hover:bg-gold/25"
+          : "border-white/10 bg-white/[0.04] text-white/70 hover:text-white",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
