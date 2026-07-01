@@ -31,7 +31,12 @@ import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
 import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
-import { createLayer, type StudioLayer, type StudioLayerType } from "./_components/studio-layers";
+import {
+  createLayer,
+  type StudioLayer,
+  type StudioLayerType,
+  type StudioScene,
+} from "./_components/studio-layers";
 
 type Status = { type: "success" | "error"; message: string } | null;
 
@@ -213,6 +218,43 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
   }
 ];
 
+const DEFAULT_SCENES: StudioScene[] = [
+  {
+    id: "scene-1",
+    name: "Culte · Bible",
+    layers: [
+      { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+    ],
+  },
+  {
+    id: "scene-2",
+    name: "Caméra plein cadre",
+    layers: [
+      { id: "cam-1", type: "camera", name: "Caméra NDI · Autel", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+    ],
+  },
+];
+
+/** Hydrate the scene list from the persisted `live_scenes` setting, or fall
+ *  back to the starter scenes on first use. */
+function buildInitialScenes(
+  initialSettings: Record<string, Record<string, unknown>>,
+): StudioScene[] {
+  const saved = (initialSettings.live_broadcast_styles || {}).live_scenes as
+    | StudioScene[]
+    | undefined;
+  return Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_SCENES;
+}
+
+/** Drop transient blob: image URLs before persisting (they don't survive a reload). */
+function sanitizeScenes(scenes: StudioScene[]): StudioScene[] {
+  return scenes.map((s) => ({
+    ...s,
+    layers: s.layers.map((l) =>
+      l.imageUrl?.startsWith("blob:") ? { ...l, imageUrl: "" } : l,
+    ),
+  }));
+}
 
 export function LiveStudioConsole({
   initialPrepared,
@@ -983,16 +1025,40 @@ export function LiveStudioConsole({
     else if (m === "preview" && liveStreamActive) setShowStopConfirm(true);
   };
 
-  // ── Scene compositor: layer stack driving the preview + inspector ────────
+  // ── Scene compositor: scenes → layer stacks driving preview + inspector ──
   // The bible layer is the REAL broadcast anchor — its verse is `preview`/`live`
   // and its style is `settings`/`onAirSettings`. Other layers are front-end
-  // composites (text / image / camera / video) overlaid by z-order.
-  const [layers, setLayers] = useState<StudioLayer[]>(() => [
-    { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
-  ]);
-  const [selectedLayerId, setSelectedLayerId] = useState<string>("bible");
+  // composites (text / image / song / camera / video / embed) overlaid by z-order.
+  const [scenes, setScenes] = useState<StudioScene[]>(() => buildInitialScenes(initialSettings));
+  const [currentSceneId, setCurrentSceneId] = useState(
+    () => buildInitialScenes(initialSettings)[0]?.id ?? "scene-1",
+  );
+  const [programSceneId, setProgramSceneId] = useState(
+    () => buildInitialScenes(initialSettings)[0]?.id ?? "scene-1",
+  );
+  const [selectedLayerId, setSelectedLayerId] = useState<string>(
+    () => buildInitialScenes(initialSettings)[0]?.layers[0]?.id ?? "bible",
+  );
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteSceneId, setPendingDeleteSceneId] = useState<string | null>(null);
   const previewStageRef = useRef<HTMLDivElement>(null);
+
+  const currentScene = scenes.find((s) => s.id === currentSceneId) ?? scenes[0];
+  const layers = currentScene?.layers ?? [];
+
+  // `setLayers` keeps the exact `(prev) => next` signature the handlers use, but
+  // now edits the CURRENT scene's layers (scene id read from a ref so the
+  // memoised callbacks below never target a stale scene).
+  const currentSceneIdRef = useRef(currentSceneId);
+  useEffect(() => {
+    currentSceneIdRef.current = currentSceneId;
+  }, [currentSceneId]);
+  const setLayers = useCallback((updater: (ls: StudioLayer[]) => StudioLayer[]) => {
+    setScenes((scs) =>
+      scs.map((s) => (s.id === currentSceneIdRef.current ? { ...s, layers: updater(s.layers) } : s)),
+    );
+  }, []);
+
   // The Program monitor shows a SNAPSHOT taken at CUT — editing the preview
   // stack never touches what is on air until "ENVOYER ANTENNE".
   const [programLayers, setProgramLayers] = useState<StudioLayer[]>(() => [
@@ -1013,19 +1079,19 @@ export function LiveStudioConsole({
         );
       }
     },
-    [selectedLayerId, setStudioField],
+    [selectedLayerId, setStudioField, setLayers],
   );
   const setSelectedStyle = useCallback(
     (next: StudioSettings) => {
       if (selectedLayerId === "bible") setSettings(next);
       else setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, style: next } : l)));
     },
-    [selectedLayerId, setSettings],
+    [selectedLayerId, setSettings, setLayers],
   );
   const patchSelectedData = useCallback(
     (patch: Partial<StudioLayer>) =>
       setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, ...patch } : l))),
-    [selectedLayerId],
+    [selectedLayerId, setLayers],
   );
   const onImageFile = useCallback(
     (file: File) => patchSelectedData({ imageUrl: URL.createObjectURL(file) }),
@@ -1066,6 +1132,67 @@ export function LiveStudioConsole({
     if (selectedLayerId === pendingDeleteId) setSelectedLayerId("bible");
     setPendingDeleteId(null);
   };
+
+  // ── Scenes ──────────────────────────────────────────────────────────────
+  const pendingDeleteScene = scenes.find((s) => s.id === pendingDeleteSceneId) ?? null;
+
+  const selectScene = (id: string) => {
+    setCurrentSceneId(id);
+    setSelectedLayerId(scenes.find((s) => s.id === id)?.layers[0]?.id ?? "");
+  };
+  const addScene = () => {
+    const id = `scene-${Date.now()}`;
+    setScenes((scs) => [...scs, { id, name: `Scène ${scs.length + 1}`, layers: [] }]);
+    setCurrentSceneId(id);
+    setSelectedLayerId("");
+  };
+  const renameScene = (id: string, name: string) =>
+    setScenes((scs) => scs.map((s) => (s.id === id ? { ...s, name } : s)));
+  const reorderScene = (dragId: string, targetId: string) =>
+    setScenes((scs) => {
+      if (dragId === targetId) return scs;
+      const from = scs.findIndex((s) => s.id === dragId);
+      const to = scs.findIndex((s) => s.id === targetId);
+      if (from < 0 || to < 0) return scs;
+      const next = [...scs];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  const confirmDeleteScene = () => {
+    if (!pendingDeleteSceneId || scenes.length <= 1) {
+      setPendingDeleteSceneId(null);
+      return;
+    }
+    if (currentSceneId === pendingDeleteSceneId) {
+      const fallback = scenes.find((s) => s.id !== pendingDeleteSceneId);
+      if (fallback) {
+        setCurrentSceneId(fallback.id);
+        setSelectedLayerId(fallback.layers[0]?.id ?? "");
+      }
+    }
+    setScenes((scs) => scs.filter((s) => s.id !== pendingDeleteSceneId));
+    setPendingDeleteSceneId(null);
+  };
+
+  // Debounced persistence of the scene list to the backend (skips the initial
+  // hydrated value so we don't re-write it on mount).
+  const lastScenesRef = useRef<string>("");
+  useEffect(() => {
+    const serialized = JSON.stringify(scenes);
+    if (lastScenesRef.current === "") {
+      lastScenesRef.current = serialized;
+      return;
+    }
+    if (serialized === lastScenesRef.current) return;
+    lastScenesRef.current = serialized;
+    const timer = setTimeout(() => {
+      void updateAdminSettings([
+        { key: "live_scenes", value: sanitizeScenes(scenes), group: "live_broadcast_styles" },
+      ]);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [scenes]);
 
   // Move-only drag of a layer directly in the Preview (resize stays in the
   // inspector / fullscreen editor).
@@ -1178,9 +1305,23 @@ export function LiveStudioConsole({
 
   // CUT: freeze the current preview composite onto the Program monitor and push
   // the bible verse on air.
+  // CUT — send the WHOLE current scene to the Program monitor, whatever its
+  // sources are. If the on-air scene shows a bible verse, broadcast it for real;
+  // otherwise clear any scripture that was still live so the antenne matches.
   const sendToProgram = () => {
+    if (layers.every((l) => !l.visible)) return;
     setProgramLayers(layers.map((l) => ({ ...l, style: { ...l.style } })));
-    diffuse();
+    setProgramSceneId(currentSceneId);
+    const bibleOnAir = layers.some((l) => l.type === "bible" && l.visible) && !!preview;
+    if (bibleOnAir) {
+      diffuse();
+    } else {
+      if (live) {
+        void broadcastScripture({ action: "hide" });
+        setLive(null);
+      }
+      setStatus({ type: "success", message: `Scène « ${currentScene?.name ?? ""} » envoyée à l'antenne.` });
+    }
   };
 
   // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
@@ -1261,7 +1402,7 @@ export function LiveStudioConsole({
               layers={layers}
               bibleVerse={preview}
               bibleStyle={settings}
-              sceneName="Culte · Bible"
+              sceneName={currentScene?.name ?? "Aperçu"}
               selectedLayerId={selectedLayerId}
               stageRef={previewStageRef}
               draggable
@@ -1276,7 +1417,7 @@ export function LiveStudioConsole({
               onNextVerse={() => void advance("next_verse")}
               onNextChapter={() => void advance("next_chapter")}
               busy={busy}
-              canCut={!!preview}
+              canCut={layers.some((l) => l.visible)}
             />
           </>
         )}
@@ -1285,12 +1426,21 @@ export function LiveStudioConsole({
           layers={programLayers}
           bibleVerse={live}
           bibleStyle={onAirSettings}
-          sceneName="Antenne"
+          sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
         />
       </section>
 
       <section className="grid auto-rows-[clamp(360px,52vh,520px)] grid-cols-[repeat(auto-fit,minmax(218px,1fr))] gap-3">
-        <ScenesDock />
+        <ScenesDock
+          scenes={scenes}
+          currentSceneId={currentSceneId}
+          programSceneId={programSceneId}
+          onSelect={selectScene}
+          onAdd={addScene}
+          onReorder={reorderScene}
+          onRequestDelete={setPendingDeleteSceneId}
+          onRename={renameScene}
+        />
         <SourcesDock
           layers={layers}
           selectedLayerId={selectedLayerId}
@@ -1397,6 +1547,47 @@ export function LiveStudioConsole({
                 className="rounded-xl bg-studio-onair px-4 py-2 text-xs font-bold text-white transition hover:brightness-110"
               >
                 Retirer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingDeleteScene && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setPendingDeleteSceneId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 bg-studio-panel p-5 text-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-studio-onair/30 bg-studio-onair/10 text-studio-onair">
+                <AlertTriangle className="size-5" />
+              </span>
+              <div>
+                <h3 className="text-[15px] font-bold text-[#ff9a9a]">Supprimer cette scène ?</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-white/70">
+                  « {pendingDeleteScene.name} » et ses {pendingDeleteScene.layers.length} source(s)
+                  seront supprimées. Cette action est irréversible.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteSceneId(null)}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteScene}
+                className="rounded-xl bg-studio-onair px-4 py-2 text-xs font-bold text-white transition hover:brightness-110"
+              >
+                Supprimer
               </button>
             </div>
           </div>

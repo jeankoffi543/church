@@ -126,9 +126,14 @@ export function SourcesDock({
               <div
                 key={l.id}
                 draggable
-                onDragStart={() => setDragId(l.id)}
+                onDragStart={(e) => {
+                  setDragId(l.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", l.id);
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
                   if (l.id !== overId) setOverId(l.id);
                 }}
                 onDrop={() => {

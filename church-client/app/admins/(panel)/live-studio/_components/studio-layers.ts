@@ -39,6 +39,12 @@ export type StudioLayer = {
   device?: string;
 };
 
+export type StudioScene = {
+  id: string;
+  name: string;
+  layers: StudioLayer[];
+};
+
 export type InspTab = "contenu" | "layout" | "typo" | "container" | "anim" | "presets";
 
 export const LAYER_META: Record<
