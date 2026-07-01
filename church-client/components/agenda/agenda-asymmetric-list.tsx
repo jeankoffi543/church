@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { EventRow } from "@/components/cards/event-card";
 import { Pagination } from "@/app/admins/(panel)/_components/pagination";
 import type { ChurchEvent } from "@/lib/data";

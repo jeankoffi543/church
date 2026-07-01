@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import { getAlbum, type GalleryAlbum, type GalleryPhoto } from "@/lib/api";
 import { Lightbox } from "@/components/galerie/lightbox";
 
-const PAGE_SIZE = 9;
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 
 type LightboxState = {

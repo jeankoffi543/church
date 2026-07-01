@@ -2,40 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Search,
-  Plus,
-  X,
-  Radio,
-  EyeOff,
-  ChevronRight,
-  ChevronsRight,
-  BookOpen,
-  Sparkles,
-  Type,
-  Image as ImageIcon,
-  Clock,
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  Save,
-  KeyRound,
-  RefreshCw,
-  Copy,
-  Check,
-  Trash,
-  Tv,
-  AlertTriangle,
-  Square,
-  Maximize,
-  Globe,
-  HardDrive,
-  Volume2,
-  Monitor,
-  Keyboard,
-  Accessibility,
-  Settings2,
-} from "lucide-react";
+import { CheckCircle, AlertCircle, AlertTriangle, Square, Maximize } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -46,15 +13,28 @@ import {
   DEFAULT_STUDIO_SETTINGS,
   type ScriptureVerse,
   type StudioSettings,
-  type StudioLayout,
-  type StudioAnimation,
   type NavigateDirection,
 } from "@/lib/studio";
 import { broadcastScripture, setPreparedVerses, updateAdminSettings } from "@/lib/admin-api";
+import {
+  getContainerStyle,
+  getElementStyle,
+  getPredefinedAbsolutePosition,
+} from "./_components/studio-style";
+import { StudioHeader } from "./_components/studio-header";
+import { StageMonitor } from "./_components/stage-monitor";
+import { TransitionBar } from "./_components/transition-bar";
+import { ScenesDock } from "./_components/scenes-dock";
+import { SourcesDock } from "./_components/sources-dock";
+import { MixerDock } from "./_components/mixer-dock";
+import { InspectorDock } from "./_components/inspector-dock";
+import { ControlsDock } from "./_components/controls-dock";
+import { StatusBar } from "./_components/status-bar";
+import { SettingsModal } from "./_components/settings-modal";
+import { createLayer, type StudioLayer, type StudioLayerType } from "./_components/studio-layers";
 
 type Status = { type: "success" | "error"; message: string } | null;
 
-const HLS_BASE = (process.env.NEXT_PUBLIC_HLS_BASE_URL || "http://localhost:8088/hls").replace(/\/+$/, "");
 
 const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
   {
@@ -233,105 +213,6 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
   }
 ];
 
-const getElementStyle = (prefix: "fontRef" | "fontBody" | "fontVer", s: StudioSettings): React.CSSProperties => {
-  const colorVal = s[`${prefix}Color` as keyof StudioSettings] as string;
-  const isGradient = colorVal?.includes("gradient");
-
-  const baseStyle: React.CSSProperties = {
-    fontFamily: s[`${prefix}Family` as keyof StudioSettings] as string,
-    fontSize: `${s[`${prefix}Size` as keyof StudioSettings]}px`,
-    fontWeight: s[`${prefix}Weight` as keyof StudioSettings] as string,
-    fontStyle: s[`${prefix}Style` as keyof StudioSettings] as string,
-    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as React.CSSProperties["textTransform"],
-    textDecoration: s[`${prefix}Decoration` as keyof StudioSettings] as string,
-    letterSpacing: `${s[`${prefix}Spacing` as keyof StudioSettings]}px`,
-    lineHeight: s[`${prefix}LineHeight` as keyof StudioSettings] as number,
-  };
-
-  if (isGradient) {
-    return {
-      ...baseStyle,
-      backgroundImage: colorVal,
-      WebkitBackgroundClip: "text",
-      WebkitTextFillColor: "transparent",
-      display: "inline-block",
-    };
-  }
-
-  return {
-    ...baseStyle,
-    color: colorVal,
-  };
-};
-
-const getContainerStyle = (s: StudioSettings): React.CSSProperties => {
-  if (s.containerShape === "transparent") {
-    return {
-      backgroundColor: "transparent",
-      backgroundImage: "none",
-      borderStyle: "none",
-      borderWidth: "0px",
-      boxShadow: "none",
-      padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
-    };
-  }
-
-  let borderRadius = `${s.containerBorderRadius}px`;
-  if (s.containerShape === "rectangle") borderRadius = "0px";
-  if (s.containerShape === "capsule") borderRadius = "9999px";
-  if (s.containerShape === "asymmetric") borderRadius = "32px 6px 32px 6px";
-
-  const isGradient = s.containerBg?.includes("gradient");
-
-  const baseStyle: React.CSSProperties = {
-    backgroundColor: isGradient ? "transparent" : s.containerBg,
-    backgroundImage: isGradient ? s.containerBg : "none",
-    borderRadius,
-    padding: `${s.containerPaddingY}px ${s.containerPaddingX}px`,
-  };
-
-  const borderW = s.containerBorderWidth;
-  const borderCol = s.containerBorderColor || "rgba(255, 255, 255, 0.15)";
-  
-  if (s.containerBorderStyle === "none") {
-    baseStyle.borderStyle = "none";
-    baseStyle.borderWidth = "0px";
-  } else if (s.containerBorderStyle === "glow") {
-    baseStyle.borderStyle = "solid";
-    baseStyle.borderWidth = `${borderW}px`;
-    baseStyle.borderColor = borderCol;
-    baseStyle.boxShadow = `0 0 20px ${borderCol}, inset 0 0 10px ${borderCol}`;
-  } else {
-    baseStyle.borderStyle = s.containerBorderStyle;
-    baseStyle.borderWidth = `${borderW}px`;
-    baseStyle.borderColor = borderCol;
-  }
-
-  const shadowStr = `${s.shadowOffsetX}px ${s.shadowOffsetY}px ${s.shadowBlur}px ${s.shadowSpread}px ${s.shadowColor}`;
-  if (baseStyle.boxShadow) {
-    baseStyle.boxShadow = `${baseStyle.boxShadow}, ${shadowStr}`;
-  } else {
-    baseStyle.boxShadow = shadowStr;
-  }
-
-  return baseStyle;
-};
-
-const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties => {
-  switch (pos) {
-    case "lower_third_left":
-      return { left: "6%", top: "72%", width: "40%", height: "20%" };
-    case "lower_third_right":
-      return { right: "6%", top: "72%", width: "40%", height: "20%" };
-    case "ticker":
-      return { left: "0%", top: "86%", width: "100%", height: "14%" };
-    case "full_screen_cinema":
-      return { left: "10%", top: "10%", width: "80%", height: "80%" };
-    case "centered_bottom":
-    default:
-      return { left: "10%", top: "72%", width: "80%", height: "20%" };
-  }
-};
 
 export function LiveStudioConsole({
   initialPrepared,
@@ -341,7 +222,6 @@ export function LiveStudioConsole({
   initialSettings: Record<string, Record<string, unknown>>;
 }) {
   // Navigation & UI States
-  const [activeLeftTab, setActiveLeftTab] = useState<"bible" | "flux" | "chants">("bible");
   const [showGeneralConfig, setShowGeneralConfig] = useState(false);
   const [activeSettingsTab, setActiveSettingsTab] = useState("general");
   const [query, setQuery] = useState("");
@@ -349,8 +229,6 @@ export function LiveStudioConsole({
   const [searching, setSearching] = useState(false);
 
   // Extended UI/UX Design States
-  const [styleTab, setStyleTab] = useState<"layout" | "typo" | "container" | "anim" | "presets">("layout");
-  const [typoElement, setTypoElement] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
   const [showFullscreenPreview, setShowFullscreenPreview] = useState(false);
   const [newPresetName, setNewPresetName] = useState("");
   const previewScreenRef = useRef<HTMLDivElement>(null);
@@ -431,10 +309,6 @@ export function LiveStudioConsole({
     }
   };
 
-  const handleLoadPreset = (presetSettings: StudioSettings) => {
-    setSettings(presetSettings);
-    setStatus({ type: "success", message: "Preset appliqué !" });
-  };
 
   const handleDeletePreset = async (name: string) => {
     const updated = presets.filter((p) => p.name !== name);
@@ -538,7 +412,6 @@ export function LiveStudioConsole({
 
   // Dynamic versions/translations selection
   const [allTranslations, setAllTranslations] = useState<string[]>([]);
-  const [visibleTranslationsCount, setVisibleTranslationsCount] = useState(10);
   const [translationSearch, setTranslationSearch] = useState("");
 
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
@@ -547,6 +420,8 @@ export function LiveStudioConsole({
   // Gate the toast portal until after mount (createPortal needs `document`).
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
+    // One-shot mount gate for the toast portal — terminal, cannot cascade.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
@@ -558,7 +433,6 @@ export function LiveStudioConsole({
   const [liveTitle, setLiveTitle] = useState((liveSettings.live_title as string) ?? "");
   const [liveDescription, setLiveDescription] = useState((liveSettings.live_description as string) ?? "");
   const [streamKey, setStreamKey] = useState((liveSettings.live_stream_key as string) ?? "");
-  const [keyCopied, setKeyCopied] = useState(false);
   const [liveFallbackImage, setLiveFallbackImage] = useState((liveSettings.live_fallback_image as string) ?? "");
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
@@ -569,7 +443,8 @@ export function LiveStudioConsole({
     (liveSettings.live_sermon_points as Array<{ id: string; text: string; verse: string }>) ?? []
   );
 
-  const [advancedConfig, setAdvancedConfig] = useState({
+  // Loaded once and round-tripped through saveLiveSettings; no in-console editor yet.
+  const [advancedConfig] = useState({
     live_lang: (liveSettings.live_lang as string) ?? "fr",
     live_show_in_feed: liveSettings.live_show_in_feed !== false,
     live_stream_platform: (liveSettings.live_stream_platform as string) ?? "custom",
@@ -594,9 +469,6 @@ export function LiveStudioConsole({
     live_db_cache: (liveSettings.live_db_cache as string) ?? "aggressive",
   });
 
-  const updateAdvancedConfig = (key: keyof typeof advancedConfig, value: unknown) => {
-    setAdvancedConfig((prev) => ({ ...prev, [key]: value }));
-  };
 
   const [savingSettings, setSavingSettings] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
@@ -610,10 +482,8 @@ export function LiveStudioConsole({
       : []
   );
   const [defaultVersion, setDefaultVersionState] = useState<string>(
-    (liveSettings.bible_default_version as string) || "LS1910"
+    (liveSettings.bible_default_version as string) || "LSG"
   );
-  const [linkLiveTrigger, setLinkLiveTrigger] = useState(false);
-
   const backendUrl = process.env.NEXT_PUBLIC_API_URL
     ? process.env.NEXT_PUBLIC_API_URL.replace("/api/v1", "")
     : "http://127.0.0.1:8000";
@@ -646,7 +516,7 @@ export function LiveStudioConsole({
   // Fetch unique translations dynamically from the database
   useEffect(() => {
     getBibleTranslations().then((versions) => {
-      const loaded = versions.length > 0 ? versions : ["LS1910"];
+      const loaded = versions.length > 0 ? versions : ["LSG"];
       setAllTranslations(loaded);
       // If no saved preferences exist, show ALL translations by default
       setVisibleVersions((prev) => (prev.length === 0 ? loaded : prev));
@@ -810,7 +680,7 @@ export function LiveStudioConsole({
           return seen.has(seenKey) ? false : (seen.add(seenKey), true);
         });
       setSuggestions(merged);
-    } catch (err) {
+    } catch {
       if (signal?.aborted) return;
       setSearching(false);
     }
@@ -820,6 +690,8 @@ export function LiveStudioConsole({
   useEffect(() => {
     const q = query.trim();
     if (q.length === 0) {
+      // Clearing results when the query empties — guarded, cannot cascade.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSuggestions([]);
       return;
     }
@@ -904,6 +776,7 @@ export function LiveStudioConsole({
     return () => clearTimeout(t);
   }, [settings]);
 
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const persistPrepared = useCallback(async (next: ScriptureVerse[]) => {
     setPrepared(next);
     try {
@@ -1085,63 +958,278 @@ export function LiveStudioConsole({
     if (!aChecked && bChecked) return 1;
     return a.localeCompare(b);
   });
-  const visibleTranslations = sortedTranslations.slice(0, visibleTranslationsCount);
-  const hasMoreTranslations = sortedTranslations.length > visibleTranslationsCount;
+
+
+  // TODO(studio): habillage OBS — états de présentation (mode/sandbox/REC/disposition)
+  // non encore reliés à un vrai moteur de scènes/diffusion réel.
+  const [sandbox, setSandbox] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recTime, setRecTime] = useState(0);
+  const [dualLayout, setDualLayout] = useState(true);
+  useEffect(() => {
+    if (!recording) return;
+    const id = setInterval(() => setRecTime((t) => t + 1), 1000);
+    return () => {
+      clearInterval(id);
+      setRecTime(0);
+    };
+  }, [recording]);
+  const recLabel = `${String(Math.floor(recTime / 60)).padStart(2, "0")}:${String(recTime % 60).padStart(2, "0")}`;
+  // The program-mode switch is wired to the REAL broadcast: switching to LIVE
+  // starts the stream, leaving LIVE asks to stop it (confirm dialog).
+  const mode: "preview" | "live" = liveStreamActive ? "live" : "preview";
+  const handleModeChange = (m: "preview" | "live") => {
+    if (m === "live" && !liveStreamActive) void saveLiveSettings(true);
+    else if (m === "preview" && liveStreamActive) setShowStopConfirm(true);
+  };
+
+  // ── Scene compositor: layer stack driving the preview + inspector ────────
+  // The bible layer is the REAL broadcast anchor — its verse is `preview`/`live`
+  // and its style is `settings`/`onAirSettings`. Other layers are front-end
+  // composites (text / image / camera / video) overlaid by z-order.
+  const [layers, setLayers] = useState<StudioLayer[]>(() => [
+    { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+  ]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string>("bible");
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const previewStageRef = useRef<HTMLDivElement>(null);
+  // The Program monitor shows a SNAPSHOT taken at CUT — editing the preview
+  // stack never touches what is on air until "ENVOYER ANTENNE".
+  const [programLayers, setProgramLayers] = useState<StudioLayer[]>(() => [
+    { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+  ]);
+
+  const selectedLayer = layers.find((l) => l.id === selectedLayerId) ?? null;
+  const effectiveStyle = selectedLayerId === "bible" ? settings : selectedLayer?.style ?? settings;
+  const pendingDeleteLayer = layers.find((l) => l.id === pendingDeleteId) ?? null;
+
+  const patchStyleField = useCallback(
+    <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => {
+      if (selectedLayerId === "bible") {
+        setStudioField(key, value);
+      } else {
+        setLayers((ls) =>
+          ls.map((l) => (l.id === selectedLayerId ? { ...l, style: { ...l.style, [key]: value } } : l)),
+        );
+      }
+    },
+    [selectedLayerId, setStudioField],
+  );
+  const setSelectedStyle = useCallback(
+    (next: StudioSettings) => {
+      if (selectedLayerId === "bible") setSettings(next);
+      else setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, style: next } : l)));
+    },
+    [selectedLayerId, setSettings],
+  );
+  const patchSelectedData = useCallback(
+    (patch: Partial<StudioLayer>) =>
+      setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, ...patch } : l))),
+    [selectedLayerId],
+  );
+  const onImageFile = useCallback(
+    (file: File) => patchSelectedData({ imageUrl: URL.createObjectURL(file) }),
+    [patchSelectedData],
+  );
+
+  const addLayer = (type: StudioLayerType) => {
+    const count = layers.filter((l) => l.type === type).length;
+    const nl = createLayer(type, count);
+    setLayers((ls) => [nl, ...ls]);
+    setSelectedLayerId(nl.id);
+  };
+  const moveLayer = (id: string, dir: -1 | 1) =>
+    setLayers((ls) => {
+      const i = ls.findIndex((l) => l.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= ls.length) return ls;
+      const next = [...ls];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  const toggleLayerVisible = (id: string) =>
+    setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)));
+  const reorderLayer = (dragId: string, targetId: string) =>
+    setLayers((ls) => {
+      if (dragId === targetId) return ls;
+      const from = ls.findIndex((l) => l.id === dragId);
+      const to = ls.findIndex((l) => l.id === targetId);
+      if (from < 0 || to < 0) return ls;
+      const next = [...ls];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  const confirmDeleteLayer = () => {
+    if (!pendingDeleteId) return;
+    setLayers((ls) => ls.filter((l) => l.id !== pendingDeleteId));
+    if (selectedLayerId === pendingDeleteId) setSelectedLayerId("bible");
+    setPendingDeleteId(null);
+  };
+
+  // Move-only drag of a layer directly in the Preview (resize stays in the
+  // inspector / fullscreen editor).
+  const handleLayerDrag = (e: React.PointerEvent, layerId: string) => {
+    e.preventDefault();
+    const stage = previewStageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const lr = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x0 = ((lr.left - rect.left) / rect.width) * 100;
+    const y0 = ((lr.top - rect.top) / rect.height) * 100;
+    const w0 = Math.max(15, Math.round((lr.width / rect.width) * 100));
+    const sx = e.clientX;
+    const sy = e.clientY;
+    setSelectedLayerId(layerId);
+    const move = (ev: PointerEvent) => {
+      const dx = ((ev.clientX - sx) / rect.width) * 100;
+      const dy = ((ev.clientY - sy) / rect.height) * 100;
+      const nx = Math.max(0, Math.min(100 - w0, Math.round(x0 + dx)));
+      const ny = Math.max(0, Math.min(94, Math.round(y0 + dy)));
+      if (layerId === "bible") {
+        setStudioField("positionMode", "custom");
+        setStudioField("customX", nx);
+        setStudioField("customY", ny);
+        setStudioField("customWidth", w0);
+      } else {
+        setLayers((ls) =>
+          ls.map((l) =>
+            l.id === layerId
+              ? { ...l, style: { ...l.style, positionMode: "custom", customX: nx, customY: ny, customWidth: w0 } }
+              : l,
+          ),
+        );
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  // Corner-handle resize of a layer directly in the Preview.
+  const handleLayerResize = (
+    e: React.PointerEvent,
+    layerId: string,
+    corner: "nw" | "ne" | "sw" | "se",
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const stage = previewStageRef.current;
+    const box = (e.currentTarget as HTMLElement).closest("[data-layer]")?.getBoundingClientRect();
+    if (!stage || !box) return;
+    const rect = stage.getBoundingClientRect();
+    const startLeft = ((box.left - rect.left) / rect.width) * 100;
+    const startTop = ((box.top - rect.top) / rect.height) * 100;
+    const startW = (box.width / rect.width) * 100;
+    const startH = (box.height / rect.height) * 100;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    setSelectedLayerId(layerId);
+    const apply = (x: number, y: number, w: number, h: number) => {
+      const p = { customX: Math.round(x), customY: Math.round(y), customWidth: Math.round(w), customHeight: Math.round(h) };
+      if (layerId === "bible") {
+        setStudioField("positionMode", "custom");
+        setStudioField("customX", p.customX);
+        setStudioField("customY", p.customY);
+        setStudioField("customWidth", p.customWidth);
+        setStudioField("customHeight", p.customHeight);
+      } else {
+        setLayers((ls) =>
+          ls.map((l) => (l.id === layerId ? { ...l, style: { ...l.style, positionMode: "custom", ...p } } : l)),
+        );
+      }
+    };
+    const move = (ev: PointerEvent) => {
+      const dx = ((ev.clientX - sx) / rect.width) * 100;
+      const dy = ((ev.clientY - sy) / rect.height) * 100;
+      let x = startLeft;
+      let y = startTop;
+      let w = startW;
+      let h = startH;
+      if (corner === "se") {
+        w = Math.max(10, Math.min(100 - startLeft, startW + dx));
+        h = Math.max(6, startH + dy);
+      } else if (corner === "sw") {
+        w = Math.max(10, startW - dx);
+        x = Math.max(0, startLeft + dx);
+        h = Math.max(6, startH + dy);
+      } else if (corner === "ne") {
+        w = Math.max(10, Math.min(100 - startLeft, startW + dx));
+        h = Math.max(6, startH - dy);
+        y = Math.max(0, startTop + dy);
+      } else {
+        w = Math.max(10, startW - dx);
+        x = Math.max(0, startLeft + dx);
+        h = Math.max(6, startH - dy);
+        y = Math.max(0, startTop + dy);
+      }
+      apply(x, y, w, h);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  // CUT: freeze the current preview composite onto the Program monitor and push
+  // the bible verse on air.
+  const sendToProgram = () => {
+    setProgramLayers(layers.map((l) => ({ ...l, style: { ...l.style } })));
+    diffuse();
+  };
+
+  // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
+  // persisting it as the public embed + flipping the live status on.
+  const onBroadcastEmbed = async (url: string) => {
+    setLiveEmbedUrl(url);
+    setLiveStreamActive(true);
+    try {
+      await updateAdminSettings([
+        { key: "live_embed_url", value: url, group: "live" },
+        { key: "live_status", value: true, group: "live" },
+      ]);
+      setStatus({ type: "success", message: "Direct externe diffusé à l'antenne." });
+    } catch {
+      setStatus({ type: "error", message: "Diffusion du direct externe impossible." });
+    }
+  };
+
+  const bibleInspectorProps = {
+    query,
+    onQueryChange: setQuery,
+    suggestions,
+    searching,
+    prepared,
+    onLoadVerse: setPreview,
+    onPrepare: addToPrepared,
+    onRemovePrepared: (v: ScriptureVerse) =>
+      void persistPrepared(prepared.filter((p) => p.reference !== v.reference)),
+    visibleVersions,
+    defaultVersion,
+    onToggleVersion: toggleVersionVisibility,
+    onSetDefaultVersion: setDefaultVersion,
+    translationSearch,
+    onTranslationSearchChange: setTranslationSearch,
+    visibleTranslations: sortedTranslations,
+    hasMoreTranslations: false,
+    onShowMoreTranslations: () => {},
+  };
 
   return (
-    <div className="-mx-6 -my-8 md:-mx-10 md:-my-10 min-h-screen bg-[#090514] p-5 text-white md:p-6">
-      {/* Top bar with dynamic Live indicator */}
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#160f33]">
-            <Radio className="size-5" />
-          </span>
-          <div className="flex items-center gap-3">
-            <div>
-              <span className="text-[10px] font-bold tracking-[0.25em] text-[#e2b85f] uppercase">Régie Live</span>
-              <h1 className="font-display text-2xl leading-tight font-bold text-white italic">MFM Studio Control</h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowGeneralConfig(true)}
-              className="ml-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-[#e2b85f] transition cursor-pointer"
-              title="Paramètres de la Régie"
-            >
-              <Settings2 className="size-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Live indicator / control button */}
-        <div className="flex items-center gap-3">
-          {liveStreamActive ? (
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-2 rounded-xl bg-live/20 border border-live/30 px-3.5 py-2 text-xs font-extrabold tracking-wider text-[#ff9a9a]">
-                <span className="size-2.5 rounded-full bg-live animate-ping" />
-                EN DIRECT
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowStopConfirm(true)}
-                className="cursor-pointer rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-bold text-white/80 transition"
-              >
-                Arrêter le Live
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => saveLiveSettings(true)}
-              disabled={savingSettings}
-              className="flex cursor-pointer items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2 text-xs font-extrabold tracking-wider text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)] transition"
-            >
-              {savingSettings ? <Loader2 className="size-3.5 animate-spin" /> : <span className="size-2.5 rounded-full bg-emerald-400" />}
-              LANCER LE LIVE
-            </button>
-          )}
-        </div>
-      </header>
-
+    <div className="-mx-6 -my-8 flex min-h-screen flex-col gap-3 bg-studio-bg p-3 text-white md:-mx-10 md:-my-10 md:p-4">
+      <StudioHeader
+        mode={mode}
+        onModeChange={handleModeChange}
+        sandbox={sandbox}
+        recording={recording}
+        recLabel={recLabel}
+        onOpenSettings={() => setShowGeneralConfig(true)}
+      />
       {mounted &&
         status &&
         createPortal(
@@ -1160,1450 +1248,161 @@ export function LiveStudioConsole({
           </div>,
           document.body,
         )}
+      <section
+        className={cn(
+          "grid h-[clamp(280px,36vh,400px)] flex-none gap-3",
+          dualLayout ? "grid-cols-[1fr_124px_1fr]" : "grid-cols-1",
+        )}
+      >
+        {dualLayout && (
+          <>
+            <StageMonitor
+              tone="preview"
+              layers={layers}
+              bibleVerse={preview}
+              bibleStyle={settings}
+              sceneName="Culte · Bible"
+              selectedLayerId={selectedLayerId}
+              stageRef={previewStageRef}
+              draggable
+              onLayerPointerDown={handleLayerDrag}
+              onLayerResize={handleLayerResize}
+              onLayerSelect={setSelectedLayerId}
+              onFullscreen={() => setShowFullscreenPreview(true)}
+            />
+            <TransitionBar
+              onCut={sendToProgram}
+              onBlack={masquer}
+              onNextVerse={() => void advance("next_verse")}
+              onNextChapter={() => void advance("next_chapter")}
+              busy={busy}
+              canCut={!!preview}
+            />
+          </>
+        )}
+        <StageMonitor
+          tone="program"
+          layers={programLayers}
+          bibleVerse={live}
+          bibleStyle={onAirSettings}
+          sceneName="Antenne"
+        />
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[380px_1fr_300px]">
-        {/* ── Left: Source Panel (Onglets) ─────────────────────────── */}
-        <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 min-h-[600px]">
-          {/* Tabs header */}
-          <div className="flex border-b border-white/10 p-1 bg-white/[0.02] rounded-xl">
-            <button
-              onClick={() => setActiveLeftTab("bible")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 cursor-pointer rounded-lg py-2 text-[11px] font-bold transition-all",
-                activeLeftTab === "bible"
-                  ? "bg-[#e2b85f] text-[#160f33] shadow-[0_4px_12px_rgba(226,184,95,0.15)]"
-                  : "text-white/60 hover:bg-white/5 hover:text-white"
-              )}
-            >
-              <BookOpen className="size-3.5" />
-              Écritures
-            </button>
-            <button
-              onClick={() => setActiveLeftTab("flux")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 cursor-pointer rounded-lg py-2 text-[11px] font-bold transition-all",
-                activeLeftTab === "flux"
-                  ? "bg-[#e2b85f] text-[#160f33] shadow-[0_4px_12px_rgba(226,184,95,0.15)]"
-                  : "text-white/60 hover:bg-white/5 hover:text-white"
-              )}
-            >
-              <Radio className="size-3.5" />
-              Flux & Infos
-            </button>
-            <button
-              onClick={() => setActiveLeftTab("chants")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 cursor-pointer rounded-lg py-2 text-[11px] font-bold transition-all",
-                activeLeftTab === "chants"
-                  ? "bg-[#e2b85f] text-[#160f33] shadow-[0_4px_12px_rgba(226,184,95,0.15)]"
-                  : "text-white/60 hover:bg-white/5 hover:text-white"
-              )}
-            >
-              <Tv className="size-3.5" />
-              Chants & Annonces
-            </button>
-          </div>
+      <section className="grid auto-rows-[clamp(360px,52vh,520px)] grid-cols-[repeat(auto-fit,minmax(218px,1fr))] gap-3">
+        <ScenesDock />
+        <SourcesDock
+          layers={layers}
+          selectedLayerId={selectedLayerId}
+          onSelect={setSelectedLayerId}
+          onAdd={addLayer}
+          onToggle={toggleLayerVisible}
+          onMove={moveLayer}
+          onReorder={reorderLayer}
+          onRequestDelete={setPendingDeleteId}
+        />
+        <MixerDock />
+        <InspectorDock
+          selectedLayer={selectedLayer}
+          effectiveStyle={effectiveStyle}
+          patchStyleField={patchStyleField}
+          setSelectedStyle={setSelectedStyle}
+          onRename={(name) => patchSelectedData({ name })}
+          patchLayerData={patchSelectedData}
+          onImageFile={onImageFile}
+          onBroadcastEmbed={onBroadcastEmbed}
+          bible={bibleInspectorProps}
+          presets={presets}
+          newPresetName={newPresetName}
+          onNewPresetNameChange={setNewPresetName}
+          onSavePreset={handleSavePreset}
+          onDeletePreset={handleDeletePreset}
+        />
+        <ControlsDock
+          recording={recording}
+          onToggleRecord={() => setRecording((r) => !r)}
+          recLabel={recLabel}
+          sandbox={sandbox}
+          onToggleSandbox={() => setSandbox((s) => !s)}
+          dualLayout={dualLayout}
+          onToggleLayout={() => setDualLayout((d) => !d)}
+        />
+      </section>
 
-          {/* TAB 1: BIBLE */}
-          {activeLeftTab === "bible" && (
-            <div className="flex flex-col gap-4 flex-1">
-              <div>
-                <label className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-wider text-white/50 uppercase">
-                  <BookOpen className="size-3.5" /> Moteur biblique
-                </label>
-                <div className="flex items-center gap-2 rounded-xl border border-white/12 bg-[#0d0820] px-3 py-2.5 focus-within:border-[#e2b85f]">
-                  <Search className="size-4 shrink-0 text-white/40" />
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Ex: Jea 3:16, Psaume 23…"
-                    className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
-                  />
-                  {searching && <Loader2 className="size-4 shrink-0 animate-spin text-white/40" />}
-                </div>
+      <StatusBar statusRight={status?.message ?? "Prêt"} />
 
-                {/* Dynamic versions custom visibilities & default selector */}
-                <div className="mt-3 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-white/40 uppercase">
-                      Versions : {visibleVersions.length} / {allTranslations.length}
-                    </span>
-                    {allTranslations.length > 5 && (
-                      <input
-                        type="text"
-                        value={translationSearch}
-                        onChange={(e) => {
-                          setTranslationSearch(e.target.value);
-                          setVisibleTranslationsCount(10); // Reset pagination on search
-                        }}
-                        placeholder="Rechercher..."
-                        className="w-28 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white placeholder:text-white/30 outline-none focus:border-[#e2b85f]/50"
-                      />
-                    )}
-                  </div>
-                  <div className="space-y-1.5 max-h-52 overflow-y-auto bg-black/15 p-2 rounded-xl border border-white/5 pr-1">
-                    {visibleTranslations.map((v) => {
-                      const isDefault = defaultVersion === v;
-                      const isVisible = visibleVersions.includes(v);
-                      return (
-                        <div
-                          key={v}
-                          className="flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] p-1.5 rounded-lg border border-white/5"
-                        >
-                          <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() => toggleVersionVisibility(v)}
-                              className="size-3.5 cursor-pointer accent-[#e2b85f]"
-                            />
-                            <span className={cn("text-xs font-semibold truncate", isDefault ? "text-[#e2b85f] font-bold" : "text-white/80")}>
-                              {v} {isDefault && <span className="text-[9px] font-bold text-[#e2b85f] bg-[#e2b85f]/10 px-1 py-0.5 rounded ml-1">DEFAULT</span>}
-                            </span>
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => setDefaultVersion(v)}
-                            title="Définir par défaut"
-                            className={cn(
-                              "p-1 rounded transition cursor-pointer",
-                              isDefault
-                                ? "text-[#e2b85f]"
-                                : "text-white/30 hover:text-[#e2b85f] hover:bg-white/5"
-                            )}
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-3.5">
-                              <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.6 3.102-1.196 4.622c-.21.81.67 1.45 1.366.98L10 15.547l4.187 2.48c.696.47 1.576-.17 1.366-.98l-1.197-4.622 3.6-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                    {hasMoreTranslations && (
-                      <button
-                        type="button"
-                        onClick={() => setVisibleTranslationsCount((prev) => prev + 10)}
-                        className="w-full text-center py-1 text-[10px] font-bold text-[#e2b85f] bg-[#e2b85f]/5 border border-dashed border-[#e2b85f]/20 rounded hover:bg-[#e2b85f]/15 transition cursor-pointer uppercase tracking-wider"
-                      >
-                        Charger plus
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {query.trim().length >= 2 && suggestions.length > 0 && (
-                  <div className="mt-3 max-h-64 space-y-1 overflow-y-auto border border-white/5 bg-black/20 p-1.5 rounded-xl">
-                    {suggestions.map((v) => (
-                      <div
-                        key={`${v.reference}-${v.translation || ""}`}
-                        className="group flex items-start gap-2 rounded-lg border border-transparent bg-white/[0.04] p-2.5 transition hover:border-[#e2b85f]/40 hover:bg-white/[0.07]"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setPreview(v)}
-                          className="min-w-0 flex-1 cursor-pointer text-left flex flex-col"
-                        >
-                          <span className="text-[11px] font-bold text-[#e2b85f]">{v.reference}</span>
-                          <p className="mt-0.5 line-clamp-2 text-[12px] text-white/70">{v.text}</p>
-                          <span className="self-end text-[9px] text-[#e2b85f]/50 font-medium italic mt-1">
-                            {v.translation || defaultVersion}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => addToPrepared(v)}
-                          title="Préparer"
-                          className="mt-0.5 shrink-0 cursor-pointer rounded-md p-1 text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-white/10 hover:text-[#e2b85f]"
-                        >
-                          <Plus className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="min-h-0 flex-1 border-t border-white/5 pt-3">
-                <span className="mb-2 flex items-center justify-between text-[11px] font-bold tracking-wider text-white/50 uppercase">
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="size-3.5" /> Versets préparés
-                  </span>
-                  <span className="text-[#e2b85f] font-mono">{prepared.length}</span>
-                </span>
-                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                  {prepared.length === 0 && (
-                    <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-[11px] text-white/30">
-                      Préparez vos versets avant le culte (bouton +).
-                    </p>
-                  )}
-                  {prepared.map((v, idx) => (
-                    <div
-                      key={`${v.reference}-${idx}`}
-                      className="group flex items-center gap-2 rounded-lg bg-white/[0.04] p-2 pl-3 transition hover:bg-white/[0.08]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setPreview(v)}
-                        className="min-w-0 flex-1 cursor-pointer text-left text-[12px] font-semibold text-white/80"
-                      >
-                        {v.reference}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => persistPrepared(prepared.filter((_, i) => i !== idx))}
-                        className="shrink-0 cursor-pointer rounded-md p-1 text-white/30 transition hover:bg-white/10 hover:text-live"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: FLUX & INFOS */}
-          {activeLeftTab === "flux" && (
-            <div className="flex flex-col gap-4 max-h-[75vh] overflow-y-auto pr-1">
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-[#e2b85f]">Flux & Sermon</span>
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs text-white/70 select-none">
-                    <input
-                      type="checkbox"
-                      checked={linkLiveTrigger}
-                      onChange={(e) => setLinkLiveTrigger(e.target.checked)}
-                      className="size-3.5 cursor-pointer accent-[#e2b85f]"
-                    />
-                    Afficher dans le live
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => saveLiveSettings(linkLiveTrigger ? true : undefined)}
-                    disabled={savingSettings}
-                    className="flex items-center gap-1.5 rounded-lg bg-[#e2b85f] px-3 py-1.5 text-xs font-bold text-[#160f33] transition hover:brightness-105 disabled:opacity-50"
-                  >
-                    {savingSettings ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-                    Enregistrer
-                  </button>
-                </div>
-              </div>
-
-              {/* Chat option */}
-              <label className="flex items-center justify-between gap-4 p-2 rounded-xl border border-white/5 bg-white/[0.02] cursor-pointer hover:bg-white/[0.04]">
-                <div>
-                  <span className="block text-xs font-bold text-white">Module de Chat</span>
-                  <span className="block text-[10px] text-white/40">Activer le Tchat public interactif</span>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={liveChatEnabled}
-                  onChange={(e) => setLiveChatEnabled(e.target.checked)}
-                  className="size-4 cursor-pointer accent-[#e2b85f]"
-                />
-              </label>
-
-              {/* Broadcast details */}
-              <div className="flex flex-col gap-3">
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold text-white/50 tracking-wider uppercase">Titre de la diffusion</span>
-                  <input
-                    value={liveTitle}
-                    onChange={(e) => setLiveTitle(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-[#0d0820] px-3 py-2 text-xs text-white outline-none focus:border-[#e2b85f]"
-                    placeholder="Culte dominical - La puissance de la foi"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold text-white/50 tracking-wider uppercase">Description</span>
-                  <textarea
-                    value={liveDescription}
-                    onChange={(e) => setLiveDescription(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-xl border border-white/10 bg-[#0d0820] px-3 py-2 text-xs text-white outline-none focus:border-[#e2b85f] resize-none"
-                    placeholder="Suivez notre culte de ce matin..."
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] font-bold text-white/50 tracking-wider uppercase">URL du flux vidéo (YouTube / HLS .m3u8)</span>
-                  <input
-                    value={liveEmbedUrl}
-                    onChange={(e) => setLiveEmbedUrl(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-[#0d0820] px-3 py-2 text-xs text-white outline-none focus:border-[#e2b85f]"
-                    placeholder="https://stream.mfm.ci/hls/<clé>.m3u8"
-                  />
-                </label>
-              </div>
-
-              {/* Streaming secret key */}
-              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 flex flex-col gap-2">
-                <div className="flex items-center gap-1.5">
-                  <KeyRound className="size-3.5 text-[#e2b85f]" />
-                  <span className="text-[11px] font-bold text-[#e2b85f] uppercase">Clé de streaming (OBS)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    value={streamKey}
-                    onChange={(e) => setStreamKey(e.target.value)}
-                    placeholder="UUID stream key..."
-                    className="flex-1 rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-[11px] text-white outline-none focus:border-[#e2b85f]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const key = crypto.randomUUID().replace(/-/g, "");
-                      setStreamKey(key);
-                      setLiveEmbedUrl(`${HLS_BASE}/${key}.m3u8`);
-                      setKeyCopied(false);
-                    }}
-                    className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/10"
-                  >
-                    <RefreshCw className="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!streamKey}
-                    onClick={() => {
-                      navigator.clipboard.writeText(streamKey).then(() => {
-                        setKeyCopied(true);
-                        setTimeout(() => setKeyCopied(false), 2000);
-                      });
-                    }}
-                    className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white transition hover:bg-white/10"
-                  >
-                    {keyCopied ? <Check className="size-3 text-online" /> : <Copy className="size-3" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Sermon Notes Section */}
-              <div className="border-t border-white/5 pt-3 flex flex-col gap-3">
-                <span className="text-[11px] font-bold text-[#e2b85f] uppercase">Notes de Sermon</span>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] text-white/50 font-medium">Titre Sermon</span>
-                    <input
-                      value={sermonTitle}
-                      onChange={(e) => setSermonTitle(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
-                      placeholder="La grâce transformatrice"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] text-white/50 font-medium">Référence Bible</span>
-                    <input
-                      value={sermonReference}
-                      onChange={(e) => setSermonReference(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
-                      placeholder="Romains 5.1-11"
-                    />
-                  </label>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <span className="text-[10px] text-white/50 font-medium">Points clés :</span>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {sermonPoints.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 bg-black/20 p-2 rounded-lg border border-white/5">
-                        <input
-                          type="text"
-                          value={item.id}
-                          onChange={(e) => updateSermonPointField(idx, "id", e.target.value)}
-                          className="w-8 text-center rounded border border-white/10 bg-[#0d0820] py-0.5 text-[10px] text-[#e2b85f] font-bold"
-                          placeholder="01"
-                        />
-                        <input
-                          type="text"
-                          value={item.text}
-                          onChange={(e) => updateSermonPointField(idx, "text", e.target.value)}
-                          className="flex-1 rounded border border-white/10 bg-[#0d0820] px-1.5 py-0.5 text-[10px] text-white"
-                          placeholder="Point clé"
-                        />
-                        <input
-                          type="text"
-                          value={item.verse}
-                          onChange={(e) => updateSermonPointField(idx, "verse", e.target.value)}
-                          className="w-16 rounded border border-white/10 bg-[#0d0820] px-1.5 py-0.5 text-[10px] text-white"
-                          placeholder="Réf"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeSermonPoint(idx)}
-                          className="text-live hover:bg-white/5 p-1 rounded"
-                        >
-                          <Trash className="size-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={addSermonPoint}
-                    className="flex items-center gap-1 self-start rounded-lg border border-dashed border-[#e2b85f]/50 bg-[#e2b85f]/5 px-2.5 py-1 text-[10px] font-bold text-[#e2b85f] hover:bg-[#e2b85f]/10 cursor-pointer"
-                  >
-                    <Plus className="size-3" /> Ajouter un point
-                  </button>
-                </div>
-              </div>
-
-              {/* Cover Image fallback */}
-              <div className="border-t border-white/5 pt-3 flex flex-col gap-2">
-                <span className="text-[11px] font-bold text-white/50 tracking-wider uppercase">Image de Couverture (Hors Direct)</span>
-
-                <div className="group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#e2b85f]/30 bg-black/20 text-center transition-all duration-300 hover:border-[#e2b85f]">
-                  {liveFallbackImage ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img 
-                        src={getPreviewUrl(liveFallbackImage)} 
-                        alt="Couverture" 
-                        className="absolute inset-0 size-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-[#160f33]/60 backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-2">
-                        <label className="cursor-pointer rounded-lg bg-[#e2b85f] text-indigo px-3 py-1.5 text-[10px] font-bold transition">
-                          Remplacer
-                          <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLiveFallbackImage("");
-                            setPendingLiveFallbackFile(null);
-                          }}
-                          className="text-[10px] font-bold text-red-400 hover:text-red-300"
-                        >
-                          Retirer
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <label className="flex size-full cursor-pointer flex-col items-center justify-center p-4">
-                      <ImageIcon className="size-6 text-[#e2b85f] mb-1" />
-                      <span className="block text-[11px] font-bold text-white">Importer image</span>
-                      <span className="block text-[9px] text-white/40">PNG, JPG. Max 2 Mo.</span>
-                      <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                    </label>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: RESERVED SPACE */}
-          {activeLeftTab === "chants" && (
-            <div className="flex flex-col items-center justify-center text-center py-20 text-white/30 flex-1">
-              <Tv className="size-8 mb-2 text-[#e2b85f] opacity-50" />
-              <p className="text-xs font-bold uppercase tracking-wider text-white/40">Espace Réservé</p>
-              <p className="text-[11px] mt-1 max-w-[200px] leading-relaxed">Ce module accueillera bientôt la gestion des chants et annonces défilantes.</p>
-            </div>
-          )}
-        </aside>
-
-        {/* ── Center: Control Deck ─────────────────────────────────── */}
-        <section className="flex flex-col gap-3">
-          <Deck
-            label="À l’antenne"
-            tone="live"
-            verse={live}
-            settings={onAirSettings}
-            mini
-            onFullscreen={() => setShowFullscreenPreview(true)}
-          />
-          <Deck
-            label="En attente (preview)"
-            tone="preview"
-            verse={preview}
-            settings={settings}
-            onFullscreen={() => setShowFullscreenPreview(true)}
-          />
-
-          {/* Dynamic action row */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-[#0d0820] border border-white/10 rounded-xl p-3">
-            {/* Pulsating status badge switch */}
-            <div className="flex items-center">
-              {liveStreamActive ? (
-                <button
-                  type="button"
-                  onClick={() => setShowStopConfirm(true)}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-live/20 hover:bg-live/35 border border-live/30 px-3.5 py-2.5 text-xs font-extrabold tracking-wider text-[#ff9a9a]"
-                >
-                  <span className="size-2 rounded-full bg-live animate-ping" />
-                  <span>EN DIRECT</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => saveLiveSettings(true)}
-                  disabled={savingSettings}
-                  className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 px-3.5 py-2.5 text-xs font-extrabold tracking-wider text-white/50"
-                >
-                  <span className="size-2 rounded-full bg-white/20" />
-                  <span>HORS DIRECT</span>
-                </button>
-              )}
-            </div>
-
-            {/* Quick action buttons */}
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={masquer}
-                disabled={!live || busy}
-                className={cn(
-                  "flex cursor-pointer items-center gap-1.5 rounded-lg border px-4 py-2.5 text-xs font-extrabold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40",
-                  !live
-                    ? "bg-red-500/20 border-red-500/30 text-red-400 opacity-90 cursor-not-allowed font-semibold"
-                    : "bg-white/10 border-white/12 text-white/80 hover:bg-white/15"
-                )}
-              >
-                <EyeOff className="size-3.5" /> ÉCRAN VIDE {!live && " (ACTIF)"}
-              </button>
-              <button
-                type="button"
-                onClick={diffuse}
-                disabled={!preview || busy}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-live px-5 py-2.5 text-xs font-extrabold tracking-wide text-white shadow-[0_0_15px_rgba(229,57,53,0.3)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
-              >
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Radio className="size-3.5" />} DIFFUSER
-              </button>
-            </div>
-          </div>
-
-          {/* Scripture sibling navigation */}
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => advance("next_verse")}
-              disabled={(!live && !preview) || busy}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-[#0d0820] hover:bg-white/5 px-3 py-2.5 text-xs font-bold text-white transition hover:border-[#e2b85f]/50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Verset suivant <ChevronRight className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => advance("next_chapter")}
-              disabled={(!live && !preview) || busy}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-[#0d0820] hover:bg-white/5 px-3 py-2.5 text-xs font-bold text-white transition hover:border-[#e2b85f]/50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Chapitre suivant <ChevronsRight className="size-3.5" />
-            </button>
-          </div>
-        </section>
-
-        {/* ── Right: Studio style Configurator ───────────────────────────── */}
-        <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 h-[75vh] overflow-y-auto w-full lg:w-[320px] shrink-0">
-          <span className="text-[11px] font-bold tracking-wider text-white/50 uppercase">Studio · Style Pro</span>
-          
-          <div className="flex border-b border-white/10 p-0.5 bg-black/20 rounded-xl mb-1 text-[10px] font-bold">
-            {(["layout", "typo", "container", "anim", "presets"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setStyleTab(tab)}
-                className={cn(
-                  "flex-1 py-1.5 rounded-lg text-center cursor-pointer transition capitalize",
-                  styleTab === tab ? "bg-[#e2b85f] text-[#160f33]" : "text-white/60 hover:text-white"
-                )}
-              >
-                {tab === "container" ? "Cadre" : tab === "anim" ? "Anim" : tab}
-              </button>
-            ))}
-          </div>
-
-          {/* TAB 1: LAYOUT & POSITIONING */}
-          {styleTab === "layout" && (
-            <div className="flex flex-col gap-3.5">
-              <div>
-                <label className="mb-2 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Mode Position</label>
-                <div className="flex bg-black/20 p-0.5 rounded-lg text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setStudioField("positionMode", "predefined")}
-                    className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "predefined" ? "bg-white/10 text-white" : "text-white/40")}
-                  >
-                    Prédéfini
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudioField("positionMode", "custom")}
-                    className={cn("flex-1 py-1 rounded-md transition cursor-pointer", settings.positionMode === "custom" ? "bg-white/10 text-white" : "text-white/40")}
-                  >
-                    Libre (D&D)
-                  </button>
-                </div>
-              </div>
-
-              {settings.positionMode === "predefined" ? (
-                <Selector
-                  icon={ImageIcon}
-                  label="Disposition standard"
-                  value={settings.predefinedPosition || "centered_bottom"}
-                  options={[
-                    { value: "centered_bottom", label: "Centré bas" },
-                    { value: "lower_third_left", label: "Tiers bas gauche" },
-                    { value: "lower_third_right", label: "Tiers bas droite" },
-                    { value: "ticker", label: "Bandeau ticker défilant" },
-                    { value: "full_screen_cinema", label: "Plein écran cinéma" },
-                  ]}
-                  onChange={(v) => setStudioField("predefinedPosition", v)}
-                />
-              ) : (
-                <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
-                  <span className="block text-[10px] font-bold text-white/40 uppercase">Coordonnées (%)</span>
-                  
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span>Position X (Gauche)</span>
-                      <span className="font-mono text-[#e2b85f]">{settings.customX}%</span>
-                    </div>
-                    <input
-                      type="range" min={0} max={100} value={settings.customX}
-                      onChange={(e) => setStudioField("customX", Number(e.target.value))}
-                      className="w-full accent-[#e2b85f]"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span>Position Y (Haut)</span>
-                      <span className="font-mono text-[#e2b85f]">{settings.customY}%</span>
-                    </div>
-                    <input
-                      type="range" min={0} max={100} value={settings.customY}
-                      onChange={(e) => setStudioField("customY", Number(e.target.value))}
-                      className="w-full accent-[#e2b85f]"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span>Largeur</span>
-                      <span className="font-mono text-[#e2b85f]">{settings.customWidth}%</span>
-                    </div>
-                    <input
-                      type="range" min={10} max={100} value={settings.customWidth}
-                      onChange={(e) => setStudioField("customWidth", Number(e.target.value))}
-                      className="w-full accent-[#e2b85f]"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span>Hauteur</span>
-                      <span className="font-mono text-[#e2b85f]">{settings.customHeight}%</span>
-                    </div>
-                    <input
-                      type="range" min={10} max={100} value={settings.customHeight}
-                      onChange={(e) => setStudioField("customHeight", Number(e.target.value))}
-                      className="w-full accent-[#e2b85f]"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setShowFullscreenPreview(true)}
-                className="w-full mt-2 cursor-pointer flex items-center justify-center gap-1.5 rounded-xl border border-[#e2b85f]/30 bg-[#e2b85f]/10 hover:bg-[#e2b85f]/20 py-2.5 text-xs font-bold text-[#e2b85f] transition-all"
-              >
-                <Tv className="size-4" /> Prévisualiser en plein écran
-              </button>
-            </div>
-          )}
-
-          {/* TAB 2: TYPOGRAPHY ELEMENT STYLING */}
-          {styleTab === "typo" && (
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Élément de texte</label>
-                <select
-                  value={typoElement}
-                  onChange={(e) => setTypoElement(e.target.value as "fontRef" | "fontBody" | "fontVer")}
-                  className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs font-semibold text-white outline-none focus:border-[#e2b85f]"
-                >
-                  <option value="fontRef">Titre / Référence</option>
-                  <option value="fontBody">Corps / Verset</option>
-                  <option value="fontVer">Code de version</option>
-                </select>
-              </div>
-
-              <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
-                <Selector
-                  icon={Type}
-                  label="Police"
-                  value={settings[`${typoElement}Family` as keyof StudioSettings] as string}
-                  options={[
-                    { value: "Plus Jakarta Sans", label: "Plus Jakarta Sans" },
-                    { value: "Cormorant Garamond", label: "Cormorant Garamond" },
-                    { value: "Inter", label: "Inter" },
-                    { value: "Roboto", label: "Roboto" },
-                    { value: "Playfair Display", label: "Playfair Display" },
-                    { value: "Montserrat", label: "Montserrat" },
-                    { value: "Outfit", label: "Outfit" },
-                  ]}
-                  onChange={(v) => setStudioField(`${typoElement}Family` as keyof StudioSettings, v)}
-                />
-
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Graisse</label>
-                  <select
-                    value={settings[`${typoElement}Weight` as keyof StudioSettings] as string}
-                    onChange={(e) => setStudioField(`${typoElement}Weight` as keyof StudioSettings, e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
-                  >
-                    {["100", "200", "300", "400", "500", "600", "700", "800", "900"].map((w) => (
-                      <option key={w} value={w}>{w}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Style variation toggles */}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStudioField(`${typoElement}Style` as keyof StudioSettings, settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "normal" : "italic")}
-                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Style` as keyof StudioSettings] === "italic" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
-                  >
-                    Italique
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudioField(`${typoElement}Transform` as keyof StudioSettings, settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "none" : "uppercase")}
-                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Transform` as keyof StudioSettings] === "uppercase" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
-                  >
-                    MAJUSCULE
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setStudioField(`${typoElement}Decoration` as keyof StudioSettings, settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "none" : "underline")}
-                    className={cn("flex-1 py-1 rounded text-[10px] font-bold border transition cursor-pointer", settings[`${typoElement}Decoration` as keyof StudioSettings] === "underline" ? "bg-[#e2b85f]/15 border-[#e2b85f] text-[#e2b85f]" : "border-white/10 bg-white/5 text-white/60")}
-                  >
-                    Souligné
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
-                    <span>Taille texte</span>
-                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}Size` as keyof StudioSettings]}px</span>
-                  </div>
-                  <input
-                    type="range" min={10} max={80} value={settings[`${typoElement}Size` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudioField(`${typoElement}Size` as keyof StudioSettings, Number(e.target.value))}
-                    className="w-full accent-[#e2b85f]"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
-                    <span>Hauteur de ligne</span>
-                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}LineHeight` as keyof StudioSettings]}x</span>
-                  </div>
-                  <input
-                    type="range" min={1} max={2.5} step={0.1} value={settings[`${typoElement}LineHeight` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudioField(`${typoElement}LineHeight` as keyof StudioSettings, Number(e.target.value))}
-                    className="w-full accent-[#e2b85f]"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-white/60">
-                    <span>Espacement lettres</span>
-                    <span className="font-mono text-[#e2b85f]">{settings[`${typoElement}Spacing` as keyof StudioSettings]}px</span>
-                  </div>
-                  <input
-                    type="range" min={-2} max={15} step={0.5} value={settings[`${typoElement}Spacing` as keyof StudioSettings] as number}
-                    onChange={(e) => setStudioField(`${typoElement}Spacing` as keyof StudioSettings, Number(e.target.value))}
-                    className="w-full accent-[#e2b85f]"
-                  />
-                </div>
-
-                {/* Color picker selection */}
-                <div>
-                  <label className="mb-1.5 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Couleur ou Dégradé</label>
-                  <div className="grid grid-cols-5 gap-1 mb-2">
-                    {["#ffffff", "#e2b85f", "#ffb300", "#00e5ff", "#ff4081", "linear-gradient(90deg, #ff007f 0%, #00e5ff 100%)", "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"].map((col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => setStudioField(`${typoElement}Color` as keyof StudioSettings, col)}
-                        style={{ background: col.includes("gradient") ? col : undefined, backgroundColor: col.includes("gradient") ? undefined : col }}
-                        className={cn("aspect-square rounded border cursor-pointer border-white/10 hover:scale-105 transition", settings[`${typoElement}Color` as keyof StudioSettings] === col && "ring-2 ring-white")}
-                        title={col}
-                      />
-                    ))}
-                  </div>
-                  <input
-                    type="text"
-                    value={settings[`${typoElement}Color` as keyof StudioSettings] as string}
-                    onChange={(e) => setStudioField(`${typoElement}Color` as keyof StudioSettings, e.target.value)}
-                    placeholder="Couleur (ex: #fff ou RGBA ou dégradé)"
-                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2 py-1 text-[11px] font-mono text-white outline-none focus:border-[#e2b85f]"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: CONTAINER & GEOMETRY STYLE */}
-          {styleTab === "container" && (
-            <div className="flex flex-col gap-3">
-              <Selector
-                icon={ImageIcon}
-                label="Forme conteneur"
-                value={settings.containerShape}
-                options={[
-                  { value: "rounded_rectangle", label: "Rectangle arrondi" },
-                  { value: "rectangle", label: "Rectangle droit" },
-                  { value: "capsule", label: "Capsule" },
-                  { value: "asymmetric", label: "Asymétrique" },
-                  { value: "transparent", label: "Transparent" },
-                ]}
-                onChange={(v) => setStudioField("containerShape", v)}
-              />
-
-              {settings.containerShape !== "transparent" && (
-                <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Arrière-plan conteneur</label>
-                    <input
-                      type="text"
-                      value={settings.containerBg}
-                      onChange={(e) => setStudioField("containerBg", e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
-                      placeholder="rgba(22, 15, 51, 0.95)"
-                    />
-                  </div>
-
-                  {settings.containerShape === "rounded_rectangle" && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span>Arrondi des angles</span>
-                        <span className="font-mono text-[#e2b85f]">{settings.containerBorderRadius}px</span>
-                      </div>
-                      <input
-                        type="range" min={0} max={60} value={settings.containerBorderRadius}
-                        onChange={(e) => setStudioField("containerBorderRadius", Number(e.target.value))}
-                        className="w-full accent-[#e2b85f]"
-                      />
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <span className="block text-[10px] text-white/50 font-medium">Bordure (px)</span>
-                      <input
-                        type="number" min={0} max={10} value={settings.containerBorderWidth}
-                        onChange={(e) => setStudioField("containerBorderWidth", Number(e.target.value))}
-                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="block text-[10px] text-white/50 font-medium">Style Bordure</span>
-                      <select
-                        value={settings.containerBorderStyle}
-                        onChange={(e) => setStudioField("containerBorderStyle", e.target.value)}
-                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white outline-none focus:border-[#e2b85f]"
-                      >
-                        <option value="solid">Plein (Solid)</option>
-                        <option value="dashed">Pointillé (Dashed)</option>
-                        <option value="glow">Néon (Glow)</option>
-                        <option value="none">Aucun</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Couleur bordure</label>
-                    <input
-                      type="text"
-                      value={settings.containerBorderColor}
-                      onChange={(e) => setStudioField("containerBorderColor", e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
-                      placeholder="rgba(255,255,255,0.15)"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <span className="block text-[10px] text-white/50 font-medium">Marge Interne X</span>
-                      <input
-                        type="number" min={5} max={100} value={settings.containerPaddingX}
-                        onChange={(e) => setStudioField("containerPaddingX", Number(e.target.value))}
-                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="block text-[10px] text-white/50 font-medium">Marge Interne Y</span>
-                      <input
-                        type="number" min={5} max={100} value={settings.containerPaddingY}
-                        onChange={(e) => setStudioField("containerPaddingY", Number(e.target.value))}
-                        className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Shadow Portee Settings */}
-              <div className="space-y-3 bg-black/15 p-3 rounded-xl border border-white/5">
-                <span className="block text-[10px] font-bold text-white/40 uppercase">Ombre portée (Broadcast)</span>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span>Flou (Blur)</span>
-                    <span className="font-mono text-[#e2b85f]">{settings.shadowBlur}px</span>
-                  </div>
-                  <input
-                    type="range" min={0} max={100} value={settings.shadowBlur}
-                    onChange={(e) => setStudioField("shadowBlur", Number(e.target.value))}
-                    className="w-full accent-[#e2b85f]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className="block text-[10px] text-white/50 font-medium">Décalage X</span>
-                    <input
-                      type="number" min={-50} max={50} value={settings.shadowOffsetX}
-                      onChange={(e) => setStudioField("shadowOffsetX", Number(e.target.value))}
-                      className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="block text-[10px] text-white/50 font-medium">Décalage Y</span>
-                    <input
-                      type="number" min={-50} max={50} value={settings.shadowOffsetY}
-                      onChange={(e) => setStudioField("shadowOffsetY", Number(e.target.value))}
-                      className="w-full rounded border border-white/10 bg-[#0d0820] px-2 py-1 text-xs text-white"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold text-white/40 uppercase">Couleur Ombre</label>
-                  <input
-                    type="text"
-                    value={settings.shadowColor}
-                    onChange={(e) => setStudioField("shadowColor", e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 font-mono text-xs text-white outline-none focus:border-[#e2b85f]"
-                    placeholder="rgba(0, 0, 0, 0.5)"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: ANIMATIONS TIMING */}
-          {styleTab === "anim" && (
-            <div className="flex flex-col gap-3.5">
-              <Selector
-                icon={Sparkles}
-                label="Effet d'apparition"
-                value={settings.animation}
-                options={[
-                  { value: "fade_slide", label: "Fondu & Glissement" },
-                  { value: "scale", label: "Zoom" },
-                  { value: "slide_left", label: "Glissement Gauche" },
-                  { value: "slide_right", label: "Glissement Droite" },
-                  { value: "clip_reveal", label: "Déploiement (Clip-path)" },
-                  { value: "typewriter", label: "Machine à écrire" },
-                ]}
-                onChange={(v) => setStudioField("animation", v)}
-              />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span>Durée de transition</span>
-                  <span className="font-mono text-[#e2b85f]">{settings.animDuration} ms</span>
-                </div>
-                <input
-                  type="range" min={100} max={3000} step={100} value={settings.animDuration}
-                  onChange={(e) => setStudioField("animDuration", Number(e.target.value))}
-                  className="w-full accent-[#e2b85f]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[10px] font-bold tracking-wider text-white/50 uppercase">Courbe (Easing)</label>
-                <select
-                  value={settings.animEasing}
-                  onChange={(e) => setStudioField("animEasing", e.target.value)}
-                  className="w-full cursor-pointer rounded-xl border border-white/12 bg-[#0d0820] px-3.5 py-2.5 text-sm font-semibold text-white outline-none focus:border-[#e2b85f]"
-                >
-                  <option value="ease-out">Facilité fin (Ease-out)</option>
-                  <option value="ease-in">Facilité début (Ease-in)</option>
-                  <option value="ease-in-out">Facilité totale (Ease-in-out)</option>
-                  <option value="linear">Linéaire</option>
-                  <option value="bounce">Élastique (Bounce)</option>
-                </select>
-              </div>
-
-              <div className="border-t border-white/5 pt-3">
-                <label className="mb-2 flex items-center justify-between text-[11px] font-bold tracking-wider text-white/50 uppercase">
-                  <span className="flex items-center gap-2">
-                    <Clock className="size-3.5" /> Durée d'affichage
-                  </span>
-                  <span className="text-[#e2b85f]">{settings.duration === 0 ? "Manuel" : `${settings.duration}s`}</span>
-                </label>
-                <input
-                  type="range" min={0} max={60} step={5} value={settings.duration}
-                  onChange={(e) => setStudioField("duration", Number(e.target.value))}
-                  className="w-full accent-[#e2b85f]"
-                />
-                <p className="mt-1 text-[10px] text-white/30">0 = reste affiché jusqu’au masquage manuel.</p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: PRESETS MANAGER */}
-          {styleTab === "presets" && (
-            <div className="flex flex-col gap-3.5">
-              <div className="bg-black/15 p-3 rounded-xl border border-white/5 flex flex-col gap-2">
-                <span className="block text-[10px] font-bold text-white/40 uppercase">Enregistrer style actuel</span>
-                <input
-                  type="text"
-                  value={newPresetName}
-                  onChange={(e) => setNewPresetName(e.target.value)}
-                  placeholder="Nom du preset..."
-                  className="w-full rounded-lg border border-white/10 bg-[#0d0820] px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#e2b85f]"
-                />
-                <button
-                  type="button"
-                  onClick={handleSavePreset}
-                  disabled={!newPresetName.trim()}
-                  className="w-full py-1.5 text-xs font-bold text-[#160f33] bg-[#e2b85f] hover:brightness-105 rounded-lg disabled:opacity-50 transition cursor-pointer"
-                >
-                  Sauvegarder Preset
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                <span className="block text-[10px] font-bold text-white/40 uppercase">Presets Sauvegardés</span>
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {presets.map((preset) => (
-                    <div
-                      key={preset.name}
-                      className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleLoadPreset(preset.settings)}
-                        className="text-left text-xs font-semibold text-white/90 truncate flex-1 cursor-pointer"
-                      >
-                        {preset.name}
-                      </button>
-                      
-                      {/* Delete icon unless preloaded defaults */}
-                      {!PRELOADED_PRESETS.some((p) => p.name === preset.name) && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeletePreset(preset.name)}
-                          className="text-white/30 hover:text-live p-1 rounded cursor-pointer"
-                        >
-                          <Trash className="size-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </aside>
-      </div>
-
-      {/* OBS-Style Settings Modal */}
-      {showGeneralConfig && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6 animate-fade-in"
-          onClick={() => setShowGeneralConfig(false)}
+      <SettingsModal
+        open={showGeneralConfig}
+        onClose={() => setShowGeneralConfig(false)}
+        activeTab={activeSettingsTab}
+        onTabChange={setActiveSettingsTab}
+        saving={savingSettings}
+        onSave={() => void saveLiveSettings()}
+        title={liveTitle}
+        onTitle={setLiveTitle}
+        description={liveDescription}
+        onDescription={setLiveDescription}
+        sermonTitle={sermonTitle}
+        onSermonTitle={setSermonTitle}
+        sermonPreacher={sermonPreacher}
+        onSermonPreacher={setSermonPreacher}
+        sermonReference={sermonReference}
+        onSermonReference={setSermonReference}
+        chatEnabled={liveChatEnabled}
+        onChatEnabled={setLiveChatEnabled}
+        sermonPoints={sermonPoints}
+        onAddPoint={addSermonPoint}
+        onRemovePoint={removeSermonPoint}
+        onUpdatePoint={(i, field, value) => updateSermonPointField(i, field, value)}
+        embedUrl={liveEmbedUrl}
+        onEmbedUrl={setLiveEmbedUrl}
+        streamKey={streamKey}
+        onStreamKey={setStreamKey}
+        fallbackImage={liveFallbackImage}
+        getPreviewUrl={getPreviewUrl}
+        onImageSelect={handleImageSelect}
+      />
+      {pendingDeleteLayer && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setPendingDeleteId(null)}
         >
-          <div 
-            className="flex w-full max-w-5xl h-[80vh] overflow-hidden rounded-xl border border-[#b270ff]/30 bg-[#130d22] shadow-[0_0_50px_-12px_rgba(178,112,255,0.2)] text-white"
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 bg-studio-panel p-5 text-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Left Sidebar - Tabs */}
-            <div className="w-64 bg-[#0d0918] border-r border-white/5 flex flex-col">
-              <div className="p-5 border-b border-white/5">
-                <h2 className="text-lg font-black tracking-widest text-white/90">PARAMÈTRES</h2>
-              </div>
-              <nav className="flex-1 overflow-y-auto py-3 space-y-1 px-3 custom-scrollbar">
-                {[
-                  { id: "general", label: "Général", icon: Settings2 },
-                  { id: "stream", label: "Stream", icon: Globe },
-                  { id: "output", label: "Sortie", icon: HardDrive },
-                  { id: "audio", label: "Audio", icon: Volume2 },
-                  { id: "video", label: "Vidéo", icon: Monitor },
-                  { id: "hotkeys", label: "Raccourcis clavier", icon: Keyboard },
-                  { id: "accessibility", label: "Accessibilité", icon: Accessibility },
-                  { id: "advanced", label: "Avancé", icon: Settings2 },
-                ].map((t) => {
-                  const active = activeSettingsTab === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setActiveSettingsTab(t.id)}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition cursor-pointer",
-                        active 
-                          ? "bg-[#b270ff]/15 text-[#b270ff] shadow-[inset_2px_0_0_#b270ff]" 
-                          : "text-white/60 hover:bg-white/5 hover:text-white"
-                      )}
-                    >
-                      <t.icon className="size-4" />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </nav>
-              <div className="p-4 border-t border-white/5 flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowGeneralConfig(false)}
-                  className="w-full rounded-lg bg-white/5 hover:bg-white/10 py-2 text-sm font-bold transition cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { saveLiveSettings(); setShowGeneralConfig(false); }}
-                  className="w-full rounded-lg bg-[#b270ff] hover:bg-[#b270ff]/90 text-white py-2 text-sm font-bold shadow-lg shadow-[#b270ff]/20 transition flex justify-center items-center gap-2 cursor-pointer"
-                >
-                  {savingSettings ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Appliquer
-                </button>
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-studio-onair/30 bg-studio-onair/10 text-studio-onair">
+                <AlertTriangle className="size-5" />
+              </span>
+              <div>
+                <h3 className="text-[15px] font-bold text-[#ff9a9a]">Retirer cette source ?</h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-white/70">
+                  « {pendingDeleteLayer.name} » sera retirée de la scène. Vous pourrez la recréer à
+                  tout moment.
+                </p>
               </div>
             </div>
-
-            {/* Right Panel - Content */}
-            <div className="flex-1 flex flex-col bg-[#130d22] relative overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                
-                {/* TAB: GENERAL */}
-                {activeSettingsTab === "general" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Général</h3>
-                    
-                    <div className="space-y-6 max-w-2xl">
-                      {/* Section Infos */}
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Informations de Diffusion</h4>
-                        
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Titre du Live</span>
-                          <input type="text" value={liveTitle} onChange={(e) => setLiveTitle(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Description</span>
-                          <textarea value={liveDescription} onChange={(e) => setLiveDescription(e.target.value)} rows={3} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                        </label>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Détails du Sermon</h4>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <label className="block">
-                            <span className="mb-1.5 block text-xs font-bold text-white/50">Titre du Message</span>
-                            <input type="text" value={sermonTitle} onChange={(e) => setSermonTitle(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                          </label>
-                          <label className="block">
-                            <span className="mb-1.5 block text-xs font-bold text-white/50">Prédicateur</span>
-                            <input type="text" value={sermonPreacher} onChange={(e) => setSermonPreacher(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Interface Utilisateur</h4>
-                        <label className="flex items-center gap-3 cursor-pointer">
-                          <input type="checkbox" checked={advancedConfig.live_show_in_feed} onChange={(e) => updateAdvancedConfig("live_show_in_feed", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                          <span className="text-sm font-medium">Afficher ce direct dans le fil public</span>
-                        </label>
-                        <label className="block mt-4">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Langue de la Régie</span>
-                          <select value={advancedConfig.live_lang} onChange={(e) => updateAdvancedConfig("live_lang", e.target.value)} className="w-full max-w-xs rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                            <option value="fr">Français</option>
-                            <option value="en">Anglais</option>
-                          </select>
-                        </label>
-                        <button type="button" className="mt-4 rounded-lg bg-white/5 hover:bg-white/10 px-4 py-2 text-xs font-bold text-white transition cursor-pointer">
-                          Réinitialiser tous les paramètres de la console
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: STREAM */}
-                {activeSettingsTab === "stream" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Stream (Flux)</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Service de Streaming</span>
-                        <select value={advancedConfig.live_stream_platform} onChange={(e) => updateAdvancedConfig("live_stream_platform", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="youtube">YouTube - RTMPS</option>
-                          <option value="facebook">Facebook Live</option>
-                          <option value="custom">Serveur RTMP Personnalisé</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Serveur (URL)</span>
-                        <input type="text" value={advancedConfig.live_stream_server} onChange={(e) => updateAdvancedConfig("live_stream_server", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Clé de flux (Stream Key)</span>
-                        <div className="relative">
-                          <input type="password" value={streamKey} onChange={(e) => setStreamKey(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2.5 text-sm text-white focus:border-[#b270ff] outline-none transition pr-10" />
-                          <EyeOff className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-white/30" />
-                        </div>
-                        <p className="mt-2 text-[10px] text-yellow-500/80">⚠️ Ne partagez jamais votre clé de flux avec quiconque.</p>
-                      </label>
-
-                      <label className="block pt-4">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Lien Externe Public (Fallback)</span>
-                        <input type="text" value={liveEmbedUrl} onChange={(e) => setLiveEmbedUrl(e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" placeholder="Ex: https://youtu.be/..." />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: SORTIE */}
-                {activeSettingsTab === "output" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Sortie & Encodage</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <div className="grid grid-cols-2 gap-6">
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Débit Vidéo (Bitrate)</span>
-                          <div className="flex items-center gap-2">
-                            <input type="number" step="100" value={advancedConfig.live_video_bitrate} onChange={(e) => updateAdvancedConfig("live_video_bitrate", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                            <span className="text-sm text-white/50">Kbps</span>
-                          </div>
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Débit Audio</span>
-                          <select value={advancedConfig.live_audio_bitrate} onChange={(e) => updateAdvancedConfig("live_audio_bitrate", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                            <option value="128">128 Kbps</option>
-                            <option value="160">160 Kbps</option>
-                            <option value="192">192 Kbps</option>
-                            <option value="320">320 Kbps</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Profil d&apos;encodage (CPU Usage)</span>
-                        <select value={advancedConfig.live_encoder_profile} onChange={(e) => updateAdvancedConfig("live_encoder_profile", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="veryfast">veryfast (Faible utilisation CPU)</option>
-                          <option value="fast">fast</option>
-                          <option value="medium">medium</option>
-                          <option value="slow">slow (Qualité max, CPU très élevé)</option>
-                        </select>
-                      </label>
-
-                      <div className="border-t border-white/10 pt-6 space-y-4">
-                        <h4 className="text-sm font-bold text-[#b270ff] uppercase tracking-wider">Enregistrement Local</h4>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-bold text-white/50">Chemin d&apos;enregistrement</span>
-                          <div className="flex gap-2">
-                            <input type="text" value={advancedConfig.live_record_path} onChange={(e) => updateAdvancedConfig("live_record_path", e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                            <button type="button" className="bg-white/10 hover:bg-white/20 rounded-lg px-4 text-sm font-semibold transition cursor-pointer">Parcourir</button>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: AUDIO */}
-                {activeSettingsTab === "audio" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Périphériques Audio</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Microphone / Entrée Auxiliaire principale</span>
-                        <select value={advancedConfig.live_audio_mic} onChange={(e) => updateAdvancedConfig("live_audio_mic", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="default">Périphérique par défaut</option>
-                          <option value="line1">Ligne In 1 (Interface Focusrite)</option>
-                          <option value="mic1">Microphone USB</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Périphérique de Monitoring (Régie)</span>
-                        <select value={advancedConfig.live_audio_monitor} onChange={(e) => updateAdvancedConfig("live_audio_monitor", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="default">Haut-parleurs par défaut</option>
-                          <option value="headphones">Casque Régie</option>
-                        </select>
-                      </label>
-
-                      <div className="space-y-4 pt-4 border-t border-white/10">
-                        <label className="block">
-                          <span className="mb-2 flex justify-between text-xs font-bold text-white/50">
-                            Gain Global
-                            <span className="text-white">{advancedConfig.live_audio_gain} dB</span>
-                          </span>
-                          <input type="range" min="-30" max="30" value={advancedConfig.live_audio_gain} onChange={(e) => updateAdvancedConfig("live_audio_gain", Number(e.target.value))} className="w-full accent-[#b270ff] cursor-pointer" />
-                        </label>
-
-                        <label className="flex items-center gap-3 cursor-pointer pt-4">
-                          <input type="checkbox" checked={advancedConfig.live_noise_suppression} onChange={(e) => updateAdvancedConfig("live_noise_suppression", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                          <span className="text-sm font-medium">Activer l&apos;atténuation du bruit (RNNoise)</span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: VIDEO */}
-                {activeSettingsTab === "video" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Vidéo</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Base (Canevas Régie)</span>
-                        <select value={advancedConfig.live_base_resolution} onChange={(e) => updateAdvancedConfig("live_base_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="1920x1080">1920x1080</option>
-                          <option value="1280x720">1280x720</option>
-                          <option value="3840x2160">3840x2160 (4K)</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Résolution de Sortie (Mise à l&apos;échelle)</span>
-                        <select value={advancedConfig.live_output_resolution} onChange={(e) => updateAdvancedConfig("live_output_resolution", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="1920x1080">1920x1080</option>
-                          <option value="1280x720">1280x720</option>
-                          <option value="854x480">854x480</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Valeur FPS (Images par seconde)</span>
-                        <select value={advancedConfig.live_fps} onChange={(e) => updateAdvancedConfig("live_fps", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="30">30 FPS</option>
-                          <option value="60">60 FPS</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: HOTKEYS */}
-                {activeSettingsTab === "hotkeys" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Raccourcis clavier</h3>
-                    
-                    <div className="space-y-4 max-w-2xl">
-                      {[
-                        { action: "Passer à l'antenne / Direct", key: "Espace" },
-                        { action: "Écran Vide (Couper Overlay)", key: "Échap" },
-                        { action: "Verset Suivant", key: "Flèche Bas" },
-                        { action: "Verset Précédent", key: "Flèche Haut" },
-                        { action: "Focus sur la Recherche", key: "Ctrl + F" },
-                      ].map((hk, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/5 hover:border-white/10 transition">
-                          <span className="text-sm font-semibold">{hk.action}</span>
-                          <button type="button" className="bg-[#090514] border border-white/10 px-4 py-1.5 rounded text-xs font-mono text-[#b270ff] hover:bg-white/5 transition cursor-pointer">
-                            {hk.key}
-                          </button>
-                        </div>
-                      ))}
-                      <p className="text-xs text-white/40 italic mt-4 text-center">Cliquez sur un raccourci pour le réassigner.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: ACCESSIBILITY */}
-                {activeSettingsTab === "accessibility" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Accessibilité & Ergonomie</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Contraste de la Régie</span>
-                        <select value={advancedConfig.live_ui_contrast} onChange={(e) => updateAdvancedConfig("live_ui_contrast", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="normal">Normal (Défaut)</option>
-                          <option value="high">Contraste Élevé</option>
-                          <option value="dimmed">Sombre (Fatigue oculaire réduite)</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Taille du Texte de l&apos;Interface</span>
-                        <select value={advancedConfig.live_ui_text_size} onChange={(e) => updateAdvancedConfig("live_ui_text_size", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="small">Petit</option>
-                          <option value="medium">Moyen (Défaut)</option>
-                          <option value="large">Grand</option>
-                        </select>
-                      </label>
-
-                      <label className="flex items-center gap-3 cursor-pointer pt-4 border-t border-white/10">
-                        <input type="checkbox" checked={advancedConfig.live_audio_cues} onChange={(e) => updateAdvancedConfig("live_audio_cues", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                        <span className="text-sm font-medium">Activer les retours sonores (Bips de transition, Erreurs)</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB: ADVANCED */}
-                {activeSettingsTab === "advanced" && (
-                  <div className="space-y-8 animate-fade-in">
-                    <h3 className="text-xl font-bold border-b border-white/10 pb-4">Avancé</h3>
-                    
-                    <div className="space-y-6 max-w-xl">
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Priorité du Processus</span>
-                        <select value={advancedConfig.live_process_priority} onChange={(e) => updateAdvancedConfig("live_process_priority", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="high">Haute (Recommandé)</option>
-                          <option value="normal">Normale</option>
-                        </select>
-                      </label>
-
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Délai du flux (Stream Delay) - Secondes</span>
-                        <input type="number" min="0" max="60" value={advancedConfig.live_stream_delay} onChange={(e) => updateAdvancedConfig("live_stream_delay", Number(e.target.value))} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition" />
-                      </label>
-
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" checked={advancedConfig.live_auto_reconnect} onChange={(e) => updateAdvancedConfig("live_auto_reconnect", e.target.checked)} className="size-4 rounded border-white/20 bg-black/40 text-[#b270ff] focus:ring-[#b270ff] cursor-pointer" />
-                        <span className="text-sm font-medium">Reconnexion automatique en cas de coupure</span>
-                      </label>
-
-                      <label className="block pt-4 border-t border-white/10">
-                        <span className="mb-1.5 block text-xs font-bold text-white/50">Gestion du Cache Base de Données</span>
-                        <select value={advancedConfig.live_db_cache} onChange={(e) => updateAdvancedConfig("live_db_cache", e.target.value)} className="w-full rounded-lg border border-white/10 bg-[#090514] px-4 py-2 text-sm text-white focus:border-[#b270ff] outline-none transition cursor-pointer">
-                          <option value="aggressive">Agressif (Temps réel ultra rapide)</option>
-                          <option value="balanced">Équilibré</option>
-                          <option value="minimal">Minimal (Plus de requêtes serveur)</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                )}
-                
-              </div>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteId(null)}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteLayer}
+                className="rounded-xl bg-studio-onair px-4 py-2 text-xs font-bold text-white transition hover:brightness-110"
+              >
+                Retirer
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Confirmation modal to turn off live stream */}
       {showStopConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm animate-fade-up"
@@ -2765,162 +1564,5 @@ export function LiveStudioConsole({
         </div>
       )}
     </div>
-  );
-}
-
-/* ── Sub-components ─────────────────────────────────────────────── */
-
-const DECK_BG: Record<string, string> = {
-  gradient_purple: "bg-gradient-to-br from-[#1b0f3a] via-[#160f33] to-[#0b0720]",
-  blur: "bg-white/5 backdrop-blur",
-  solid_dark: "bg-[#0b0720]",
-  none: "bg-black/40",
-};
-
-function Deck({
-  label,
-  tone,
-  verse,
-  settings,
-  mini = false,
-  onFullscreen,
-}: {
-  label: string;
-  tone: "live" | "preview";
-  verse: ScriptureVerse | null;
-  settings: StudioSettings;
-  mini?: boolean;
-  onFullscreen?: () => void;
-}) {
-  // We scale down fonts and paddings for miniature rendering inside the Deck
-  const scaleFactor = mini ? 0.35 : 0.45;
-  const scaledContainerStyle: React.CSSProperties = {
-    ...getContainerStyle(settings),
-    padding: `${Math.round(settings.containerPaddingY * scaleFactor)}px ${Math.round(settings.containerPaddingX * scaleFactor)}px`,
-    borderRadius: settings.containerShape === "capsule" ? "9999px" : (settings.containerShape === "rectangle" ? "0px" : `${Math.round(settings.containerBorderRadius * scaleFactor)}px`),
-    borderWidth: `${Math.max(1, Math.round(settings.containerBorderWidth * scaleFactor))}px`,
-    position: "absolute",
-    left: "5%",
-    right: "5%",
-    width: "90%",
-    bottom: "6%",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    maxHeight: "85%",
-  };
-
-  const scaleFont = (size: number) => `${Math.max(8, Math.round(size * scaleFactor))}px`;
-  const scaleSpacing = (spacing: number) => `${spacing * scaleFactor}px`;
-
-  const refStyle: React.CSSProperties = {
-    ...getElementStyle("fontRef", settings),
-    fontSize: scaleFont(settings.fontRefSize),
-    letterSpacing: scaleSpacing(settings.fontRefSpacing),
-    lineHeight: 1.1,
-    marginBottom: "4px",
-  };
-
-  const bodyStyle: React.CSSProperties = {
-    ...getElementStyle("fontBody", settings),
-    fontSize: scaleFont(settings.fontBodySize),
-    letterSpacing: scaleSpacing(settings.fontBodySpacing),
-    lineHeight: 1.2,
-  };
-
-  const verStyle: React.CSSProperties = {
-    ...getElementStyle("fontVer", settings),
-    fontSize: scaleFont(settings.fontVerSize),
-    letterSpacing: scaleSpacing(settings.fontVerSpacing),
-    lineHeight: 1.1,
-    marginTop: "2px",
-  };
-
-  return (
-    <div
-      className={cn(
-        "rounded-xl border p-1 relative",
-        tone === "live" ? "border-live/40 bg-live/[0.06]" : "border-white/12 bg-white/[0.03]",
-      )}
-    >
-      <div className="flex items-center justify-between px-3 py-1">
-        <div className="flex items-center gap-2">
-          <span className={cn("text-[10px] font-bold tracking-[0.18em] uppercase", tone === "live" ? "text-live" : "text-white/40")}>
-            {label}
-          </span>
-          {onFullscreen && (
-            <button
-              type="button"
-              onClick={onFullscreen}
-              className="text-white/40 hover:text-white transition cursor-pointer"
-              title="Agrandir en plein écran"
-            >
-              <Maximize className="size-3" />
-            </button>
-          )}
-        </div>
-        {verse && <span className="text-[11px] font-bold text-[#e2b85f]">{verse.reference}</span>}
-      </div>
-      
-      <div className={cn(
-        "relative grid h-[110px] sm:h-[130px] md:h-[150px] w-full place-items-center overflow-hidden rounded-xl bg-black/50 border border-white/5",
-        DECK_BG[settings.background] ?? DECK_BG.gradient_purple
-      )}>
-        {verse ? (
-          <div style={scaledContainerStyle} className="shadow-lg text-center">
-            <span style={refStyle} className="block font-bold">
-              {verse.reference}
-            </span>
-            <div className="w-full">
-              <p style={bodyStyle} className="line-clamp-2 leading-tight">
-                {verse.text}
-              </p>
-              <span style={verStyle} className="block italic mt-0.5">
-                {verse.texts ? Object.keys(verse.texts)[0] : (verse.translation || "LSG")}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <span className="text-[10px] font-semibold text-white/25">{tone === "live" ? "Rien à l’antenne" : "Sélectionnez un verset"}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Selector({
-  icon: Icon,
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  icon: typeof Sparkles;
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-wider text-white/50 uppercase">
-        <Icon className="size-3.5" /> {label}
-      </span>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-xl border border-white/12 bg-[#0d0820] px-3.5 py-2.5 text-sm font-semibold text-white outline-none transition focus:border-[#e2b85f]"
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-[#0d0820]">
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <ChevronRight className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 rotate-90 text-white/40" />
-      </div>
-    </label>
   );
 }

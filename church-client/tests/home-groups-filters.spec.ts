@@ -139,7 +139,7 @@ test.describe("Validation du QueryBuilder et de l'alignement QueryMaster", () =>
       request.url().includes("/public/home-groups") || request.url().includes("/home-groups")
     );
 
-    let valueInput = page.locator("input[placeholder='Valeur...']");
+    const valueInput = page.locator("input[placeholder='Valeur...']");
     await valueInput.fill("Zone");
     await valueInput.press("Enter");
 

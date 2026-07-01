@@ -1,24 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { motion, AnimatePresence, type Variants, type Easing } from "framer-motion";
 
 import { cn } from "@/lib/utils";
-import { DEFAULT_STUDIO_SETTINGS, type ScripturePayload, type StudioSettings, type StudioAnimation } from "@/lib/studio";
+import { DEFAULT_STUDIO_SETTINGS, type ScripturePayload, type StudioSettings } from "@/lib/studio";
 
 /* ── Animation Easing Map ───────────────────────────────────────── */
-const EASING_MAP: Record<string, string | number[]> = {
+const EASING_MAP: Record<string, Easing> = {
   linear: "linear",
   "ease-in": "easeIn",
   "ease-out": "easeOut",
   "ease-in-out": "easeInOut",
-  bounce: [0.175, 0.885, 0.32, 1.275], // elastic spring-like bounce curve
+  bounce: [0.175, 0.885, 0.32, 1.275] as Easing, // elastic spring-like bounce curve
 };
 
 /* ── Modular Animation Plugins ──────────────────────────────────── */
 export type OverlayAnimationPlugin = {
   name: string;
-  getVariants: (durationMs: number, ease: any) => Variants;
+  getVariants: (durationMs: number, ease: Easing) => Variants;
 };
 
 export const ANIMATION_PLUGINS: Record<string, OverlayAnimationPlugin> = {
@@ -121,7 +121,7 @@ const getElementStyle = (prefix: "fontRef" | "fontBody" | "fontVer", s: StudioSe
     fontSize: `${s[`${prefix}Size` as keyof StudioSettings]}px`,
     fontWeight: s[`${prefix}Weight` as keyof StudioSettings] as string,
     fontStyle: s[`${prefix}Style` as keyof StudioSettings] as string,
-    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as any,
+    textTransform: s[`${prefix}Transform` as keyof StudioSettings] as React.CSSProperties["textTransform"],
     textDecoration: s[`${prefix}Decoration` as keyof StudioSettings] as string,
     letterSpacing: `${s[`${prefix}Spacing` as keyof StudioSettings]}px`,
     lineHeight: s[`${prefix}LineHeight` as keyof StudioSettings] as number,
@@ -219,7 +219,7 @@ const PREDEFINED_CARD_CLASSES: Record<string, string> = {
 export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null }) {
   const visible = payload?.action === "show" && !!payload.verse;
   const verse = payload?.verse ?? null;
-  const s: StudioSettings = { ...DEFAULT_STUDIO_SETTINGS, ...(payload?.settings ?? {}) } as any;
+  const s: StudioSettings = { ...DEFAULT_STUDIO_SETTINGS, ...(payload?.settings ?? {}) } as StudioSettings;
 
   // Auto-hide after `duration` seconds
   const shownKey = `${payload?.action ?? "hide"}|${verse?.reference ?? ""}|${payload?.at ?? ""}`;

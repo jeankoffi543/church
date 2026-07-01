@@ -23,7 +23,7 @@ class BibleController extends Controller
 
         $versionsInput = $request->input('translations') ?? $request->input('versions');
         $versions = ['LS1910']; // Par défaut
-        if (!empty($versionsInput)) {
+        if (! empty($versionsInput)) {
             if (is_array($versionsInput)) {
                 $versions = array_map('strval', $versionsInput);
             } elseif (is_string($versionsInput)) {
@@ -49,7 +49,7 @@ class BibleController extends Controller
 
         $versionsInput = $request->input('translations') ?? $request->input('versions');
         $versions = ['LS1910']; // Par défaut
-        if (!empty($versionsInput)) {
+        if (! empty($versionsInput)) {
             if (is_array($versionsInput)) {
                 $versions = array_map('strval', $versionsInput);
             } elseif (is_string($versionsInput)) {
