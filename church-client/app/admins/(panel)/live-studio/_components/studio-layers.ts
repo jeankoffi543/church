@@ -102,7 +102,7 @@ export const ADD_TYPES: StudioLayerType[] = [
 
 /** Background layers fill the whole frame and sit behind overlays. */
 export function isBackgroundLayer(l: StudioLayer): boolean {
-  return l.type === "camera" || l.type === "video" || (l.type === "image" && l.fill !== "frame");
+  return l.type === "camera" || (l.type === "image" && l.fill !== "frame");
 }
 
 /** Audio / group have no visual output — they never render on a monitor. */
@@ -152,7 +152,7 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       fontBodyWeight: "700",
     };
   }
-  if (type === "embed") {
+  if (type === "embed" || type === "video") {
     // A movable / resizable video window (PiP-style); set it full-frame via the
     // "Plein écran" layout preset.
     return {

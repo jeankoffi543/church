@@ -575,24 +575,42 @@ function ContentPanel({
     );
   }
 
-  // camera / video
+  if (layer.type === "video") {
+    return (
+      <>
+        <div>
+          <Label className="mb-1.5">URL du flux vidéo (.m3u8 / .mp4 / réseau VLC)</Label>
+          <input
+            value={layer.feedUrl ?? ""}
+            onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
+            placeholder="https://…/live.m3u8  ·  https://…/clip.mp4"
+            className={MONO_FIELD}
+          />
+        </div>
+        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+          L&apos;aperçu du flux s&apos;affiche dans les moniteurs. Déplacez-le et redimensionnez-le
+          dans l&apos;aperçu, et réglez son niveau dans la table de mixage.
+        </div>
+      </>
+    );
+  }
+
+  // camera
   return (
     <>
       <div>
-        <Label className="mb-1.5">{layer.type === "video" ? "URL du flux (.m3u8 / rtmp)" : "Source NDI"}</Label>
+        <Label className="mb-1.5">Source NDI</Label>
         <input
           value={layer.feedUrl ?? ""}
           onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
-          placeholder={layer.type === "video" ? "https://…/live.m3u8" : "ndi://camera-autel"}
+          placeholder="ndi://camera-autel"
           className={MONO_FIELD}
         />
       </div>
       <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
         <div className="flex justify-between">
           <span>Type</span>
-          <span className="font-semibold text-white">
-            {layer.type === "video" ? "Flux réseau VLC (HLS)" : "Capture NDI"}
-          </span>
+          <span className="font-semibold text-white">Capture NDI</span>
         </div>
         <div className="flex justify-between">
           <span>Résolution</span>

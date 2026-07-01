@@ -334,12 +334,36 @@ export function CompositeLayer({
     );
   }
 
-  // Camera / video feed placeholder (background)
-  if (layer.type === "camera" || layer.type === "video") {
-    const isCam = layer.type === "camera";
-    const meta = isCam
-      ? { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" }
-      : { label: "FLUX VLC · HLS", color: "rgba(240,168,104,.7)", hatch: "rgba(240,168,104,.05)", hatch2: "rgba(240,168,104,.1)" };
+  // Network video stream (Flux VLC / HLS / direct file) — real, movable preview
+  if (layer.type === "video") {
+    return (
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        data-layer
+        {...dragProps}
+        className={cn(
+          "absolute overflow-hidden rounded-xl bg-black",
+          movable && "cursor-move",
+          ring,
+        )}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+      >
+        {handles}
+        <VideoMedia layer={layer} audioOwner={audioOwner} />
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#f0a868]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+          FLUX VIDÉO
+        </span>
+      </motion.div>
+    );
+  }
+
+  // Camera feed placeholder (background)
+  if (layer.type === "camera") {
+    const meta = { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" };
     return (
       <motion.div
         key={layer.id}
@@ -610,6 +634,65 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       title={layer.name}
       className="pointer-events-none absolute inset-0 size-full border-0"
       allow="autoplay; encrypted-media; picture-in-picture"
+    />
+  );
+}
+
+/**
+ * The playable media of a "Vidéo" source — a network stream (Flux VLC / HLS) or
+ * a direct file, played in an owned `<video>` element. When this instance is the
+ * audio owner it captures the real signal (Web Audio RMS) and applies the mixer
+ * fader/mute via a gain node; non-owner instances render muted (no double audio).
+ */
+function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boolean }) {
+  const src = (layer.feedUrl || "").trim();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const meterRef = useRef<MediaMeter | null>(null);
+
+  const level = layer.audioLevel ?? 80;
+  const muted = layer.audioMuted ?? false;
+
+  useEffect(() => {
+    if (!audioOwner || !src) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const meter = attachMediaMeter(el);
+    if (!meter) return;
+    meterRef.current = meter;
+    const unregister = registerAudioProbe(layer.id, meter);
+    void el.play?.().catch(() => {});
+    return () => {
+      unregister();
+      meter.dispose();
+      meterRef.current = null;
+    };
+  }, [audioOwner, layer.id, src]);
+
+  useEffect(() => {
+    meterRef.current?.setGain(level, muted);
+  }, [level, muted]);
+
+  if (!src) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div className={cn("text-[12px] font-semibold tracking-[2px]", MONO)} style={{ color: "rgba(240,168,104,.8)" }}>
+          FLUX VIDÉO
+        </div>
+        <div className="text-[10px] text-white/35">Renseignez l&apos;URL du flux (.m3u8 / .mp4)…</div>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      key={src}
+      ref={videoRef}
+      src={src}
+      className="pointer-events-none absolute inset-0 size-full object-cover"
+      autoPlay
+      muted={!audioOwner}
+      loop
+      playsInline
     />
   );
 }
