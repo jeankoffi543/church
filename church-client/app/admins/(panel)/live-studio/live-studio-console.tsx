@@ -276,6 +276,8 @@ export function LiveStudioConsole({
   const previewScreenRef = useRef<HTMLDivElement>(null);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  const [animNonce, setAnimNonce] = useState(0);
+  const playAnim = useCallback(() => setAnimNonce((n) => n + 1), []);
 
   // Re-hydrated presets state
   const [presets, setPresets] = useState<Array<{ name: string; settings: StudioSettings }>>(() => {
@@ -334,9 +336,10 @@ export function LiveStudioConsole({
   const handleSavePreset = async () => {
     const name = newPresetName.trim();
     if (!name) return;
+    const targetStyle = selectedLayerId === "bible" ? settings : (selectedLayer?.style ?? settings);
     const updated = [
       ...presets.filter((p) => p.name !== name),
-      { name, settings: { ...settings } }
+      { name, settings: { ...targetStyle } }
     ];
     setPresets(updated);
     localStorage.setItem("studio_presets", JSON.stringify(updated));
@@ -1067,6 +1070,7 @@ export function LiveStudioConsole({
   const [programLayers, setProgramLayers] = useState<StudioLayer[]>(() => [
     { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
   ]);
+  const [programAnimNonce, setProgramAnimNonce] = useState(0);
 
   const selectedLayer = layers.find((l) => l.id === selectedLayerId) ?? null;
   const effectiveStyle = selectedLayerId === "bible" ? settings : selectedLayer?.style ?? settings;
@@ -1086,8 +1090,33 @@ export function LiveStudioConsole({
   );
   const setSelectedStyle = useCallback(
     (next: StudioSettings) => {
-      if (selectedLayerId === "bible") setSettings(next);
-      else setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, style: next } : l)));
+      if (selectedLayerId === "bible") {
+        setSettings(next);
+      } else {
+        setLayers((ls) =>
+          ls.map((l) => {
+            if (l.id === selectedLayerId) {
+              const preservedPosition = {
+                positionMode: l.style.positionMode,
+                predefinedPosition: l.style.predefinedPosition,
+                customX: l.style.customX,
+                customY: l.style.customY,
+                customWidth: l.style.customWidth,
+                customHeight: l.style.customHeight,
+              };
+              return {
+                ...l,
+                style: {
+                  ...next,
+                  ...preservedPosition,
+                },
+              };
+            }
+            return l;
+          }),
+        );
+      }
+      setAnimNonce((n) => n + 1);
     },
     [selectedLayerId, setSettings, setLayers],
   );
@@ -1096,9 +1125,62 @@ export function LiveStudioConsole({
       setLayers((ls) => ls.map((l) => (l.id === selectedLayerId ? { ...l, ...patch } : l))),
     [selectedLayerId, setLayers],
   );
+  const restoreLayerDefaults = useCallback(() => {
+    if (!selectedLayerId || !selectedLayer) return;
+    if (selectedLayer.type === "image") {
+      setLayers((ls) =>
+        ls.map((l) =>
+          l.id === selectedLayerId
+            ? {
+                ...l,
+                style: {
+                  ...DEFAULT_STUDIO_SETTINGS,
+                  animation: "none",
+                  containerShape: "transparent",
+                  positionMode: "custom",
+                  customX: 28,
+                  customY: 18,
+                  customWidth: 44,
+                  customHeight: 55,
+                },
+                imageUrl: l.imageUrl ?? "",
+                fill: "frame",
+                imageHue: 265,
+              }
+            : l,
+        ),
+      );
+      setAnimNonce((n) => n + 1);
+      setStatus({ type: "success", message: "Paramètres de l'image réinitialisés !" });
+    }
+  }, [selectedLayerId, selectedLayer, setLayers]);
   const onImageFile = useCallback(
-    (file: File) => patchSelectedData({ imageUrl: URL.createObjectURL(file) }),
-    [patchSelectedData],
+    async (file: File) => {
+      if (!selectedLayerId) return;
+      setBusy(true);
+      setStatus(null);
+      const key = `live_layer_img_${selectedLayerId}`;
+      try {
+        const payload = [{ key, value: "", group: "live" }];
+        const files = { [key]: file };
+        const res = (await updateAdminSettings(payload, files)) as {
+          data: Record<string, Record<string, unknown>>;
+        };
+        const uploadedPath = res?.data?.live?.[key] as string;
+        if (uploadedPath) {
+          patchSelectedData({ imageUrl: uploadedPath });
+          setStatus({ type: "success", message: "Image importée avec succès !" });
+        } else {
+          throw new Error("Aucun chemin retourné par le serveur.");
+        }
+      } catch (err) {
+        console.error("Failed to upload image layer", err);
+        setStatus({ type: "error", message: "Erreur lors de l'importation de l'image." });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [selectedLayerId, patchSelectedData]
   );
 
   const addLayer = (type: StudioLayerType) => {
@@ -1219,7 +1301,15 @@ export function LiveStudioConsole({
     const lr = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x0 = ((lr.left - rect.left) / rect.width) * 100;
     const y0 = ((lr.top - rect.top) / rect.height) * 100;
-    const w0 = Math.max(15, Math.round((lr.width / rect.width) * 100));
+
+    // Use current layer settings if they exist to prevent layout shift during move
+    const isBible = layerId === "bible";
+    const layerStyle = isBible ? settings : scenes.find((s) => s.id === currentSceneIdRef.current)?.layers.find((l) => l.id === layerId)?.style;
+    const originalWidth = layerStyle?.customWidth ?? Math.round((lr.width / rect.width) * 100);
+    const originalHeight = layerStyle?.customHeight ?? Math.round((lr.height / rect.height) * 100);
+    const w0 = Math.max(10, originalWidth);
+    const h0 = Math.max(5, originalHeight);
+
     const sx = e.clientX;
     const sy = e.clientY;
     setSelectedLayerId(layerId);
@@ -1227,17 +1317,18 @@ export function LiveStudioConsole({
       const dx = ((ev.clientX - sx) / rect.width) * 100;
       const dy = ((ev.clientY - sy) / rect.height) * 100;
       const nx = Math.max(0, Math.min(100 - w0, Math.round(x0 + dx)));
-      const ny = Math.max(0, Math.min(94, Math.round(y0 + dy)));
+      const ny = Math.max(0, Math.min(100 - h0, Math.round(y0 + dy)));
       if (layerId === "bible") {
         setStudioField("positionMode", "custom");
         setStudioField("customX", nx);
         setStudioField("customY", ny);
         setStudioField("customWidth", w0);
+        setStudioField("customHeight", h0);
       } else {
         setLayers((ls) =>
           ls.map((l) =>
             l.id === layerId
-              ? { ...l, style: { ...l.style, positionMode: "custom", customX: nx, customY: ny, customWidth: w0 } }
+              ? { ...l, style: { ...l.style, positionMode: "custom", customX: nx, customY: ny, customWidth: w0, customHeight: h0 } }
               : l,
           ),
         );
@@ -1328,6 +1419,7 @@ export function LiveStudioConsole({
     setProgramBlack(false);
     setProgramLayers(layers.map((l) => ({ ...l, style: { ...l.style } })));
     setProgramSceneId(currentSceneId);
+    setProgramAnimNonce((n) => n + 1);
     const bibleOnAir = layers.some((l) => l.type === "bible" && l.visible) && !!preview;
     if (bibleOnAir) {
       diffuse();
@@ -1346,6 +1438,9 @@ export function LiveStudioConsole({
     const goingBlack = !programBlack;
     setProgramBlack(goingBlack);
     if (goingBlack && live) void masquer();
+    if (!goingBlack) {
+      setProgramAnimNonce((n) => n + 1);
+    }
   };
 
   // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
@@ -1434,6 +1529,7 @@ export function LiveStudioConsole({
               onLayerResize={handleLayerResize}
               onLayerSelect={setSelectedLayerId}
               onFullscreen={() => setShowFullscreenPreview(true)}
+              animNonce={animNonce}
             />
             <TransitionBar
               onCut={sendToProgram}
@@ -1455,6 +1551,7 @@ export function LiveStudioConsole({
           bibleStyle={onAirSettings}
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
           black={programBlack}
+          animNonce={programAnimNonce}
         />
       </section>
 
@@ -1489,6 +1586,8 @@ export function LiveStudioConsole({
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
           onBroadcastEmbed={onBroadcastEmbed}
+          onRestoreDefaults={restoreLayerDefaults}
+          onPlayAnim={playAnim}
           bible={bibleInspectorProps}
           presets={presets}
           newPresetName={newPresetName}

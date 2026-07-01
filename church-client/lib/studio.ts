@@ -20,7 +20,7 @@ export type ScriptureVerse = {
 };
 
 export type StudioLayout = "lower_third" | "full_screen" | "sidebar";
-export type StudioAnimation = "fade_slide" | "typewriter" | "scale" | "neon_slide" | "slide_left" | "slide_right" | "clip_reveal";
+export type StudioAnimation = "none" | "fade_slide" | "typewriter" | "scale" | "neon_slide" | "slide_left" | "slide_right" | "clip_reveal";
 
 export type StudioSettings = {
   layout: StudioLayout;

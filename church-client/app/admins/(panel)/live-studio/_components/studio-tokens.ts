@@ -64,6 +64,7 @@ export const BORDER_STYLES: {
 ];
 
 export const ANIM_OPTIONS: { value: StudioSettings["animation"]; label: string }[] = [
+  { value: "none", label: "Aucune animation" },
   { value: "clip_reveal", label: "Déploiement (clip)" },
   { value: "fade_slide", label: "Fondu & glissement" },
   { value: "scale", label: "Zoom" },

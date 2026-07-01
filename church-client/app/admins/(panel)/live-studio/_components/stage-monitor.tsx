@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { Maximize } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export function StageMonitor({
   onLayerSelect,
   onFullscreen,
   black = false,
+  animNonce = 0,
 }: {
   tone: "preview" | "program";
   layers: StudioLayer[];
@@ -43,6 +45,7 @@ export function StageMonitor({
   onLayerSelect?: (id: string) => void;
   onFullscreen?: () => void;
   black?: boolean;
+  animNonce?: number;
 }) {
   const isProgram = tone === "program";
   const visible = layers.filter((l) => l.visible && isCompositable(l));
@@ -71,23 +74,25 @@ export function StageMonitor({
             </span>
           </div>
         )}
-        {visible.map((layer, idx) => {
-          const z = visible.length - idx;
-          const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
-          return (
-            <CompositeLayer
-              key={layer.id}
-              layer={effective}
-              verse={layer.type === "bible" ? bibleVerse : undefined}
-              z={z}
-              selected={!isProgram && layer.id === selectedLayerId}
-              draggable={draggable}
-              onPointerDown={onLayerPointerDown}
-              onResize={onLayerResize}
-              onSelect={onLayerSelect}
-            />
-          );
-        })}
+        <AnimatePresence>
+          {visible.map((layer, idx) => {
+            const z = visible.length - idx;
+            const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
+            return (
+              <CompositeLayer
+                key={`${layer.id}-${animNonce}`}
+                layer={effective}
+                verse={layer.type === "bible" ? bibleVerse : undefined}
+                z={z}
+                selected={!isProgram && layer.id === selectedLayerId}
+                draggable={draggable}
+                onPointerDown={onLayerPointerDown}
+                onResize={onLayerResize}
+                onSelect={onLayerSelect}
+              />
+            );
+          })}
+        </AnimatePresence>
       </div>
 
       {black && (
