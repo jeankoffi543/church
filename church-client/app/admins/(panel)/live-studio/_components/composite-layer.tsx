@@ -418,7 +418,9 @@ export function CompositeLayer({
 
   // Song lyrics — a centered stack of lines
   if (layer.type === "song") {
-    const lines = (layer.content ?? "").split("\n");
+    const activeStanza = layer.stanzas && layer.activeStanzaIndex !== undefined ? layer.stanzas[layer.activeStanzaIndex] : null;
+    const lyricsContent = activeStanza ? activeStanza.content : (layer.content ?? "");
+    const lines = lyricsContent.split("\n");
     return (
       <motion.div
         key={layer.id}
