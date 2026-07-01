@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -88,6 +88,8 @@ export function InspectorDock({
   onNewPresetNameChange,
   onSavePreset,
   onDeletePreset,
+  onRestoreDefaults,
+  onPlayAnim,
 }: {
   selectedLayer: StudioLayer | null;
   effectiveStyle: StudioSettings;
@@ -103,6 +105,8 @@ export function InspectorDock({
   onNewPresetNameChange: (v: string) => void;
   onSavePreset: () => void;
   onDeletePreset: (name: string) => void;
+  onRestoreDefaults?: () => void;
+  onPlayAnim?: () => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -165,6 +169,7 @@ export function InspectorDock({
                 patchLayerData={patchLayerData}
                 onImageFile={onImageFile}
                 onBroadcastEmbed={onBroadcastEmbed}
+                onRestoreDefaults={onRestoreDefaults}
                 bible={bible}
               />
             )}
@@ -184,7 +189,7 @@ export function InspectorDock({
               <ContainerPanel settings={effectiveStyle} setStudioField={patchStyleField} />
             )}
             {activeTab === "anim" && (
-              <AnimPanel settings={effectiveStyle} setStudioField={patchStyleField} />
+              <AnimPanel settings={effectiveStyle} setStudioField={patchStyleField} onPlayAnim={onPlayAnim} />
             )}
             {activeTab === "presets" && (
               <PresetsPanel
@@ -211,12 +216,14 @@ function ContentPanel({
   patchLayerData,
   onImageFile,
   onBroadcastEmbed,
+  onRestoreDefaults,
   bible,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
   onBroadcastEmbed: (url: string) => void;
+  onRestoreDefaults?: () => void;
   bible: InspectorBible;
 }) {
   if (layer.type === "bible") return <BibleContent bible={bible} />;
@@ -336,7 +343,10 @@ function ContentPanel({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onImageFile(f);
+              if (f) {
+                void onImageFile(f);
+              }
+              e.target.value = ""; // Clear file path value
             }}
           />
         </label>
@@ -371,6 +381,13 @@ function ContentPanel({
             />
           </div>
         )}
+        <button
+          type="button"
+          onClick={onRestoreDefaults}
+          className="mt-4 w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+        >
+          Réinitialiser aux paramètres par défaut
+        </button>
       </>
     );
   }
@@ -918,9 +935,11 @@ function ContainerPanel({
 function AnimPanel({
   settings,
   setStudioField,
+  onPlayAnim,
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
+  onPlayAnim?: () => void;
 }) {
   const durLabel = settings.duration === 0 ? "Manuel" : `${settings.duration}s`;
   return (
@@ -929,7 +948,10 @@ function AnimPanel({
         <Label className="mb-1.5">Effet d&apos;apparition</Label>
         <Select
           value={settings.animation}
-          onValueChange={(v) => setStudioField("animation", v as StudioSettings["animation"])}
+          onValueChange={(v) => {
+            setStudioField("animation", v as StudioSettings["animation"]);
+            setTimeout(() => onPlayAnim?.(), 50);
+          }}
           className={FIELD}
         >
           {ANIM_OPTIONS.map((o) => (
@@ -947,7 +969,11 @@ function AnimPanel({
           max={2000}
           step={50}
           value={settings.animDuration}
-          onValueChange={(v) => setStudioField("animDuration", v)}
+          onValueChange={(v) => {
+            setStudioField("animDuration", v);
+          }}
+          onMouseUp={() => setTimeout(() => onPlayAnim?.(), 50)}
+          onTouchEnd={() => setTimeout(() => onPlayAnim?.(), 50)}
         />
       </div>
 
@@ -955,7 +981,10 @@ function AnimPanel({
         <Label className="mb-1.5">Courbe (easing)</Label>
         <Select
           value={settings.animEasing}
-          onValueChange={(v) => setStudioField("animEasing", v as StudioSettings["animEasing"])}
+          onValueChange={(v) => {
+            setStudioField("animEasing", v as StudioSettings["animEasing"]);
+            setTimeout(() => onPlayAnim?.(), 50);
+          }}
           className={FIELD}
         >
           {EASING_OPTIONS.map((o) => (
@@ -977,6 +1006,17 @@ function AnimPanel({
         />
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
+
+      {onPlayAnim && (
+        <button
+          type="button"
+          onClick={onPlayAnim}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2.5 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
+        >
+          <Play className="size-3.5 fill-current" />
+          Aperçu de l&apos;animation
+        </button>
+      )}
     </>
   );
 }

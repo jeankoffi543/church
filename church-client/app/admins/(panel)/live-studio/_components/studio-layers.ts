@@ -115,6 +115,7 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
   if (type === "image") {
     return {
       ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
       containerShape: "transparent",
       positionMode: "custom",
       customX: 28,
