@@ -20,7 +20,7 @@ export type ScriptureVerse = {
 };
 
 export type StudioLayout = "lower_third" | "full_screen" | "sidebar";
-export type StudioAnimation = "none" | "fade_slide" | "typewriter" | "scale" | "neon_slide" | "slide_left" | "slide_right" | "clip_reveal";
+export type StudioAnimation = "none" | "fade_slide" | "typewriter" | "scale" | "neon_slide" | "slide_left" | "slide_right" | "clip_reveal" | "scroll_left" | "scroll_right" | "scroll_up" | "scroll_down";
 
 export type StudioSettings = {
   layout: StudioLayout;
@@ -91,6 +91,10 @@ export type StudioSettings = {
   // Animations & Transitions
   animDuration: number; // ms
   animEasing: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "bounce";
+
+  // Alignements
+  textAlign?: "left" | "center" | "right";
+  textVerticalAlign?: "top" | "center" | "bottom";
 };
 
 export const DEFAULT_STUDIO_SETTINGS: StudioSettings = {
@@ -154,6 +158,9 @@ export const DEFAULT_STUDIO_SETTINGS: StudioSettings = {
 
   animDuration: 500,
   animEasing: "ease-out",
+
+  textAlign: "center",
+  textVerticalAlign: "center",
 };
 
 /** Payload broadcast over the `live` channel (`.scripture`). */

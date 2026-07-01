@@ -1152,6 +1152,26 @@ export function LiveStudioConsole({
       );
       setAnimNonce((n) => n + 1);
       setStatus({ type: "success", message: "Paramètres de l'image réinitialisés !" });
+    } else if (selectedLayer.type === "text") {
+      setLayers((ls) =>
+        ls.map((l) =>
+          l.id === selectedLayerId
+            ? {
+                ...l,
+                style: {
+                  ...DEFAULT_STUDIO_SETTINGS,
+                  animation: "none",
+                  fontBodyFamily: "Plus Jakarta Sans",
+                  fontBodyWeight: "700",
+                },
+                content: l.content ?? "",
+                sub: l.sub ?? "",
+              }
+            : l,
+        ),
+      );
+      setAnimNonce((n) => n + 1);
+      setStatus({ type: "success", message: "Paramètres du texte réinitialisés !" });
     }
   }, [selectedLayerId, selectedLayer, setLayers]);
   const onImageFile = useCallback(

@@ -72,6 +72,10 @@ export const ANIM_OPTIONS: { value: StudioSettings["animation"]; label: string }
   { value: "slide_right", label: "Glissement droite" },
   { value: "neon_slide", label: "Néon glissé" },
   { value: "typewriter", label: "Machine à écrire" },
+  { value: "scroll_left", label: "Défil. Horizontal (← Gauche)" },
+  { value: "scroll_right", label: "Défil. Horizontal (→ Droite)" },
+  { value: "scroll_up", label: "Défil. Vertical (↑ Haut)" },
+  { value: "scroll_down", label: "Défil. Vertical (↓ Bas)" },
 ];
 
 export const EASING_OPTIONS: { value: StudioSettings["animEasing"]; label: string }[] = [

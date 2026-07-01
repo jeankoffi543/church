@@ -319,6 +319,13 @@ function ContentPanel({
             className={FIELD}
           />
         </div>
+        <button
+          type="button"
+          onClick={onRestoreDefaults}
+          className="mt-4 w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+        >
+          Réinitialiser aux paramètres par défaut
+        </button>
       </>
     );
   }
@@ -636,6 +643,48 @@ function LayoutPanel({
           </div>
         </>
       )}
+
+      <div>
+        <Label className="mb-1.5">Alignement Horizontal</Label>
+        <div className="flex rounded-[9px] bg-black/25 p-[3px]">
+          {(["left", "center", "right"] as const).map((align) => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => setStudioField("textAlign", align)}
+              className={cn(
+                "flex-1 rounded-[7px] py-1.5 text-[10px] font-bold transition-colors capitalize",
+                (settings.textAlign || "center") === align
+                  ? "bg-studio-purple/20 text-studio-purple"
+                  : "text-white/55",
+              )}
+            >
+              {align === "left" ? "Gauche" : align === "center" ? "Centre" : "Droite"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Label className="mb-1.5">Alignement Vertical</Label>
+        <div className="flex rounded-[9px] bg-black/25 p-[3px]">
+          {(["top", "center", "bottom"] as const).map((valign) => (
+            <button
+              key={valign}
+              type="button"
+              onClick={() => setStudioField("textVerticalAlign", valign)}
+              className={cn(
+                "flex-1 rounded-[7px] py-1.5 text-[10px] font-bold transition-colors capitalize",
+                (settings.textVerticalAlign || "center") === valign
+                  ? "bg-studio-purple/20 text-studio-purple"
+                  : "text-white/55",
+              )}
+            >
+              {valign === "top" ? "Haut" : valign === "center" ? "Milieu" : "Bas"}
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
