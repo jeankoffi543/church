@@ -1485,20 +1485,6 @@ export function LiveStudioConsole({
     }
   };
 
-  const onBroadcastEmbed = async (url: string) => {
-    setLiveEmbedUrl(url);
-    setLiveStreamActive(true);
-    try {
-      await updateAdminSettings([
-        { key: "live_embed_url", value: url, group: "live" },
-        { key: "live_status", value: true, group: "live" },
-      ]);
-      setStatus({ type: "success", message: "Direct externe diffusé à l'antenne." });
-    } catch {
-      setStatus({ type: "error", message: "Diffusion du direct externe impossible." });
-    }
-  };
-
   const bibleInspectorProps = {
     query,
     onQueryChange: setQuery,
@@ -1625,7 +1611,6 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
-          onBroadcastEmbed={onBroadcastEmbed}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
           bible={bibleInspectorProps}
