@@ -154,8 +154,23 @@ export async function updateAdminSettings(
   revalidatePath("/agenda");
   revalidatePath("/dons");
   revalidatePath("/live");
-  
+
   return result;
+}
+
+/**
+ * Upload a local video for the Live Studio "Vidéo" source. Returns a stable,
+ * Range-capable stream URL to persist on the layer (survives reloads, unlike a
+ * blob: URL). `formData` must carry a single `file` entry.
+ */
+export async function uploadStudioMedia(
+  formData: FormData
+): Promise<{ url: string; name: string }> {
+  const response = await adminFetch<{ data: { url: string; name: string } }>("/studio/media", {
+    method: "POST",
+    body: formData,
+  });
+  return response.data;
 }
 
 export type AdminPastorWord = {

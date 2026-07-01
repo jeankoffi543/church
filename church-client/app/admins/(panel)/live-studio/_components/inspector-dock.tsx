@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, Zap, Square } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
+import { uploadStudioMedia } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";
@@ -576,23 +577,7 @@ function ContentPanel({
   }
 
   if (layer.type === "video") {
-    return (
-      <>
-        <div>
-          <Label className="mb-1.5">URL du flux vidéo (.m3u8 / .mp4 / réseau VLC)</Label>
-          <input
-            value={layer.feedUrl ?? ""}
-            onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
-            placeholder="https://…/live.m3u8  ·  https://…/clip.mp4"
-            className={MONO_FIELD}
-          />
-        </div>
-        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          L&apos;aperçu du flux s&apos;affiche dans les moniteurs. Déplacez-le et redimensionnez-le
-          dans l&apos;aperçu, et réglez son niveau dans la table de mixage.
-        </div>
-      </>
-    );
+    return <VideoContent layer={layer} patchLayerData={patchLayerData} />;
   }
 
   // camera
@@ -616,6 +601,91 @@ function ContentPanel({
           <span>Résolution</span>
           <span className={cn("text-white", MONO)}>1920×1080</span>
         </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Contenu for a "Vidéo" source: paste a link, OR drag-drop / click to import a
+ * local video that is uploaded to the server (persistent stream URL, not a blob).
+ */
+function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("video/")) {
+      setError("Choisissez un fichier vidéo (.mp4, .webm, .mov…).");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { url } = await uploadStudioMedia(fd);
+      patchLayerData({ feedUrl: url });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'envoi de la vidéo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <>
+      <div>
+        <Label className="mb-1.5">URL du flux vidéo (.m3u8 / .mp4 / réseau VLC)</Label>
+        <input
+          value={layer.feedUrl ?? ""}
+          onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
+          placeholder="https://…/live.m3u8  ·  https://…/clip.mp4"
+          className={MONO_FIELD}
+        />
+      </div>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragOver) setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) void handleFile(f);
+        }}
+        className={cn(
+          "flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed py-5 text-center transition-colors",
+          dragOver ? "border-gold/60 bg-gold/[0.08]" : "border-white/14 bg-white/[0.03]",
+        )}
+      >
+        <Upload className={cn("size-4", uploading ? "animate-pulse text-gold" : "text-white/45")} />
+        <label className="cursor-pointer px-2 text-[11px] font-bold text-white/60 transition-colors hover:text-gold">
+          {uploading ? "Envoi de la vidéo…" : "Glissez une vidéo ici ou cliquez pour l'importer"}
+          <input
+            type="file"
+            accept="video/*"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <span className="text-[9px] text-white/30">MP4 / WebM / MOV — importé et persisté sur le serveur</span>
+      </div>
+
+      {error && <div className="text-[10px] leading-relaxed text-[#ff8a8a]">{error}</div>}
+
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        L&apos;aperçu s&apos;affiche dans les moniteurs. Déplacez-le et redimensionnez-le dans
+        l&apos;aperçu, et réglez son niveau dans la table de mixage.
       </div>
     </>
   );

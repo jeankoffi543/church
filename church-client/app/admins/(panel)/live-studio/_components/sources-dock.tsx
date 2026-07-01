@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   SlidersHorizontal,
   BookOpen,
@@ -63,8 +64,20 @@ export function SourcesDock({
   onRequestDelete: (id: string) => void;
 }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+
+  const toggleAddMenu = () => {
+    setAddOpen((open) => {
+      if (!open && addBtnRef.current) {
+        const r = addBtnRef.current.getBoundingClientRect();
+        setMenuPos({ top: r.bottom + 6, right: window.innerWidth - r.right });
+      }
+      return !open;
+    });
+  };
 
   return (
     <div className="relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
@@ -74,8 +87,9 @@ export function SourcesDock({
           Sources média
         </span>
         <button
+          ref={addBtnRef}
           type="button"
-          onClick={() => setAddOpen((o) => !o)}
+          onClick={toggleAddMenu}
           title="Ajouter une source"
           aria-expanded={addOpen}
           className="ml-auto flex size-[26px] items-center justify-center rounded-[7px] border border-gold/30 bg-gold/15 text-base leading-none font-bold text-gold transition-colors hover:bg-gold/25"
@@ -84,30 +98,45 @@ export function SourcesDock({
         </button>
       </div>
 
-      {addOpen && (
-        <div className="absolute top-[46px] right-3 z-50 w-[176px] rounded-xl border border-gold/25 bg-[#1a1130] p-1.5 shadow-[0_24px_50px_rgba(0,0,0,.6)]">
-          <div className="px-2 pt-1.5 pb-1 text-[9px] font-extrabold tracking-[1px] text-white/40 uppercase">
-            Ajouter une source
-          </div>
-          {ADD_TYPES.map((t) => {
-            const Icon = TYPE_ICON[t];
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => {
-                  onAdd(t);
-                  setAddOpen(false);
-                }}
-                className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left text-[12px] font-semibold text-white transition-colors hover:bg-white/6"
-              >
-                <Icon className="size-3.5 shrink-0" style={{ color: LAYER_META[t].color }} />
-                {LAYER_META[t].label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Rendered in a portal so the panel's `overflow-hidden` never clips it. */}
+      {addOpen &&
+        menuPos &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label="Fermer le menu"
+              className="fixed inset-0 z-[90] cursor-default"
+              onClick={() => setAddOpen(false)}
+            />
+            <div
+              className="fixed z-[91] max-h-[70vh] w-[190px] overflow-y-auto rounded-xl border border-gold/25 bg-[#1a1130] p-1.5 shadow-[0_24px_50px_rgba(0,0,0,.6)]"
+              style={{ top: menuPos.top, right: menuPos.right }}
+            >
+              <div className="px-2 pt-1.5 pb-1 text-[9px] font-extrabold tracking-[1px] text-white/40 uppercase">
+                Ajouter une source
+              </div>
+              {ADD_TYPES.map((t) => {
+                const Icon = TYPE_ICON[t];
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      onAdd(t);
+                      setAddOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left text-[12px] font-semibold text-white transition-colors hover:bg-white/6"
+                  >
+                    <Icon className="size-3.5 shrink-0" style={{ color: LAYER_META[t].color }} />
+                    {LAYER_META[t].label}
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body,
+        )}
 
       <div className="flex-none border-b border-white/4 px-3 py-1.5 text-[9px] tracking-[0.5px] text-white/30">
         Ordre = superposition (haut = premier plan)
