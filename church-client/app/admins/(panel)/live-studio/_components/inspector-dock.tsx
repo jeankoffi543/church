@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, RotateCcw } from "lucide-react";
+import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Radio, Play } from "lucide-react";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -81,13 +81,14 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
+  onBroadcastEmbed,
   bible,
   presets,
   newPresetName,
   onNewPresetNameChange,
   onSavePreset,
   onDeletePreset,
-  onResetStyle,
+  onRestoreDefaults,
   onPlayAnim,
 }: {
   selectedLayer: StudioLayer | null;
@@ -97,14 +98,15 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onBroadcastEmbed: (url: string) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
   onNewPresetNameChange: (v: string) => void;
-  onSavePreset: (style: StudioSettings) => void;
+  onSavePreset: () => void;
   onDeletePreset: (name: string) => void;
-  onResetStyle: () => void;
-  onPlayAnim: () => void;
+  onRestoreDefaults?: () => void;
+  onPlayAnim?: () => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -166,6 +168,8 @@ export function InspectorDock({
                 layer={selectedLayer}
                 patchLayerData={patchLayerData}
                 onImageFile={onImageFile}
+                onBroadcastEmbed={onBroadcastEmbed}
+                onRestoreDefaults={onRestoreDefaults}
                 bible={bible}
               />
             )}
@@ -185,11 +189,7 @@ export function InspectorDock({
               <ContainerPanel settings={effectiveStyle} setStudioField={patchStyleField} />
             )}
             {activeTab === "anim" && (
-              <AnimPanel
-                settings={effectiveStyle}
-                setStudioField={patchStyleField}
-                onPlayAnim={onPlayAnim}
-              />
+              <AnimPanel settings={effectiveStyle} setStudioField={patchStyleField} onPlayAnim={onPlayAnim} />
             )}
             {activeTab === "presets" && (
               <PresetsPanel
@@ -200,7 +200,6 @@ export function InspectorDock({
                 onNewPresetNameChange={onNewPresetNameChange}
                 onSavePreset={onSavePreset}
                 onDeletePreset={onDeletePreset}
-                onResetStyle={onResetStyle}
               />
             )}
           </ScrollArea>
@@ -216,11 +215,15 @@ function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
+  onBroadcastEmbed,
+  onRestoreDefaults,
   bible,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onBroadcastEmbed: (url: string) => void;
+  onRestoreDefaults?: () => void;
   bible: InspectorBible;
 }) {
   if (layer.type === "bible") return <BibleContent bible={bible} />;
@@ -252,8 +255,17 @@ function ContentPanel({
             className={MONO_FIELD}
           />
         </div>
+        <button
+          type="button"
+          disabled={!layer.feedUrl}
+          onClick={() => layer.feedUrl && onBroadcastEmbed(layer.feedUrl)}
+          className="flex items-center justify-center gap-2 rounded-lg bg-studio-onair py-2.5 text-[12px] font-extrabold text-white transition hover:brightness-110 disabled:opacity-50"
+        >
+          <Radio className="size-3.5" /> Diffuser ce direct à l&apos;antenne
+        </button>
         <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          L&apos;aperçu de la vidéo s&apos;affiche dans les moniteurs.
+          Le lien est intégré sur la page publique <span className="text-white">/live</span> et le
+          direct passe automatiquement à l&apos;antenne.
         </div>
       </>
     );
@@ -307,6 +319,13 @@ function ContentPanel({
             className={FIELD}
           />
         </div>
+        <button
+          type="button"
+          onClick={onRestoreDefaults}
+          className="mt-4 w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+        >
+          Réinitialiser aux paramètres par défaut
+        </button>
       </>
     );
   }
@@ -331,7 +350,10 @@ function ContentPanel({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onImageFile(f);
+              if (f) {
+                void onImageFile(f);
+              }
+              e.target.value = ""; // Clear file path value
             }}
           />
         </label>
@@ -366,6 +388,13 @@ function ContentPanel({
             />
           </div>
         )}
+        <button
+          type="button"
+          onClick={onRestoreDefaults}
+          className="mt-4 w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+        >
+          Réinitialiser aux paramètres par défaut
+        </button>
       </>
     );
   }
@@ -614,6 +643,48 @@ function LayoutPanel({
           </div>
         </>
       )}
+
+      <div>
+        <Label className="mb-1.5">Alignement Horizontal</Label>
+        <div className="flex rounded-[9px] bg-black/25 p-[3px]">
+          {(["left", "center", "right"] as const).map((align) => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => setStudioField("textAlign", align)}
+              className={cn(
+                "flex-1 rounded-[7px] py-1.5 text-[10px] font-bold transition-colors capitalize",
+                (settings.textAlign || "center") === align
+                  ? "bg-studio-purple/20 text-studio-purple"
+                  : "text-white/55",
+              )}
+            >
+              {align === "left" ? "Gauche" : align === "center" ? "Centre" : "Droite"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Label className="mb-1.5">Alignement Vertical</Label>
+        <div className="flex rounded-[9px] bg-black/25 p-[3px]">
+          {(["top", "center", "bottom"] as const).map((valign) => (
+            <button
+              key={valign}
+              type="button"
+              onClick={() => setStudioField("textVerticalAlign", valign)}
+              className={cn(
+                "flex-1 rounded-[7px] py-1.5 text-[10px] font-bold transition-colors capitalize",
+                (settings.textVerticalAlign || "center") === valign
+                  ? "bg-studio-purple/20 text-studio-purple"
+                  : "text-white/55",
+              )}
+            >
+              {valign === "top" ? "Haut" : valign === "center" ? "Milieu" : "Bas"}
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
@@ -917,7 +988,7 @@ function AnimPanel({
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
-  onPlayAnim: () => void;
+  onPlayAnim?: () => void;
 }) {
   const durLabel = settings.duration === 0 ? "Manuel" : `${settings.duration}s`;
   return (
@@ -926,7 +997,10 @@ function AnimPanel({
         <Label className="mb-1.5">Effet d&apos;apparition</Label>
         <Select
           value={settings.animation}
-          onValueChange={(v) => setStudioField("animation", v as StudioSettings["animation"])}
+          onValueChange={(v) => {
+            setStudioField("animation", v as StudioSettings["animation"]);
+            setTimeout(() => onPlayAnim?.(), 50);
+          }}
           className={FIELD}
         >
           {ANIM_OPTIONS.map((o) => (
@@ -944,7 +1018,11 @@ function AnimPanel({
           max={2000}
           step={50}
           value={settings.animDuration}
-          onValueChange={(v) => setStudioField("animDuration", v)}
+          onValueChange={(v) => {
+            setStudioField("animDuration", v);
+          }}
+          onMouseUp={() => setTimeout(() => onPlayAnim?.(), 50)}
+          onTouchEnd={() => setTimeout(() => onPlayAnim?.(), 50)}
         />
       </div>
 
@@ -952,7 +1030,10 @@ function AnimPanel({
         <Label className="mb-1.5">Courbe (easing)</Label>
         <Select
           value={settings.animEasing}
-          onValueChange={(v) => setStudioField("animEasing", v as StudioSettings["animEasing"])}
+          onValueChange={(v) => {
+            setStudioField("animEasing", v as StudioSettings["animEasing"]);
+            setTimeout(() => onPlayAnim?.(), 50);
+          }}
           className={FIELD}
         >
           {EASING_OPTIONS.map((o) => (
@@ -975,14 +1056,16 @@ function AnimPanel({
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
 
-      <button
-        type="button"
-        onClick={onPlayAnim}
-        className="flex items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2.5 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
-      >
-        <Play className="size-3.5 fill-current" />
-        Aperçu de l&apos;animation
-      </button>
+      {onPlayAnim && (
+        <button
+          type="button"
+          onClick={onPlayAnim}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2.5 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
+        >
+          <Play className="size-3.5 fill-current" />
+          Aperçu de l&apos;animation
+        </button>
+      )}
     </>
   );
 }
@@ -990,28 +1073,25 @@ function AnimPanel({
 /* ─────────────────────────── Presets ─────────────────────────── */
 
 function PresetsPanel({
-  effectiveStyle,
   setSelectedStyle,
   presets,
   newPresetName,
   onNewPresetNameChange,
   onSavePreset,
   onDeletePreset,
-  onResetStyle,
 }: {
   effectiveStyle: StudioSettings;
   setSelectedStyle: (s: StudioSettings) => void;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
   onNewPresetNameChange: (v: string) => void;
-  onSavePreset: (style: StudioSettings) => void;
+  onSavePreset: () => void;
   onDeletePreset: (name: string) => void;
-  onResetStyle: () => void;
 }) {
   return (
     <>
       <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
-        <Label>Enregistrer le style de la source</Label>
+        <Label>Enregistrer le style actuel</Label>
         <input
           value={newPresetName}
           onChange={(e) => onNewPresetNameChange(e.target.value)}
@@ -1020,18 +1100,10 @@ function PresetsPanel({
         />
         <button
           type="button"
-          onClick={() => onSavePreset(effectiveStyle)}
+          onClick={onSavePreset}
           className="w-full rounded-lg bg-gold py-2 text-[12px] font-extrabold text-ink transition hover:brightness-105"
         >
           Sauvegarder le preset
-        </button>
-        <button
-          type="button"
-          onClick={onResetStyle}
-          className="flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-white/[0.03] py-2 text-[11.5px] font-bold text-white/65 transition hover:border-studio-onair/40 hover:text-studio-onair"
-        >
-          <RotateCcw className="size-3.5" />
-          Réinitialiser aux valeurs par défaut
         </button>
       </div>
 

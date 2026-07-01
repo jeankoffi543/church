@@ -2,10 +2,11 @@
 
 import type React from "react";
 import { useEffect, useRef } from "react";
+import { motion, type Variants, type Easing } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
 import { cn } from "@/lib/utils";
-import { getAnimationStyle, getContainerStyle, getElementStyle, getOverlayBoxStyle } from "./studio-style";
+import { getContainerStyle, getElementStyle, getOverlayBoxStyle } from "./studio-style";
 import { isBackgroundLayer, imageHatch, type StudioLayer } from "./studio-layers";
 import { resolveEmbed } from "./embed";
 import {
@@ -17,6 +18,165 @@ import {
   type YouTubeController,
 } from "./studio-audio";
 import { MONO } from "./studio-tokens";
+
+const EASING_MAP: Record<string, Easing> = {
+  linear: "linear",
+  "ease-in": "easeIn",
+  "ease-out": "easeOut",
+  "ease-in-out": "easeInOut",
+  bounce: [0.175, 0.885, 0.32, 1.275] as Easing,
+};
+
+const ANIMATION_PLUGINS: Record<string, (dur: number, ease: Easing) => Variants> = {
+  none: () => ({
+    initial: {},
+    animate: {},
+    exit: {},
+  }),
+  fade_slide: (dur, ease) => ({
+    initial: { opacity: 0, y: 30 },
+    animate: { opacity: 1, y: 0, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, y: 20, transition: { duration: dur / 1000, ease } },
+  }),
+  scale: (dur, ease) => ({
+    initial: { opacity: 0, scale: 0.9 },
+    animate: { opacity: 1, scale: 1, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, scale: 0.93, transition: { duration: dur / 1000, ease } },
+  }),
+  slide_left: (dur, ease) => ({
+    initial: { opacity: 0, x: -100 },
+    animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, x: -50, transition: { duration: dur / 1000, ease } },
+  }),
+  slide_right: (dur, ease) => ({
+    initial: { opacity: 0, x: 100 },
+    animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, x: 50, transition: { duration: dur / 1000, ease } },
+  }),
+  clip_reveal: (dur, ease) => ({
+    initial: { clipPath: "polygon(0 0, 0 0, 0 100%, 0% 100%)", opacity: 0.5 },
+    animate: { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)", opacity: 1, transition: { duration: dur / 1000, ease } },
+    exit: { clipPath: "polygon(100% 0, 100% 0, 100% 100%, 100% 100%)", opacity: 0, transition: { duration: dur / 1000, ease } },
+  }),
+  neon_slide: (dur, ease) => ({
+    initial: { opacity: 0, x: -80, scale: 0.98 },
+    animate: { opacity: 1, x: 0, scale: 1, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, x: 40, scale: 0.98, transition: { duration: dur / 1000, ease } },
+  }),
+  typewriter: (dur, ease) => ({
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: dur / 1000, ease } },
+    exit: { opacity: 0, transition: { duration: 0.3 } },
+  }),
+  scroll_left: (dur) => ({
+    initial: { x: "100%" },
+    animate: {
+      x: "-100%",
+      transition: {
+        x: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_right: (dur) => ({
+    initial: { x: "-100%" },
+    animate: {
+      x: "100%",
+      transition: {
+        x: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_up: (dur) => ({
+    initial: { y: "100%" },
+    animate: {
+      y: "-100%",
+      transition: {
+        y: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_down: (dur) => ({
+    initial: { y: "-100%" },
+    animate: {
+      y: "100%",
+      transition: {
+        y: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+};
+
+const getImageUrl = (url: string | undefined | null): string => {
+  if (!url) return "";
+  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("http:") || url.startsWith("https:")) {
+    return url;
+  }
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
+  return url.startsWith("/") ? `${backendUrl}${url}` : url;
+};
+
+const typewriterContainer = {
+  hidden: {},
+  visible: {
+    transition: {
+      staggerChildren: 0.015,
+    },
+  },
+};
+
+const typewriterChar = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { duration: 0.04 },
+  },
+};
+
+function TypewriterText({ text }: { text: string }) {
+  const characters = Array.from(text);
+  return (
+    <motion.span variants={typewriterContainer} initial="hidden" animate="visible" className="inline">
+      {characters.map((char, index) => (
+        <motion.span key={index} variants={typewriterChar} className="inline">
+          {char}
+        </motion.span>
+      ))}
+      <motion.span
+        animate={{ opacity: [1, 1, 0, 0, 1] }}
+        transition={{ repeat: Infinity, duration: 0.8, times: [0, 0.5, 0.5, 1, 1], ease: "linear" }}
+        className="ml-0.5 inline-block w-[2px] bg-[#e2b85f] align-middle"
+        style={{ height: "1.2em" }}
+      >
+        &nbsp;
+      </motion.span>
+    </motion.span>
+  );
+}
 
 export type ResizeCorner = "nw" | "ne" | "sw" | "se";
 
@@ -57,12 +217,10 @@ export function CompositeLayer({
   onSelect?: (id: string) => void;
 }) {
   const isBg = isBackgroundLayer(layer);
-  // Full-frame backgrounds aren't draggable, but a click still selects them so
-  // the inspector binds to the source.
-  const selectProps =
-    draggable && onSelect && isBg
-      ? { onClick: () => onSelect(layer.id), role: "button" as const }
-      : {};
+  const animEase = EASING_MAP[layer.style.animEasing || "ease-out"] || EASING_MAP["ease-out"];
+  const getVariants = ANIMATION_PLUGINS[layer.style.animation] || ANIMATION_PLUGINS.fade_slide;
+  const variants = getVariants(layer.style.animDuration || 500, animEase);
+
   const ring = selected
     ? isBg
       ? "shadow-[inset_0_0_0_2px_#b270ff]"
@@ -72,6 +230,27 @@ export function CompositeLayer({
   const dragProps = movable
     ? { onPointerDown: (e: React.PointerEvent) => onPointerDown!(e, layer.id) }
     : {};
+
+  const alignX = layer.style.textAlign || "center";
+  const alignY = layer.style.textVerticalAlign || "center";
+  const alignClass = cn(
+    "absolute flex flex-col overflow-hidden",
+    alignX === "left" ? "items-start text-left" : alignX === "right" ? "items-end text-right" : "items-center text-center",
+    alignY === "top" ? "justify-start" : alignY === "bottom" ? "justify-end" : "justify-center",
+    movable && "cursor-move",
+    ring
+  );
+
+  const isScroll = layer.style.animation?.startsWith("scroll_");
+  const outerVariants = isScroll ? undefined : variants;
+  const innerVariants = isScroll ? variants : undefined;
+
+  // Full-frame backgrounds aren't draggable, but a click still selects them so
+  // the inspector binds to the source.
+  const selectProps =
+    draggable && onSelect && isBg
+      ? { onClick: () => onSelect(layer.id), role: "button" as const }
+      : {};
 
   const handles =
     selected && movable && onResize
@@ -87,27 +266,35 @@ export function CompositeLayer({
         ))
       : null;
 
-  // Entrance animation for overlays (plays on mount / scene change / replay).
-  const animStyle: React.CSSProperties = isBg ? {} : getAnimationStyle(layer.style);
-
   // Bible verse overlay
   if (layer.type === "bible") {
     const versionLabel = verse?.texts ? Object.keys(verse.texts)[0] : verse?.translation || "LSG";
     return (
-      <div
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute flex flex-col justify-center text-center", movable && "cursor-move", ring)}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), ...animStyle, zIndex: z }}
+        className={alignClass}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
         {verse ? (
           <>
-            <span style={getElementStyle("fontRef", layer.style)} className="mb-2 block">
+            <span style={{ ...getElementStyle("fontRef", layer.style), whiteSpace: "pre-wrap" }} className="mb-2 block">
               {verse.reference}
             </span>
-            <p style={getElementStyle("fontBody", layer.style)}>{verse.text}</p>
-            <span style={getElementStyle("fontVer", layer.style)} className="mt-1 block">
+            <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
+              {layer.style.animation === "typewriter" ? (
+                <TypewriterText text={verse.text} />
+              ) : (
+                verse.text
+              )}
+            </p>
+            <span style={{ ...getElementStyle("fontVer", layer.style), whiteSpace: "pre-wrap" }} className="mt-1 block">
               {versionLabel}
             </span>
           </>
@@ -116,14 +303,19 @@ export function CompositeLayer({
             Sélectionnez un verset
           </span>
         )}
-      </div>
+      </motion.div>
     );
   }
 
   // External live embed (YouTube / Facebook / Vimeo / HLS) — real video preview
   if (layer.type === "embed") {
     return (
-      <div
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         data-layer
         {...dragProps}
         className={cn(
@@ -131,14 +323,14 @@ export function CompositeLayer({
           movable && "cursor-move",
           ring,
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), ...animStyle, zIndex: z }}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
         <EmbedMedia layer={layer} audioOwner={audioOwner} />
         <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-studio-onair/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
           DIRECT EXTERNE
         </span>
-      </div>
+      </motion.div>
     );
   }
 
@@ -149,12 +341,17 @@ export function CompositeLayer({
       ? { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" }
       : { label: "FLUX VLC · HLS", color: "rgba(240,168,104,.7)", hatch: "rgba(240,168,104,.05)", hatch2: "rgba(240,168,104,.1)" };
     return (
-      <div
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         {...selectProps}
         className={cn("absolute inset-0 flex items-center justify-center", draggable && "cursor-pointer", ring)}
         style={{
           zIndex: z,
-          background: `repeating-linear-gradient(45deg,${meta.hatch} 0 14px,${meta.hatch2} 14px 28px)`,
+          backgroundImage: `repeating-linear-gradient(45deg,${meta.hatch} 0 14px,${meta.hatch2} 14px 28px)`,
         }}
       >
         <div className="max-w-[80%] text-center">
@@ -163,21 +360,33 @@ export function CompositeLayer({
           </div>
           <div className="mt-1 truncate text-[10px] text-white/30">{layer.feedUrl || layer.name}</div>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   // Image layer
   if (layer.type === "image") {
-    const bg = layer.imageUrl
-      ? `center/cover no-repeat url(${JSON.stringify(layer.imageUrl)})`
-      : imageHatch(layer.imageHue ?? 265);
+    const bgStyle: React.CSSProperties = layer.imageUrl
+      ? {
+          backgroundImage: `url(${getImageUrl(layer.imageUrl)})`,
+          backgroundPosition: "center",
+          backgroundSize: "cover",
+          backgroundRepeat: "no-repeat",
+        }
+      : {
+          backgroundImage: imageHatch(layer.imageHue ?? 265),
+        };
     if (isBg) {
       return (
-        <div
+        <motion.div
+          key={layer.id}
+          variants={variants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
           {...selectProps}
           className={cn("absolute inset-0", draggable && "cursor-pointer", ring)}
-          style={{ zIndex: z, background: bg }}
+          style={{ zIndex: z, ...bgStyle }}
         >
           <span
             className={cn(
@@ -187,18 +396,23 @@ export function CompositeLayer({
           >
             🖼 {layer.name}
           </span>
-        </div>
+        </motion.div>
       );
     }
     return (
-      <div
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute overflow-hidden rounded-xl", movable && "cursor-move", ring)}
-        style={{ ...getOverlayBoxStyle(layer.style), ...animStyle, zIndex: z, background: bg }}
+        className={cn("absolute overflow-hidden", movable && "cursor-move", ring)}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...bgStyle }}
       >
         {handles}
-      </div>
+      </motion.div>
     );
   }
 
@@ -206,34 +420,88 @@ export function CompositeLayer({
   if (layer.type === "song") {
     const lines = (layer.content ?? "").split("\n");
     return (
-      <div
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute flex flex-col items-center justify-center text-center", movable && "cursor-move", ring)}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), ...animStyle, zIndex: z }}
+        className={alignClass}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
         {lines.map((line, i) => (
-          <div key={i} style={getElementStyle("fontBody", layer.style)}>
-            {line || " "}
+          <div key={i} style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
+            {layer.style.animation === "typewriter" ? (
+              <TypewriterText text={line || ""} />
+            ) : (
+              line || " "
+            )}
           </div>
         ))}
-      </div>
+      </motion.div>
     );
   }
 
   // Text layer
   return (
-    <div
+    <motion.div
+      key={layer.id}
+      variants={outerVariants}
+      initial={isScroll ? undefined : "initial"}
+      animate={isScroll ? undefined : "animate"}
+      exit={isScroll ? undefined : "exit"}
       data-layer
       {...dragProps}
-      className={cn("absolute flex flex-col justify-center text-center", movable && "cursor-move", ring)}
+      className={alignClass}
       style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
     >
       {handles}
-      <p style={getElementStyle("fontBody", layer.style)}>{layer.content}</p>
-      {layer.sub ? <span className="mt-1 text-[12px] text-white/55">{layer.sub}</span> : null}
-    </div>
+      {isScroll ? (
+        <motion.div
+          variants={innerVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className={cn(
+            "w-full h-full flex flex-col justify-center",
+            (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") && "whitespace-nowrap flex-row items-center"
+          )}
+        >
+          <div className="flex flex-col">
+            <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") ? "nowrap" : "pre-wrap" }}>
+              {layer.content}
+            </p>
+            {layer.sub ? (
+              <span className="mt-1 text-[12px] text-white/55" style={{ whiteSpace: (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") ? "nowrap" : "pre-wrap" }}>
+                {layer.sub}
+              </span>
+            ) : null}
+          </div>
+        </motion.div>
+      ) : (
+        <>
+          <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
+            {layer.style.animation === "typewriter" ? (
+              <TypewriterText text={layer.content ?? ""} />
+            ) : (
+              layer.content
+            )}
+          </p>
+          {layer.sub ? (
+            <span className="mt-1 text-[12px] text-white/55" style={{ whiteSpace: "pre-wrap" }}>
+              {layer.style.animation === "typewriter" ? (
+                <TypewriterText text={layer.sub} />
+              ) : (
+                layer.sub
+              )}
+            </span>
+          ) : null}
+        </>
+      )}
+    </motion.div>
   );
 }
 

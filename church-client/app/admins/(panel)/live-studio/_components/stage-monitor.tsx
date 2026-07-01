@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { Maximize } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -74,24 +75,26 @@ export function StageMonitor({
             </span>
           </div>
         )}
-        {visible.map((layer, idx) => {
-          const z = visible.length - idx;
-          const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
-          return (
-            <CompositeLayer
-              key={`${layer.id}-${animNonce}`}
-              layer={effective}
-              verse={layer.type === "bible" ? bibleVerse : undefined}
-              z={z}
-              selected={!isProgram && layer.id === selectedLayerId}
-              draggable={draggable}
-              audioOwner={!isProgram}
-              onPointerDown={onLayerPointerDown}
-              onResize={onLayerResize}
-              onSelect={onLayerSelect}
-            />
-          );
-        })}
+        <AnimatePresence>
+          {visible.map((layer, idx) => {
+            const z = visible.length - idx;
+            const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
+            return (
+              <CompositeLayer
+                key={`${layer.id}-${animNonce}`}
+                layer={effective}
+                verse={layer.type === "bible" ? bibleVerse : undefined}
+                z={z}
+                selected={!isProgram && layer.id === selectedLayerId}
+                draggable={draggable}
+                audioOwner={!isProgram}
+                onPointerDown={onLayerPointerDown}
+                onResize={onLayerResize}
+                onSelect={onLayerSelect}
+              />
+            );
+          })}
+        </AnimatePresence>
       </div>
 
       {black && (

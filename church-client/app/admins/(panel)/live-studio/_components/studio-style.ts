@@ -1,25 +1,6 @@
 import type React from "react";
 
-import type { StudioAnimation, StudioSettings } from "@/lib/studio";
-
-/** Map each appearance animation to a CSS @keyframes name (see globals.css). */
-const ANIMATION_KEYFRAME: Record<StudioAnimation, string> = {
-  fade_slide: "studioFadeSlide",
-  scale: "studioScaleIn",
-  slide_left: "studioSlideLeft",
-  slide_right: "studioSlideRight",
-  clip_reveal: "studioClipReveal",
-  neon_slide: "studioNeonSlide",
-  typewriter: "studioTypewriter",
-};
-
-/** Inline `animation` shorthand that plays the layer's entrance animation. */
-export function getAnimationStyle(s: StudioSettings): React.CSSProperties {
-  const name = ANIMATION_KEYFRAME[s.animation] ?? "studioFadeSlide";
-  const easing =
-    s.animEasing === "bounce" ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)" : s.animEasing;
-  return { animation: `${name} ${Math.max(80, s.animDuration)}ms ${easing} both` };
-}
+import type { StudioSettings } from "@/lib/studio";
 
 /**
  * Maps `StudioSettings` to the inline CSS used to render the on-screen verse
