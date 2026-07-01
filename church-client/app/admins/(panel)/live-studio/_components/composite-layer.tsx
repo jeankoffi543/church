@@ -58,6 +58,66 @@ const ANIMATION_PLUGINS: Record<string, (dur: number, ease: Easing) => Variants>
     animate: { opacity: 1, transition: { duration: dur / 1000, ease } },
     exit: { opacity: 0, transition: { duration: 0.3 } },
   }),
+  scroll_left: (dur) => ({
+    initial: { x: "100%" },
+    animate: {
+      x: "-100%",
+      transition: {
+        x: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_right: (dur) => ({
+    initial: { x: "-100%" },
+    animate: {
+      x: "100%",
+      transition: {
+        x: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_up: (dur) => ({
+    initial: { y: "100%" },
+    animate: {
+      y: "-100%",
+      transition: {
+        y: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
+  scroll_down: (dur) => ({
+    initial: { y: "-100%" },
+    animate: {
+      y: "100%",
+      transition: {
+        y: {
+          repeat: Infinity,
+          repeatType: "loop",
+          duration: dur > 100 ? (dur * 12) / 1000 : 12,
+          ease: "linear",
+        },
+      },
+    },
+    exit: { opacity: 0 },
+  }),
 };
 
 const getImageUrl = (url: string | undefined | null): string => {
@@ -147,12 +207,6 @@ export function CompositeLayer({
   const getVariants = ANIMATION_PLUGINS[layer.style.animation] || ANIMATION_PLUGINS.fade_slide;
   const variants = getVariants(layer.style.animDuration || 500, animEase);
 
-  // Full-frame backgrounds aren't draggable, but a click still selects them so
-  // the inspector binds to the source.
-  const selectProps =
-    draggable && onSelect && isBg
-      ? { onClick: () => onSelect(layer.id), role: "button" as const }
-      : {};
   const ring = selected
     ? isBg
       ? "shadow-[inset_0_0_0_2px_#b270ff]"
@@ -162,6 +216,27 @@ export function CompositeLayer({
   const dragProps = movable
     ? { onPointerDown: (e: React.PointerEvent) => onPointerDown!(e, layer.id) }
     : {};
+
+  const alignX = layer.style.textAlign || "center";
+  const alignY = layer.style.textVerticalAlign || "center";
+  const alignClass = cn(
+    "absolute flex flex-col overflow-hidden",
+    alignX === "left" ? "items-start text-left" : alignX === "right" ? "items-end text-right" : "items-center text-center",
+    alignY === "top" ? "justify-start" : alignY === "bottom" ? "justify-end" : "justify-center",
+    movable && "cursor-move",
+    ring
+  );
+
+  const isScroll = layer.style.animation?.startsWith("scroll_");
+  const outerVariants = isScroll ? undefined : variants;
+  const innerVariants = isScroll ? variants : undefined;
+
+  // Full-frame backgrounds aren't draggable, but a click still selects them so
+  // the inspector binds to the source.
+  const selectProps =
+    draggable && onSelect && isBg
+      ? { onClick: () => onSelect(layer.id), role: "button" as const }
+      : {};
 
   const handles =
     selected && movable && onResize
@@ -189,23 +264,23 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute flex flex-col justify-center text-center", movable && "cursor-move", ring)}
+        className={alignClass}
         style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
         {verse ? (
           <>
-            <span style={getElementStyle("fontRef", layer.style)} className="mb-2 block">
+            <span style={{ ...getElementStyle("fontRef", layer.style), whiteSpace: "pre-wrap" }} className="mb-2 block">
               {verse.reference}
             </span>
-            <p style={getElementStyle("fontBody", layer.style)}>
+            <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
               {layer.style.animation === "typewriter" ? (
                 <TypewriterText text={verse.text} />
               ) : (
                 verse.text
               )}
             </p>
-            <span style={getElementStyle("fontVer", layer.style)} className="mt-1 block">
+            <span style={{ ...getElementStyle("fontVer", layer.style), whiteSpace: "pre-wrap" }} className="mt-1 block">
               {versionLabel}
             </span>
           </>
@@ -314,12 +389,12 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute flex flex-col items-center justify-center text-center", movable && "cursor-move", ring)}
+        className={alignClass}
         style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
         {lines.map((line, i) => (
-          <div key={i} style={getElementStyle("fontBody", layer.style)}>
+          <div key={i} style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
             {layer.style.animation === "typewriter" ? (
               <TypewriterText text={line || ""} />
             ) : (
@@ -335,32 +410,58 @@ export function CompositeLayer({
   return (
     <motion.div
       key={layer.id}
-      variants={variants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
+      variants={outerVariants}
+      initial={isScroll ? undefined : "initial"}
+      animate={isScroll ? undefined : "animate"}
+      exit={isScroll ? undefined : "exit"}
       data-layer
       {...dragProps}
-      className={cn("absolute flex flex-col justify-center text-center", movable && "cursor-move", ring)}
+      className={alignClass}
       style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
     >
       {handles}
-      <p style={getElementStyle("fontBody", layer.style)}>
-        {layer.style.animation === "typewriter" ? (
-          <TypewriterText text={layer.content ?? ""} />
-        ) : (
-          layer.content
-        )}
-      </p>
-      {layer.sub ? (
-        <span className="mt-1 text-[12px] text-white/55">
-          {layer.style.animation === "typewriter" ? (
-            <TypewriterText text={layer.sub} />
-          ) : (
-            layer.sub
+      {isScroll ? (
+        <motion.div
+          variants={innerVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className={cn(
+            "w-full h-full flex flex-col justify-center",
+            (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") && "whitespace-nowrap flex-row items-center"
           )}
-        </span>
-      ) : null}
+        >
+          <div className="flex flex-col">
+            <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") ? "nowrap" : "pre-wrap" }}>
+              {layer.content}
+            </p>
+            {layer.sub ? (
+              <span className="mt-1 text-[12px] text-white/55" style={{ whiteSpace: (layer.style.animation === "scroll_left" || layer.style.animation === "scroll_right") ? "nowrap" : "pre-wrap" }}>
+                {layer.sub}
+              </span>
+            ) : null}
+          </div>
+        </motion.div>
+      ) : (
+        <>
+          <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
+            {layer.style.animation === "typewriter" ? (
+              <TypewriterText text={layer.content ?? ""} />
+            ) : (
+              layer.content
+            )}
+          </p>
+          {layer.sub ? (
+            <span className="mt-1 text-[12px] text-white/55" style={{ whiteSpace: "pre-wrap" }}>
+              {layer.style.animation === "typewriter" ? (
+                <TypewriterText text={layer.sub} />
+              ) : (
+                layer.sub
+              )}
+            </span>
+          ) : null}
+        </>
+      )}
     </motion.div>
   );
 }
