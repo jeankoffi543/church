@@ -2,13 +2,14 @@
 
 import { ChevronRight, ChevronsRight, EyeOff } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 /**
- * Center transition column between the Preview and Program monitors. Every
- * control here is wired to the real broadcast pipeline:
- *  - CUT       → push the prepared/preview verse on air (`diffuse`)
- *  - Écran vide→ hide the overlay (`masquer`)
- *  - Verset +  → navigate to the next verse (`advance("next_verse")`)
- *  - Chapitre +→ navigate to the next chapter (`advance("next_chapter")`)
+ * Center transition column between the Preview and Program monitors.
+ *  - CUT        → send the whole current scene on air (`sendToProgram`)
+ *  - Écran vide → black out the Program monitor (toggle, all sources)
+ *  - Verset + / Chapitre +  → bible navigation, shown only when a bible source
+ *    is selected.
  */
 export function TransitionBar({
   onCut,
@@ -17,6 +18,9 @@ export function TransitionBar({
   onNextChapter,
   busy,
   canCut,
+  black = false,
+  showVerseNav = false,
+  canNavigate = false,
 }: {
   onCut: () => void;
   onBlack: () => void;
@@ -24,6 +28,9 @@ export function TransitionBar({
   onNextChapter: () => void;
   busy: boolean;
   canCut: boolean;
+  black?: boolean;
+  showVerseNav?: boolean;
+  canNavigate?: boolean;
 }) {
   return (
     <div className="flex w-[124px] flex-col justify-center gap-2.5 rounded-2xl border border-white/6 bg-black/40 px-3 py-3.5">
@@ -35,41 +42,47 @@ export function TransitionBar({
       >
         <ChevronsRight className="size-[26px]" strokeWidth={2.4} />
         <span className="text-[13px] font-extrabold tracking-[1px]">CUT</span>
-        <span className="text-[8.5px] font-bold tracking-[1px] text-white/70">
-          ENVOYER ANTENNE
-        </span>
+        <span className="text-[8.5px] font-bold tracking-[1px] text-white/70">ENVOYER ANTENNE</span>
       </button>
 
       <button
         type="button"
         onClick={onBlack}
         disabled={busy}
-        className="flex items-center justify-center gap-1.5 rounded-[10px] border border-white/12 bg-white/4 px-2 py-2.5 text-[11px] font-bold text-white transition hover:bg-white/6 disabled:cursor-not-allowed disabled:opacity-50"
+        className={cn(
+          "flex items-center justify-center gap-1.5 rounded-[10px] border px-2 py-2.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50",
+          black
+            ? "border-studio-onair/50 bg-studio-onair/20 text-[#ff9a9a]"
+            : "border-white/12 bg-white/4 text-white hover:bg-white/6",
+        )}
       >
         <EyeOff className="size-[15px]" />
-        ÉCRAN VIDE
+        {black ? "À L'ANTENNE" : "ÉCRAN VIDE"}
       </button>
 
-      <div className="my-px h-px bg-white/7" />
-
-      <button
-        type="button"
-        onClick={onNextVerse}
-        disabled={busy}
-        className="flex items-center justify-between gap-1.5 rounded-[9px] border border-white/10 bg-studio-field px-2.5 py-2.5 text-[11px] font-bold text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Verset +
-        <ChevronRight className="size-3.5 text-gold" strokeWidth={2.2} />
-      </button>
-      <button
-        type="button"
-        onClick={onNextChapter}
-        disabled={busy}
-        className="flex items-center justify-between gap-1.5 rounded-[9px] border border-white/10 bg-studio-field px-2.5 py-2.5 text-[11px] font-bold text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Chapitre +
-        <ChevronsRight className="size-3.5 text-gold" strokeWidth={2.2} />
-      </button>
+      {showVerseNav && (
+        <>
+          <div className="my-px h-px bg-white/7" />
+          <button
+            type="button"
+            onClick={onNextVerse}
+            disabled={busy || !canNavigate}
+            className="flex items-center justify-between gap-1 rounded-[9px] border border-white/10 bg-studio-field px-2 py-2.5 text-[11px] font-bold whitespace-nowrap text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Verset +
+            <ChevronRight className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
+          </button>
+          <button
+            type="button"
+            onClick={onNextChapter}
+            disabled={busy || !canNavigate}
+            className="flex items-center justify-between gap-1 rounded-[9px] border border-white/10 bg-studio-field px-2 py-2.5 text-[11px] font-bold whitespace-nowrap text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Chapitre +
+            <ChevronsRight className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
+          </button>
+        </>
+      )}
     </div>
   );
 }

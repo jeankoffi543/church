@@ -1042,6 +1042,9 @@ export function LiveStudioConsole({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteSceneId, setPendingDeleteSceneId] = useState<string | null>(null);
   const previewStageRef = useRef<HTMLDivElement>(null);
+  const [programBlack, setProgramBlack] = useState<boolean>(
+    () => Boolean(liveSettings.live_program_black),
+  );
 
   const currentScene = scenes.find((s) => s.id === currentSceneId) ?? scenes[0];
   const layers = currentScene?.layers ?? [];
@@ -1194,6 +1197,18 @@ export function LiveStudioConsole({
     return () => clearTimeout(timer);
   }, [scenes]);
 
+  // Persist the "écran vide" state (skip the initial hydrated value).
+  const lastBlackRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (lastBlackRef.current === null) {
+      lastBlackRef.current = programBlack;
+      return;
+    }
+    if (lastBlackRef.current === programBlack) return;
+    lastBlackRef.current = programBlack;
+    void updateAdminSettings([{ key: "live_program_black", value: programBlack, group: "live" }]);
+  }, [programBlack]);
+
   // Move-only drag of a layer directly in the Preview (resize stays in the
   // inspector / fullscreen editor).
   const handleLayerDrag = (e: React.PointerEvent, layerId: string) => {
@@ -1310,6 +1325,7 @@ export function LiveStudioConsole({
   // otherwise clear any scripture that was still live so the antenne matches.
   const sendToProgram = () => {
     if (layers.every((l) => !l.visible)) return;
+    setProgramBlack(false);
     setProgramLayers(layers.map((l) => ({ ...l, style: { ...l.style } })));
     setProgramSceneId(currentSceneId);
     const bibleOnAir = layers.some((l) => l.type === "bible" && l.visible) && !!preview;
@@ -1322,6 +1338,14 @@ export function LiveStudioConsole({
       }
       setStatus({ type: "success", message: `Scène « ${currentScene?.name ?? ""} » envoyée à l'antenne.` });
     }
+  };
+
+  // Écran vide — black out the WHOLE Program monitor (any source), and hide the
+  // real scripture overlay if one was live.
+  const blackScreen = () => {
+    const goingBlack = !programBlack;
+    setProgramBlack(goingBlack);
+    if (goingBlack && live) void masquer();
   };
 
   // #4 — broadcast an external YouTube/Facebook/HLS live link to viewers by
@@ -1413,11 +1437,14 @@ export function LiveStudioConsole({
             />
             <TransitionBar
               onCut={sendToProgram}
-              onBlack={masquer}
+              onBlack={blackScreen}
               onNextVerse={() => void advance("next_verse")}
               onNextChapter={() => void advance("next_chapter")}
               busy={busy}
               canCut={layers.some((l) => l.visible)}
+              black={programBlack}
+              showVerseNav={selectedLayer?.type === "bible"}
+              canNavigate={!!(preview || live)}
             />
           </>
         )}
@@ -1427,6 +1454,7 @@ export function LiveStudioConsole({
           bibleVerse={live}
           bibleStyle={onAirSettings}
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
+          black={programBlack}
         />
       </section>
 
