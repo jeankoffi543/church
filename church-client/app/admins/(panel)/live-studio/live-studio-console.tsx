@@ -231,7 +231,18 @@ const DEFAULT_SCENES: StudioScene[] = [
     id: "scene-2",
     name: "Caméra plein cadre",
     layers: [
-      { id: "cam-1", type: "camera", name: "Caméra NDI · Autel", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+      {
+        id: "cam-1",
+        type: "camera",
+        name: "Caméra principale",
+        visible: true,
+        style: {
+          ...DEFAULT_STUDIO_SETTINGS,
+          containerShape: "transparent",
+          positionMode: "predefined",
+          predefinedPosition: "full_screen",
+        },
+      },
     ],
   },
 ];
