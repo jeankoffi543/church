@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Volume2, MicOff } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Volume2, MicOff, Headphones, VolumeX } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MONO } from "./studio-tokens";
 import { LAYER_META, isAudioActive, type StudioLayer } from "./studio-layers";
-import { readAudioLevel, hasAudioProbe } from "./studio-audio";
+import {
+  readAudioLevel,
+  hasAudioProbe,
+  getMonitorMuted,
+  setMonitorMuted,
+  subscribeMonitorMuted,
+} from "./studio-audio";
 
 /**
  * Dock 3 · Audio mixer. Real channels are the audio-bearing sources of the
@@ -71,6 +77,8 @@ export function MixerDock({
     return () => clearInterval(timer);
   }, [channels.length]);
 
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
       <div className="flex flex-none items-center gap-2 border-b border-white/6 px-3.5 py-2.5">
@@ -78,7 +86,25 @@ export function MixerDock({
         <span className="text-[11px] font-extrabold tracking-[1.2px] text-white uppercase">
           Table de mixage
         </span>
-        <span className="ml-auto rounded-md bg-white/6 px-1.5 py-[3px] text-[9px] font-bold text-white/50">
+        <button
+          type="button"
+          onClick={() => setMonitorMuted(!monitorMuted)}
+          title={
+            monitorMuted
+              ? "Retour local coupé — le direct continue. Cliquez pour réécouter en local."
+              : "Couper le retour local (n'affecte pas le direct)"
+          }
+          className={cn(
+            "ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-[9px] font-bold tracking-wide uppercase transition-colors",
+            monitorMuted
+              ? "bg-studio-onair/15 text-studio-onair"
+              : "text-white/45 hover:text-white",
+          )}
+        >
+          {monitorMuted ? <VolumeX className="size-3.5" /> : <Headphones className="size-3.5" />}
+          {monitorMuted ? "Local coupé" : "Retour local"}
+        </button>
+        <span className="rounded-md bg-white/6 px-1.5 py-[3px] text-[9px] font-bold text-white/50">
           {channels.length} voie{channels.length > 1 ? "s" : ""}
         </span>
       </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, type Variants, type Easing } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
@@ -12,7 +12,9 @@ import { resolveEmbed } from "./embed";
 import {
   attachMediaMeter,
   attachYouTube,
+  getMonitorMuted,
   registerAudioProbe,
+  subscribeMonitorMuted,
   youtubeId,
   type AudioProbe,
   type MediaMeter,
@@ -552,6 +554,8 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
 
   const level = layer.audioLevel ?? 80;
   const muted = layer.audioMuted ?? false;
+  // Local monitor mute (operator's studio only, doesn't affect on-air).
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
 
   // Owned <video> (direct / HLS) → real Web Audio analyser + gain control.
   useEffect(() => {
@@ -589,11 +593,12 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     };
   }, [audioOwner, isYouTube, ytId, layer.id]);
 
-  // Apply the mixer fader / mute to whichever audio path is live.
+  // Apply the mixer fader / mute to whichever audio path is live. The local
+  // monitor mute silences the operator's output on top of the on-air mute.
   useEffect(() => {
-    meterRef.current?.setGain(level, muted);
-    ytRef.current?.setVolume(level, muted);
-  }, [level, muted]);
+    meterRef.current?.setGain(level, muted || monitorMuted);
+    ytRef.current?.setVolume(level, muted || monitorMuted);
+  }, [level, muted, monitorMuted]);
 
   if (!src) {
     return (
@@ -654,19 +659,23 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
   // Browsers block UNMUTED autoplay; start muted (so the clip is always visible)
   // and unmute once the operator has interacted with the page.
   const [primed, setPrimed] = useState(false);
+  // Local monitor mute: silences the operator's studio only (element.muted),
+  // NOT the on-air level (element.volume) — so the VU meter keeps animating.
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
 
   const level = layer.audioLevel ?? 80;
   const mutedSetting = layer.audioMuted ?? false;
   const loop = layer.loop ?? true;
 
-  // Owner: transport controller + a playback-state VU probe.
+  // Owner: transport controller + a playback-state VU probe. The probe tracks the
+  // ON-AIR signal (playing + on-air volume) and ignores the local monitor mute.
   useEffect(() => {
     if (!audioOwner || !src) return;
     const el = videoRef.current;
     if (!el) return;
 
     let peak = 0;
-    const isSounding = () => !el.paused && !el.muted && el.volume > 0.001;
+    const isSounding = () => !el.paused && el.volume > 0.001;
     const probe: AudioProbe = {
       getLevel: () => {
         const ceiling = isSounding() ? el.volume * 88 : 0;
@@ -720,12 +729,14 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     return () => window.removeEventListener("pointerdown", onGesture);
   }, [audioOwner, primed]);
 
-  // Apply the mixer fader volume to the element (mute is the JSX `muted` attr).
+  // On-air level: the fader sets element.volume; the per-channel (on-air) mute
+  // drops it to 0 (also flattens the meter). The LOCAL monitor mute is separate
+  // (the JSX `muted` attr) so it never affects the on-air level or the meter.
   useEffect(() => {
     if (!audioOwner) return;
     const el = videoRef.current;
-    if (el) el.volume = Math.max(0, Math.min(1, level / 100));
-  }, [audioOwner, level, src]);
+    if (el) el.volume = mutedSetting ? 0 : Math.max(0, Math.min(1, level / 100));
+  }, [audioOwner, level, mutedSetting, src]);
 
   // Program (non-owner) = synchronised follower of the Preview: same play/pause
   // and position, so the transport controls (which drive the Preview) are
@@ -769,7 +780,7 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       src={src}
       className="pointer-events-none absolute inset-0 size-full object-cover"
       autoPlay
-      muted={!audioOwner || !primed || mutedSetting}
+      muted={!audioOwner || !primed || monitorMuted}
       loop={loop}
       playsInline
     />
