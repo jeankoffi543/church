@@ -1129,7 +1129,7 @@ export function LiveStudioConsole({
       }
       setAnimNonce((n) => n + 1);
     },
-    [selectedLayerId, setSettings, setLayers],
+    [selectedLayerId, selectedLayer, setSettings, setLayers],
   );
   const patchSelectedData = useCallback(
     (patch: Partial<StudioLayer>) => {
@@ -1167,12 +1167,47 @@ export function LiveStudioConsole({
         }
       }
 
+      if (targetLayer && targetLayer.type === "group") {
+        const isCurrentlyLive = targetLayer.groupLiveActive;
+        const willBeLive = patch.groupLiveActive !== undefined ? patch.groupLiveActive : isCurrentlyLive;
+        
+        if (willBeLive) {
+          setProgramBlack(false);
+          setProgramLayers((pls) => {
+            const hasGroup = pls.some((l) => l.id === selectedLayerId);
+            const targetChildLayers = patch.layers !== undefined ? patch.layers : targetLayer.layers;
+            
+            if (hasGroup) {
+              return pls.map((l) =>
+                l.id === selectedLayerId
+                  ? { ...l, ...patch, layers: targetChildLayers }
+                  : l
+              );
+            } else {
+              return [...pls, { ...targetLayer, ...patch, layers: targetChildLayers }];
+            }
+          });
+          
+          const targetChildLayers = patch.layers !== undefined ? patch.layers : targetLayer.layers;
+          const childLayersChanged = patch.layers !== undefined && JSON.stringify(targetLayer.layers) !== JSON.stringify(patch.layers);
+          const liveActivated = patch.groupLiveActive === true && !isCurrentlyLive;
+          if (childLayersChanged || liveActivated) {
+            setProgramAnimNonce((n) => n + 1);
+          }
+          return;
+        }
+      }
+
       if (programSceneId === currentSceneIdRef.current && !programBlack) {
         setProgramLayers((pls) =>
           pls.map((l) => {
             if (l.id === selectedLayerId) {
               if (l.type === "song" && !l.songLiveActive) {
                 const { activeStanzaIndex, ...rest } = patch;
+                return { ...l, ...rest };
+              }
+              if (l.type === "group" && !l.groupLiveActive) {
+                const { layers: childLayers, ...rest } = patch;
                 return { ...l, ...rest };
               }
               if (patch.activeStanzaIndex !== undefined && l.activeStanzaIndex !== patch.activeStanzaIndex) {
@@ -1256,6 +1291,24 @@ export function LiveStudioConsole({
       );
       setAnimNonce((n) => n + 1);
       setStatus({ type: "success", message: "Paramètres du chant réinitialisés !" });
+    } else if (selectedLayer.type === "group") {
+      setLayers((ls) =>
+        ls.map((l) =>
+          l.id === selectedLayerId
+            ? {
+                ...l,
+                style: {
+                  ...DEFAULT_STUDIO_SETTINGS,
+                  animation: "none",
+                },
+                layers: l.layers ?? [],
+                groupLiveActive: l.groupLiveActive ?? false,
+              }
+            : l,
+        ),
+      );
+      setAnimNonce((n) => n + 1);
+      setStatus({ type: "success", message: "Paramètres du groupe réinitialisés !" });
     }
   }, [selectedLayerId, selectedLayer, setLayers]);
   const onImageFile = useCallback(
@@ -1298,9 +1351,16 @@ export function LiveStudioConsole({
   );
   /* eslint-enable react-hooks/preserve-manual-memoization */
 
-  const addLayer = (type: StudioLayerType) => {
+  const addLayer = (type: StudioLayerType, parentId?: string) => {
     const count = layers.filter((l) => l.type === type).length;
     const nl = createLayer(type, count);
+    if (parentId) {
+      nl.parentId = parentId;
+      const parent = layers.find((l) => l.id === parentId);
+      if (parent) {
+        nl.style = { ...parent.style };
+      }
+    }
     setLayers((ls) => [nl, ...ls]);
     setSelectedLayerId(nl.id);
   };
@@ -1323,6 +1383,26 @@ export function LiveStudioConsole({
       if (from < 0 || to < 0) return ls;
       const next = [...ls];
       const [moved] = next.splice(from, 1);
+
+      const target = next.find((l) => l.id === targetId);
+      if (target) {
+        if (target.type === "group") {
+          moved.parentId = target.id;
+          const parent = next.find((l) => l.id === target.id);
+          if (parent) {
+            moved.style = { ...parent.style };
+          }
+        } else if (target.parentId) {
+          moved.parentId = target.parentId;
+          const parent = next.find((l) => l.id === target.parentId);
+          if (parent) {
+            moved.style = { ...parent.style };
+          }
+        } else {
+          moved.parentId = undefined;
+        }
+      }
+
       next.splice(to, 0, moved);
       return next;
     });
@@ -1425,6 +1505,15 @@ export function LiveStudioConsole({
     const w0 = Math.max(10, originalWidth);
     const h0 = Math.max(5, originalHeight);
 
+    const childOriginalPositions: Record<string, { x: number; y: number }> = {};
+    const childLayers = (scenes.find((s) => s.id === currentSceneIdRef.current)?.layers ?? []).filter((l) => l.parentId === layerId);
+    childLayers.forEach((c) => {
+      childOriginalPositions[c.id] = {
+        x: c.style.customX ?? 0,
+        y: c.style.customY ?? 0,
+      };
+    });
+
     const sx = e.clientX;
     const sy = e.clientY;
     setSelectedLayerId(layerId);
@@ -1440,12 +1529,26 @@ export function LiveStudioConsole({
         setStudioField("customWidth", w0);
         setStudioField("customHeight", h0);
       } else {
+        const originalX = layerStyle?.customX ?? 0;
+        const originalY = layerStyle?.customY ?? 0;
+        const deltaX = nx - originalX;
+        const deltaY = ny - originalY;
+
         setLayers((ls) =>
-          ls.map((l) =>
-            l.id === layerId
-              ? { ...l, style: { ...l.style, positionMode: "custom", customX: nx, customY: ny, customWidth: w0, customHeight: h0 } }
-              : l,
-          ),
+          ls.map((l) => {
+            if (l.id === layerId) {
+              return { ...l, style: { ...l.style, positionMode: "custom", customX: nx, customY: ny, customWidth: w0, customHeight: h0 } };
+            }
+            if (l.parentId === layerId) {
+              const orig = childOriginalPositions[l.id];
+              if (orig) {
+                const cx = Math.max(0, Math.min(100, Math.round(orig.x + deltaX)));
+                const cy = Math.max(0, Math.min(100, Math.round(orig.y + deltaY)));
+                return { ...l, style: { ...l.style, customX: cx, customY: cy } };
+              }
+            }
+            return l;
+          }),
         );
       }
     };
