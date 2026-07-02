@@ -41,6 +41,10 @@ export type StudioLayer = {
   stanzas?: Array<{ name: string; content: string }>;
   activeStanzaIndex?: number;
   songLiveActive?: boolean;
+  // group child layers (feature/CHR-41)
+  layers?: StudioLayer[];
+  groupLiveActive?: boolean;
+  parentId?: string;
   // audio mixer config (embed / video / audio sources)
   audioLevel?: number; // 0-100 fader
   audioMuted?: boolean;
@@ -105,9 +109,9 @@ export function isBackgroundLayer(l: StudioLayer): boolean {
   return l.type === "camera" || l.type === "video" || (l.type === "image" && l.fill !== "frame");
 }
 
-/** Audio / group have no visual output — they never render on a monitor. */
+/** Audio has no visual output — it never renders on a monitor. */
 export function isCompositable(l: StudioLayer): boolean {
-  return l.type !== "audio" && l.type !== "group";
+  return l.type !== "audio";
 }
 
 export function layerTabs(type: StudioLayerType): InspTab[] {
@@ -115,6 +119,7 @@ export function layerTabs(type: StudioLayerType): InspTab[] {
     case "bible":
     case "text":
     case "song":
+    case "group":
       return ["contenu", "layout", "typo", "container", "anim", "presets"];
     case "image":
       return ["contenu", "layout", "container", "anim", "presets"];
@@ -123,7 +128,6 @@ export function layerTabs(type: StudioLayerType): InspTab[] {
     case "embed":
       return ["contenu", "layout", "anim", "presets"];
     case "audio":
-    case "group":
       return ["contenu"];
   }
 }
@@ -163,6 +167,12 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       customY: 8,
       customWidth: 84,
       customHeight: 78,
+    };
+  }
+  if (type === "group") {
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
     };
   }
   return { ...DEFAULT_STUDIO_SETTINGS };
@@ -205,6 +215,19 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "audio") {
     base.device = "Micro Prédicateur";
+  }
+  if (type === "group") {
+    base.layers = [
+      {
+        id: `layer-${Date.now()}-group-child-1`,
+        type: "text",
+        name: "Texte du groupe",
+        visible: true,
+        style: { ...DEFAULT_STUDIO_SETTINGS, fontBodySize: 28, fontBodyColor: "#ffffff" },
+        content: "Ceci est un calque texte groupé",
+      }
+    ];
+    base.groupLiveActive = false;
   }
   if (hasAudio(base)) {
     base.audioLevel = 80;
