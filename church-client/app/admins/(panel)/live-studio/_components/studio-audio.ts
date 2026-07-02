@@ -25,6 +25,33 @@ export type AudioProbe = {
 
 const probes = new Map<string, AudioProbe>();
 
+/* ── Local monitor mute ───────────────────────────────────────────────
+ * Silences ONLY what the operator hears in the studio browser (the Preview
+ * monitor). It does not touch per-channel (on-air) mute, and the VU meters keep
+ * animating so the operator still sees the audio is playing "en direct". An
+ * operator-local preference, persisted in localStorage. */
+const MONITOR_MUTE_KEY = "studio_monitor_muted";
+let monitorMuted =
+  typeof window !== "undefined" && window.localStorage.getItem(MONITOR_MUTE_KEY) === "1";
+const monitorListeners = new Set<() => void>();
+
+export function getMonitorMuted(): boolean {
+  return monitorMuted;
+}
+
+export function setMonitorMuted(value: boolean): void {
+  monitorMuted = value;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(MONITOR_MUTE_KEY, value ? "1" : "0");
+  }
+  monitorListeners.forEach((l) => l());
+}
+
+export function subscribeMonitorMuted(cb: () => void): () => void {
+  monitorListeners.add(cb);
+  return () => monitorListeners.delete(cb);
+}
+
 /** Register a probe for a layer id; returns an unregister cleanup. */
 export function registerAudioProbe(id: string, probe: AudioProbe): () => void {
   probes.set(id, probe);
@@ -51,11 +78,23 @@ export function hasAudioProbe(id: string): boolean {
 /* ── Shared Web Audio context ─────────────────────────────────────────── */
 
 let sharedCtx: AudioContext | null = null;
+let resumeHookInstalled = false;
+/** Browsers start an AudioContext suspended until a user gesture — keep trying
+ *  to resume it on every interaction so routed media actually produces sound. */
+function installResumeOnGesture(): void {
+  if (resumeHookInstalled || typeof window === "undefined") return;
+  resumeHookInstalled = true;
+  const resume = () => void sharedCtx?.resume().catch(() => {});
+  window.addEventListener("pointerdown", resume);
+  window.addEventListener("keydown", resume);
+}
+
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return null;
   if (!sharedCtx) sharedCtx = new Ctor();
+  installResumeOnGesture();
   if (sharedCtx.state === "suspended") void sharedCtx.resume().catch(() => {});
   return sharedCtx;
 }

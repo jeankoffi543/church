@@ -1,10 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { Sparkles, Search, Plus, X, Italic, Underline, Upload, Play, Zap, Square, Eye, EyeOff } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Sparkles,
+  Search,
+  Plus,
+  X,
+  Italic,
+  Underline,
+  Upload,
+  Play,
+  Zap,
+  Square,
+  Pause,
+  RotateCcw,
+  SkipBack,
+  SkipForward,
+  Repeat,
+  Eye,
+  EyeOff
+} from "lucide-react";
+
+import { uploadStudioMedia } from "@/lib/admin-api";
 
 import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
+import { getVideoController, type VideoTransportState } from "./studio-video";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -440,7 +461,7 @@ function GroupInspector({
     const content = childContent.trim();
     if (!name || !content) return;
 
-    let nextChildLayers = [...childLayers];
+    const nextChildLayers = [...childLayers];
     if (editIdx !== null) {
       const existing = nextChildLayers[editIdx];
       nextChildLayers[editIdx] = {
@@ -869,24 +890,26 @@ function ContentPanel({
     );
   }
 
-  // camera / video
+  if (layer.type === "video") {
+    return <VideoContent layer={layer} patchLayerData={patchLayerData} />;
+  }
+
+  // camera
   return (
     <>
       <div>
-        <Label className="mb-1.5">{layer.type === "video" ? "URL du flux (.m3u8 / rtmp)" : "Source NDI"}</Label>
+        <Label className="mb-1.5">Source NDI</Label>
         <input
           value={layer.feedUrl ?? ""}
           onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
-          placeholder={layer.type === "video" ? "https://…/live.m3u8" : "ndi://camera-autel"}
+          placeholder="ndi://camera-autel"
           className={MONO_FIELD}
         />
       </div>
       <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
         <div className="flex justify-between">
           <span>Type</span>
-          <span className="font-semibold text-white">
-            {layer.type === "video" ? "Flux réseau VLC (HLS)" : "Capture NDI"}
-          </span>
+          <span className="font-semibold text-white">Capture NDI</span>
         </div>
         <div className="flex justify-between">
           <span>Résolution</span>
@@ -894,6 +917,214 @@ function ContentPanel({
         </div>
       </div>
     </>
+  );
+}
+
+const fmtTime = (s: number) => {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+};
+
+/**
+ * Contenu for a "Vidéo" source: paste a link, OR drag-drop / click to import a
+ * local video (uploaded → persistent stream URL, not a blob), plus a transport
+ * bar (play / pause / stop / seek / replay) wired to the Preview `<video>` via
+ * the video-controller registry.
+ */
+function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [transport, setTransport] = useState<VideoTransportState | null>(null);
+
+  const hasSource = !!layer.feedUrl?.trim();
+  const loop = layer.loop ?? true;
+
+  // Poll the Preview video's playback state to drive the scrubber. (setState
+  // lives inside the interval callback, never synchronously in the effect body.)
+  useEffect(() => {
+    if (!hasSource) return;
+    const t = setInterval(() => {
+      setTransport(getVideoController(layer.id)?.getState() ?? null);
+    }, 250);
+    return () => clearInterval(t);
+  }, [hasSource, layer.id]);
+
+  const ctl = () => getVideoController(layer.id);
+  const ready = !!transport?.ready;
+  const paused = transport?.paused ?? true;
+  const duration = transport?.duration ?? 0;
+  const current = transport?.currentTime ?? 0;
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("video/")) {
+      setError("Choisissez un fichier vidéo (.mp4, .webm, .mov…).");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { url } = await uploadStudioMedia(fd);
+      patchLayerData({ feedUrl: url });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'envoi de la vidéo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <>
+      <div>
+        <Label className="mb-1.5">URL du flux vidéo (.m3u8 / .mp4 / réseau VLC)</Label>
+        <input
+          value={layer.feedUrl ?? ""}
+          onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
+          placeholder="https://…/live.m3u8  ·  https://…/clip.mp4"
+          className={MONO_FIELD}
+        />
+      </div>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!dragOver) setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) void handleFile(f);
+        }}
+        className={cn(
+          "flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed py-5 text-center transition-colors",
+          dragOver ? "border-gold/60 bg-gold/[0.08]" : "border-white/14 bg-white/[0.03]",
+        )}
+      >
+        <Upload className={cn("size-4", uploading ? "animate-pulse text-gold" : "text-white/45")} />
+        <label className="cursor-pointer px-2 text-[11px] font-bold text-white/60 transition-colors hover:text-gold">
+          {uploading ? "Envoi de la vidéo…" : "Glissez une vidéo ici ou cliquez pour l'importer"}
+          <input
+            type="file"
+            accept="video/*"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <span className="text-[9px] text-white/30">MP4 / WebM / MOV — importé et persisté sur le serveur</span>
+      </div>
+
+      {error && <div className="text-[10px] leading-relaxed text-[#ff8a8a]">{error}</div>}
+
+      {/* Transport controls (drive the Preview video) */}
+      {hasSource && (
+        <div className="flex flex-col gap-2 rounded-[10px] border border-white/6 bg-black/[0.18] p-3">
+          <div className="flex items-center justify-between">
+            <Label>Lecture</Label>
+            <button
+              type="button"
+              onClick={() => patchLayerData({ loop: !loop })}
+              title={loop ? "Lecture en boucle activée" : "Lecture en boucle désactivée"}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold transition-colors",
+                loop ? "bg-gold/15 text-gold" : "text-white/40 hover:text-white",
+              )}
+            >
+              <Repeat className="size-3" /> Boucle
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <TransportBtn title="Recommencer" onClick={() => ctl()?.restart()} disabled={!ready}>
+              <RotateCcw className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn title="Reculer de 10 s" onClick={() => ctl()?.skip(-10)} disabled={!ready}>
+              <SkipBack className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn
+              title={paused ? "Lire" : "Pause"}
+              onClick={() => ctl()?.toggle()}
+              disabled={!ready}
+              primary
+            >
+              {paused ? <Play className="size-4 fill-current" /> : <Pause className="size-4 fill-current" />}
+            </TransportBtn>
+            <TransportBtn title="Avancer de 10 s" onClick={() => ctl()?.skip(10)} disabled={!ready}>
+              <SkipForward className="size-3.5" />
+            </TransportBtn>
+            <TransportBtn title="Arrêter (retour au début)" onClick={() => ctl()?.stop()} disabled={!ready}>
+              <Square className="size-3.5" />
+            </TransportBtn>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={cn("w-9 text-right text-[10px] text-white/50", MONO)}>{fmtTime(current)}</span>
+            <Slider
+              min={0}
+              max={Math.max(1, Math.floor(duration))}
+              value={Math.min(current, duration || current)}
+              onValueChange={(v) => ctl()?.seek(v)}
+              className="flex-1"
+            />
+            <span className={cn("w-9 text-[10px] text-white/50", MONO)}>{fmtTime(duration)}</span>
+          </div>
+
+          {!ready && (
+            <div className="text-[10px] leading-relaxed text-white/35">
+              Ouvrez l&apos;aperçu (moniteur Aperçu) pour piloter la lecture. Le son démarre après un
+              premier clic dans la page.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        L&apos;aperçu s&apos;affiche dans les moniteurs. Déplacez-le et redimensionnez-le dans
+        l&apos;aperçu, et réglez son niveau dans la table de mixage.
+      </div>
+    </>
+  );
+}
+
+function TransportBtn({
+  title,
+  onClick,
+  disabled,
+  primary,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex items-center justify-center rounded-lg border transition-colors disabled:opacity-35",
+        primary ? "h-9 flex-[1.4]" : "h-9 flex-1",
+        primary
+          ? "border-gold/40 bg-gold/15 text-gold hover:bg-gold/25"
+          : "border-white/10 bg-white/[0.04] text-white/70 hover:text-white",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

@@ -50,6 +50,8 @@ export type StudioLayer = {
   audioMuted?: boolean;
   audioGain?: number; // -20..+20 dB
   audioBalance?: number; // -100 (L) .. +100 (R)
+  // video transport (video source)
+  loop?: boolean;
 };
 
 /** Sources that carry an audio channel shown in the mixer. */
@@ -86,7 +88,7 @@ export const LAYER_META: Record<
   song: { label: "Chant", color: "#b270ff", typeLabel: "Chant · Paroles" },
   image: { label: "Image / Fond", color: "#34d399", typeLabel: "Image / Fond" },
   camera: { label: "Caméra NDI", color: "#c89af0", typeLabel: "Caméra NDI" },
-  video: { label: "Flux VLC", color: "#f0a868", typeLabel: "Flux réseau VLC" },
+  video: { label: "Vidéo", color: "#f0a868", typeLabel: "Vidéo · lien ou fichier" },
   embed: { label: "Direct externe", color: "#ff6b6b", typeLabel: "YouTube / Facebook" },
   audio: { label: "Audio", color: "#86d0e0", typeLabel: "Entrée audio" },
   group: { label: "Groupe", color: "#d0c090", typeLabel: "Groupe de calques" },
@@ -106,7 +108,7 @@ export const ADD_TYPES: StudioLayerType[] = [
 
 /** Background layers fill the whole frame and sit behind overlays. */
 export function isBackgroundLayer(l: StudioLayer): boolean {
-  return l.type === "camera" || l.type === "video" || (l.type === "image" && l.fill !== "frame");
+  return l.type === "camera" || (l.type === "image" && l.fill !== "frame");
 }
 
 /** Audio has no visual output — it never renders on a monitor. */
@@ -156,7 +158,7 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       fontBodyWeight: "700",
     };
   }
-  if (type === "embed") {
+  if (type === "embed" || type === "video") {
     // A movable / resizable video window (PiP-style); set it full-frame via the
     // "Plein écran" layout preset.
     return {
@@ -212,6 +214,9 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "camera" || type === "video" || type === "embed") {
     base.feedUrl = "";
+  }
+  if (type === "video") {
+    base.loop = true;
   }
   if (type === "audio") {
     base.device = "Micro Prédicateur";

@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, type Variants, type Easing } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
@@ -12,11 +12,15 @@ import { resolveEmbed } from "./embed";
 import {
   attachMediaMeter,
   attachYouTube,
+  getMonitorMuted,
   registerAudioProbe,
+  subscribeMonitorMuted,
   youtubeId,
+  type AudioProbe,
   type MediaMeter,
   type YouTubeController,
 } from "./studio-audio";
+import { getVideoController, registerVideoController, type VideoController } from "./studio-video";
 import { MONO } from "./studio-tokens";
 
 const EASING_MAP: Record<string, Easing> = {
@@ -351,12 +355,36 @@ export function CompositeLayer({
     );
   }
 
-  // Camera / video feed placeholder (background)
-  if (layer.type === "camera" || layer.type === "video") {
-    const isCam = layer.type === "camera";
-    const meta = isCam
-      ? { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" }
-      : { label: "FLUX VLC · HLS", color: "rgba(240,168,104,.7)", hatch: "rgba(240,168,104,.05)", hatch2: "rgba(240,168,104,.1)" };
+  // Network video stream (Flux VLC / HLS / direct file) — real, movable preview
+  if (layer.type === "video") {
+    return (
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        data-layer
+        {...dragProps}
+        className={cn(
+          "absolute overflow-hidden rounded-xl bg-black",
+          movable && "cursor-move",
+          ring,
+        )}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+      >
+        {handles}
+        <VideoMedia layer={layer} audioOwner={audioOwner} />
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#f0a868]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+          FLUX VIDÉO
+        </span>
+      </motion.div>
+    );
+  }
+
+  // Camera feed placeholder (background)
+  if (layer.type === "camera") {
+    const meta = { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" };
     return (
       <motion.div
         key={layer.id}
@@ -562,6 +590,8 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
 
   const level = layer.audioLevel ?? 80;
   const muted = layer.audioMuted ?? false;
+  // Local monitor mute (operator's studio only, doesn't affect on-air).
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
 
   // Owned <video> (direct / HLS) → real Web Audio analyser + gain control.
   useEffect(() => {
@@ -599,11 +629,12 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     };
   }, [audioOwner, isYouTube, ytId, layer.id]);
 
-  // Apply the mixer fader / mute to whichever audio path is live.
+  // Apply the mixer fader / mute to whichever audio path is live. The local
+  // monitor mute silences the operator's output on top of the on-air mute.
   useEffect(() => {
-    meterRef.current?.setGain(level, muted);
-    ytRef.current?.setVolume(level, muted);
-  }, [level, muted]);
+    meterRef.current?.setGain(level, muted || monitorMuted);
+    ytRef.current?.setVolume(level, muted || monitorMuted);
+  }, [level, muted, monitorMuted]);
 
   if (!src) {
     return (
@@ -646,6 +677,148 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       title={layer.name}
       className="pointer-events-none absolute inset-0 size-full border-0"
       allow="autoplay; encrypted-media; picture-in-picture"
+    />
+  );
+}
+
+/**
+ * The playable media of a "Vidéo" source — a network stream (Flux VLC / HLS) or
+ * a direct file. Played NATIVELY (no Web Audio / CORS) so both uploads and
+ * external links are always audible and never fail to load. The audio owner
+ * (Preview) exposes a transport controller + a playback-state VU probe (the
+ * mixer meter animates while the clip plays with sound); the mixer fader/mute
+ * drive the element's `volume`/`muted`. Non-owner (Program) mirrors the Preview.
+ */
+function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boolean }) {
+  const src = (layer.feedUrl || "").trim();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  // Browsers block UNMUTED autoplay; start muted (so the clip is always visible)
+  // and unmute once the operator has interacted with the page.
+  const [primed, setPrimed] = useState(false);
+  // Local monitor mute: silences the operator's studio only (element.muted),
+  // NOT the on-air level (element.volume) — so the VU meter keeps animating.
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+
+  const level = layer.audioLevel ?? 80;
+  const mutedSetting = layer.audioMuted ?? false;
+  const loop = layer.loop ?? true;
+
+  // Owner: transport controller + a playback-state VU probe. The probe tracks the
+  // ON-AIR signal (playing + on-air volume) and ignores the local monitor mute.
+  useEffect(() => {
+    if (!audioOwner || !src) return;
+    const el = videoRef.current;
+    if (!el) return;
+
+    let peak = 0;
+    const isSounding = () => !el.paused && el.volume > 0.001;
+    const probe: AudioProbe = {
+      getLevel: () => {
+        const ceiling = isSounding() ? el.volume * 88 : 0;
+        peak = Math.max(0, Math.min(100, peak + (Math.random() * ceiling - peak) * 0.5));
+        return peak;
+      },
+      isActive: isSounding,
+    };
+    const unregisterProbe = registerAudioProbe(layer.id, probe);
+
+    const controller: VideoController = {
+      play: () => void el.play().catch(() => {}),
+      pause: () => el.pause(),
+      toggle: () => (el.paused ? void el.play().catch(() => {}) : el.pause()),
+      stop: () => {
+        el.pause();
+        el.currentTime = 0;
+      },
+      restart: () => {
+        el.currentTime = 0;
+        void el.play().catch(() => {});
+      },
+      seek: (t) => {
+        el.currentTime = t;
+      },
+      skip: (d) => {
+        const dur = Number.isFinite(el.duration) ? el.duration : 0;
+        el.currentTime = Math.max(0, Math.min(dur || el.currentTime + d, el.currentTime + d));
+      },
+      getState: () => ({
+        currentTime: el.currentTime || 0,
+        duration: Number.isFinite(el.duration) ? el.duration : 0,
+        paused: el.paused,
+        ended: el.ended,
+        ready: el.readyState >= 2,
+      }),
+    };
+    const unregisterCtl = registerVideoController(layer.id, controller);
+    void el.play().catch(() => {});
+    return () => {
+      unregisterProbe();
+      unregisterCtl();
+    };
+  }, [audioOwner, layer.id, src]);
+
+  // Prime the unmute once the operator interacts (autoplay policy needs a gesture).
+  useEffect(() => {
+    if (!audioOwner || primed) return;
+    const onGesture = () => setPrimed(true);
+    window.addEventListener("pointerdown", onGesture, { once: true });
+    return () => window.removeEventListener("pointerdown", onGesture);
+  }, [audioOwner, primed]);
+
+  // On-air level: the fader sets element.volume; the per-channel (on-air) mute
+  // drops it to 0 (also flattens the meter). The LOCAL monitor mute is separate
+  // (the JSX `muted` attr) so it never affects the on-air level or the meter.
+  useEffect(() => {
+    if (!audioOwner) return;
+    const el = videoRef.current;
+    if (el) el.volume = mutedSetting ? 0 : Math.max(0, Math.min(1, level / 100));
+  }, [audioOwner, level, mutedSetting, src]);
+
+  // Program (non-owner) = synchronised follower of the Preview: same play/pause
+  // and position, so the transport controls (which drive the Preview) are
+  // mirrored on air. Falls back to independent playback if the Preview isn't up.
+  useEffect(() => {
+    if (audioOwner || !src) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const t = setInterval(() => {
+      const master = getVideoController(layer.id);
+      if (!master) return;
+      const s = master.getState();
+      if (!s.ready) return;
+      if (Math.abs(el.currentTime - s.currentTime) > 0.4) {
+        el.currentTime = s.currentTime;
+      }
+      if (s.paused && !el.paused) {
+        el.pause();
+      } else if (!s.paused && el.paused) {
+        void el.play().catch(() => {});
+      }
+    }, 250);
+    return () => clearInterval(t);
+  }, [audioOwner, layer.id, src]);
+
+  if (!src) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div className={cn("text-[12px] font-semibold tracking-[2px]", MONO)} style={{ color: "rgba(240,168,104,.8)" }}>
+          FLUX VIDÉO
+        </div>
+        <div className="text-[10px] text-white/35">Renseignez l&apos;URL du flux (.m3u8 / .mp4)…</div>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      key={src}
+      ref={videoRef}
+      src={src}
+      className="pointer-events-none absolute inset-0 size-full object-cover"
+      autoPlay
+      muted={!audioOwner || !primed || monitorMuted}
+      loop={loop}
+      playsInline
     />
   );
 }
