@@ -49,7 +49,15 @@ export function StageMonitor({
   animNonce?: number;
 }) {
   const isProgram = tone === "program";
-  const visible = layers.filter((l) => l.visible && isCompositable(l));
+  const visible = layers.filter((l) => {
+    if (!l.visible) return false;
+    if (!isCompositable(l)) return false;
+    if (l.parentId) {
+      const parent = layers.find((p) => p.id === l.parentId);
+      if (parent && !parent.visible) return false;
+    }
+    return true;
+  });
 
   return (
     <div
@@ -79,6 +87,7 @@ export function StageMonitor({
           {visible.map((layer, idx) => {
             const z = visible.length - idx;
             const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
+
             return (
               <CompositeLayer
                 key={`${layer.id}-${animNonce}`}
@@ -91,6 +100,8 @@ export function StageMonitor({
                 onPointerDown={onLayerPointerDown}
                 onResize={onLayerResize}
                 onSelect={onLayerSelect}
+                allLayers={layers}
+                selectedLayerId={selectedLayerId}
               />
             );
           })}

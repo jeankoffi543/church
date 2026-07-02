@@ -197,6 +197,8 @@ const CORNER_POS: Record<ResizeCorner, string> = {
  * from their style, draggable (move) and resizable (corner handles) in the
  * Preview. Inline styles are data-driven. Selection shows a dashed ring.
  */
+
+
 export function CompositeLayer({
   layer,
   verse,
@@ -207,6 +209,8 @@ export function CompositeLayer({
   onPointerDown,
   onResize,
   onSelect,
+  allLayers = [],
+  selectedLayerId = null,
 }: {
   layer: StudioLayer;
   verse?: ScriptureVerse | null;
@@ -219,11 +223,18 @@ export function CompositeLayer({
   onPointerDown?: (e: React.PointerEvent, id: string) => void;
   onResize?: (e: React.PointerEvent, id: string, corner: ResizeCorner) => void;
   onSelect?: (id: string) => void;
+  allLayers?: StudioLayer[];
+  selectedLayerId?: string | null;
 }) {
   const isBg = isBackgroundLayer(layer);
   const animEase = EASING_MAP[layer.style.animEasing || "ease-out"] || EASING_MAP["ease-out"];
   const getVariants = ANIMATION_PLUGINS[layer.style.animation] || ANIMATION_PLUGINS.fade_slide;
   const variants = getVariants(layer.style.animDuration || 500, animEase);
+
+  const isSelectedChildsParent = selectedLayerId && allLayers.find((l) => l.id === selectedLayerId)?.parentId === layer.id;
+  const parentRing = isSelectedChildsParent
+    ? "outline-2 outline outline-gold outline-offset-2"
+    : "";
 
   const ring = selected
     ? isBg
@@ -232,7 +243,12 @@ export function CompositeLayer({
     : "";
   const movable = draggable && !!onPointerDown && !isBg;
   const dragProps = movable
-    ? { onPointerDown: (e: React.PointerEvent) => onPointerDown!(e, layer.id) }
+    ? {
+        onPointerDown: (e: React.PointerEvent) => {
+          e.stopPropagation();
+          onPointerDown!(e, layer.id);
+        },
+      }
     : {};
 
   const alignX = layer.style.textAlign || "center";
@@ -242,7 +258,8 @@ export function CompositeLayer({
     alignX === "left" ? "items-start text-left" : alignX === "right" ? "items-end text-right" : "items-center text-center",
     alignY === "top" ? "justify-start" : alignY === "bottom" ? "justify-end" : "justify-center",
     movable && "cursor-move",
-    ring
+    ring,
+    parentRing
   );
 
   const isScroll = layer.style.animation?.startsWith("scroll_");
@@ -436,7 +453,7 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute overflow-hidden", movable && "cursor-move", ring)}
+        className={cn("absolute overflow-hidden", movable && "cursor-move", ring, parentRing)}
         style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...bgStyle }}
       >
         {handles}
@@ -471,6 +488,25 @@ export function CompositeLayer({
             )}
           </div>
         ))}
+      </motion.div>
+    );
+  }
+
+  // Group layer (feature/CHR-41)
+  if (layer.type === "group") {
+    return (
+      <motion.div
+        key={layer.id}
+        variants={variants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        data-layer
+        {...dragProps}
+        className={cn("absolute inset-0 select-none", ring, parentRing)}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
+      >
+        {handles}
       </motion.div>
     );
   }

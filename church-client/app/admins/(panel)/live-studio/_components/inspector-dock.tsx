@@ -17,10 +17,13 @@ import {
   SkipBack,
   SkipForward,
   Repeat,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
-import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { uploadStudioMedia } from "@/lib/admin-api";
+
+import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getVideoController, type VideoTransportState } from "./studio-video";
 import { Slider } from "@/components/ui/slider";
@@ -227,6 +230,489 @@ export function InspectorDock({
 
 /* ─────────────────────── Contenu (per layer type) ─────────────────────── */
 
+function SongInspector({
+  layer,
+  patchLayerData,
+  onPlayAnim,
+  onRestoreDefaults,
+}: {
+  layer: StudioLayer;
+  patchLayerData: Patch;
+  onPlayAnim?: () => void;
+  onRestoreDefaults?: () => void;
+}) {
+  const stanzas = layer.stanzas ?? [];
+  const activeIndex = layer.activeStanzaIndex ?? 0;
+
+  const [stanzaName, setStanzaName] = useState("");
+  const [stanzaContent, setStanzaContent] = useState("");
+  const [editIndex, setEditIndex] = useState<number | null>(null);
+
+  const handleAddOrUpdateStanza = () => {
+    const name = stanzaName.trim();
+    const content = stanzaContent.trim();
+    if (!name || !content) return;
+
+    const nextStanzas = [...stanzas];
+    if (editIndex !== null) {
+      nextStanzas[editIndex] = { name, content };
+      setEditIndex(null);
+    } else {
+      nextStanzas.push({ name, content });
+    }
+
+    patchLayerData({
+      stanzas: nextStanzas,
+      activeStanzaIndex: editIndex !== null ? activeIndex : nextStanzas.length - 1,
+    });
+
+    setStanzaName("");
+    setStanzaContent("");
+  };
+
+  const handleEditStanza = (index: number) => {
+    const target = stanzas[index];
+    if (!target) return;
+    setStanzaName(target.name);
+    setStanzaContent(target.content);
+    setEditIndex(index);
+  };
+
+  const handleDeleteStanza = (index: number) => {
+    const nextStanzas = stanzas.filter((_, idx) => idx !== index);
+    let nextActive = activeIndex;
+    if (nextActive >= nextStanzas.length) {
+      nextActive = Math.max(0, nextStanzas.length - 1);
+    }
+    patchLayerData({
+      stanzas: nextStanzas,
+      activeStanzaIndex: nextActive,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Form to add or edit a stanza */}
+      <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+        <Label className="text-white/70">{editIndex !== null ? "Modifier le couplet/refrain" : "Ajouter un couplet, refrain, pont..."}</Label>
+        <input
+          value={stanzaName}
+          onChange={(e) => setStanzaName(e.target.value)}
+          placeholder="Ex: Couplet 1, Refrain, Pont..."
+          className={FIELD}
+        />
+        <textarea
+          value={stanzaContent}
+          onChange={(e) => setStanzaContent(e.target.value)}
+          placeholder="Saisissez les paroles..."
+          rows={3}
+          className={cn(FIELD, "resize-y")}
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleAddOrUpdateStanza}
+            disabled={!stanzaName.trim() || !stanzaContent.trim()}
+            className="flex-1 rounded-lg bg-gold py-1.5 text-[11.5px] font-extrabold text-ink transition hover:brightness-105 disabled:opacity-50"
+          >
+            {editIndex !== null ? "Mettre à jour" : "Ajouter au chant"}
+          </button>
+          {editIndex !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setStanzaName("");
+                setStanzaContent("");
+                setEditIndex(null);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-[11.5px] font-bold text-white/75 transition hover:bg-white/5"
+            >
+              Annuler
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Toggle Live Mode for Song (feature/CHR-39) */}
+      <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
+        <div className="flex flex-col">
+          <span className="text-[11px] font-bold text-white">Mode de diffusion direct (Antenne)</span>
+          <span className="text-[9.5px] text-white/40">
+            {layer.songLiveActive ? "Activé · Clic = Envoi immédiat en direct" : "Désactivé · Clic = Aperçu uniquement"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => patchLayerData({ songLiveActive: !layer.songLiveActive })}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
+            layer.songLiveActive
+              ? "bg-red-500 hover:bg-red-600 text-white"
+              : "bg-studio-onair hover:brightness-110 text-white"
+          )}
+        >
+          {layer.songLiveActive ? (
+            <span className="flex items-center gap-1">
+              <Square className="size-3 fill-current" />
+              STOPPER
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Zap className="size-3 fill-current" />
+              DÉMARRER
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* List of stanzas */}
+      <div>
+        <Label className="mb-1.5">Liste des couplets & refrains (cliquez pour projeter)</Label>
+        {stanzas.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-[11px] text-white/35">
+            Aucun couplet ou refrain. Créez-en un ci-dessus.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {stanzas.map((st, idx) => {
+              const isActive = idx === activeIndex;
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors",
+                    isActive
+                      ? "border-gold/45 bg-gold/[0.08]"
+                      : "border-white/5 bg-white/[0.02] hover:bg-white/5"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      patchLayerData({ activeStanzaIndex: idx });
+                      setTimeout(() => onPlayAnim?.(), 50);
+                    }}
+                    className="flex-1 text-left"
+                  >
+                    <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
+                      <span className={cn("size-2 rounded-full", isActive ? "bg-gold" : "bg-white/20")} />
+                      {st.name}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] text-white/45">
+                      {st.content.replace(/\n/g, " / ")}
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleEditStanza(idx)}
+                      className="text-white/30 transition hover:text-white"
+                      title="Modifier"
+                    >
+                      <Sparkles className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteStanza(idx)}
+                      className="text-white/30 transition hover:text-[#ff8a8a]"
+                      title="Supprimer"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Restore defaults button */}
+      <button
+        type="button"
+        onClick={onRestoreDefaults}
+        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+      >
+        Réinitialiser aux paramètres par défaut
+      </button>
+    </div>
+  );
+}
+
+function GroupInspector({
+  layer,
+  patchLayerData,
+  onRestoreDefaults,
+}: {
+  layer: StudioLayer;
+  patchLayerData: Patch;
+  onRestoreDefaults?: () => void;
+}) {
+  const childLayers = layer.layers ?? [];
+  const groupLiveActive = layer.groupLiveActive ?? false;
+
+  const [childType, setChildType] = useState<"text" | "image">("text");
+  const [childName, setChildName] = useState("");
+  const [childContent, setChildContent] = useState("");
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+
+  const handleAddOrUpdateChild = () => {
+    const name = childName.trim();
+    const content = childContent.trim();
+    if (!name || !content) return;
+
+    const nextChildLayers = [...childLayers];
+    if (editIdx !== null) {
+      const existing = nextChildLayers[editIdx];
+      nextChildLayers[editIdx] = {
+        ...existing,
+        name,
+        type: childType,
+        imageUrl: childType === "image" ? content : undefined,
+        content: childType === "text" ? content : undefined,
+      };
+      setEditIdx(null);
+    } else {
+      nextChildLayers.push({
+        id: `layer-${Date.now()}-group-child-${nextChildLayers.length + 1}`,
+        type: childType,
+        name,
+        visible: true,
+        style: {
+          ...DEFAULT_STUDIO_SETTINGS,
+          fontBodySize: childType === "text" ? 28 : DEFAULT_STUDIO_SETTINGS.fontBodySize,
+          fontBodyColor: "#ffffff",
+        },
+        imageUrl: childType === "image" ? content : undefined,
+        content: childType === "text" ? content : undefined,
+      });
+    }
+
+    patchLayerData({ layers: nextChildLayers });
+    setChildName("");
+    setChildContent("");
+  };
+
+  const handleEditChild = (index: number) => {
+    const child = childLayers[index];
+    if (!child) return;
+    setChildType(child.type as "text" | "image");
+    setChildName(child.name);
+    setChildContent((child.type === "image" ? child.imageUrl : child.content) ?? "");
+    setEditIdx(index);
+  };
+
+  const handleDeleteChild = (index: number) => {
+    const nextChildLayers = childLayers.filter((_, idx) => idx !== index);
+    patchLayerData({ layers: nextChildLayers });
+  };
+
+  const handleToggleChildVisibility = (index: number) => {
+    const nextChildLayers = childLayers.map((c, idx) =>
+      idx === index ? { ...c, visible: !c.visible } : c
+    );
+    patchLayerData({ layers: nextChildLayers });
+  };
+
+  const handleApplyGroupStyleToChildren = () => {
+    const nextChildLayers = childLayers.map((c) => {
+      const preservedPosition = {
+        positionMode: c.style.positionMode,
+        predefinedPosition: c.style.predefinedPosition,
+        customX: c.style.customX,
+        customY: c.style.customY,
+        customWidth: c.style.customWidth,
+        customHeight: c.style.customHeight,
+      };
+      return {
+        ...c,
+        style: {
+          ...layer.style,
+          ...preservedPosition,
+        },
+      };
+    });
+    patchLayerData({ layers: nextChildLayers });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Action button to uniformise styles */}
+      <button
+        type="button"
+        onClick={handleApplyGroupStyleToChildren}
+        className="w-full rounded-lg border border-gold/30 bg-gold/10 hover:bg-gold/20 py-2 text-[11px] font-bold text-gold transition flex items-center justify-center gap-1.5"
+      >
+        <Sparkles className="size-3.5" />
+        Uniformiser le style sur tout le groupe
+      </button>
+      {/* Toggle Live Mode for Group */}
+      <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
+        <div className="flex flex-col">
+          <span className="text-[11px] font-bold text-white">Mode de diffusion direct (Antenne)</span>
+          <span className="text-[9.5px] text-white/40">
+            {groupLiveActive ? "Activé · Clic = Envoi immédiat en direct" : "Désactivé · Clic = Aperçu uniquement"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => patchLayerData({ groupLiveActive: !groupLiveActive })}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
+            groupLiveActive
+              ? "bg-red-500 hover:bg-red-600 text-white"
+              : "bg-studio-onair hover:brightness-110 text-white"
+          )}
+        >
+          {groupLiveActive ? (
+            <span className="flex items-center gap-1">
+              <Square className="size-3 fill-current" />
+              STOPPER
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <Zap className="size-3 fill-current" />
+              DÉMARRER
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Form to add or edit a child layer */}
+      <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+        <Label className="text-white/70">
+          {editIdx !== null ? "Modifier le calque groupé" : "Ajouter un calque au groupe"}
+        </Label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setChildType("text")}
+            className={cn(
+              "flex-1 rounded-md py-1 text-[10.5px] font-bold transition",
+              childType === "text" ? "bg-studio-purple text-white" : "bg-white/5 text-white/60"
+            )}
+          >
+            Texte
+          </button>
+          <button
+            type="button"
+            onClick={() => setChildType("image")}
+            className={cn(
+              "flex-1 rounded-md py-1 text-[10.5px] font-bold transition",
+              childType === "image" ? "bg-studio-purple text-white" : "bg-white/5 text-white/60"
+            )}
+          >
+            Image
+          </button>
+        </div>
+        <input
+          value={childName}
+          onChange={(e) => setChildName(e.target.value)}
+          placeholder="Nom du calque (ex: Titre, Logo...)"
+          className={FIELD}
+        />
+        <textarea
+          value={childContent}
+          onChange={(e) => setChildContent(e.target.value)}
+          placeholder={childType === "image" ? "URL de l'image..." : "Contenu textuel..."}
+          rows={2}
+          className={cn(FIELD, "resize-y")}
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleAddOrUpdateChild}
+            disabled={!childName.trim() || !childContent.trim()}
+            className="flex-1 rounded-lg bg-gold py-1.5 text-[11.5px] font-extrabold text-ink transition hover:brightness-105 disabled:opacity-50"
+          >
+            {editIdx !== null ? "Mettre à jour" : "Ajouter au groupe"}
+          </button>
+          {editIdx !== null && (
+            <button
+              type="button"
+              onClick={() => {
+                setChildName("");
+                setChildContent("");
+                setEditIdx(null);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-[11.5px] font-bold text-white/75 transition hover:bg-white/5"
+            >
+              Annuler
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* List of group child layers */}
+      <div>
+        <Label className="mb-1.5">Calques regroupés</Label>
+        {childLayers.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-[11px] text-white/35">
+            Aucun calque dans ce groupe.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {childLayers.map((c, idx) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 hover:bg-white/5"
+              >
+                <div className="flex-1 text-left min-w-0">
+                  <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
+                    <span className={cn("size-2 rounded-full", c.visible ? "bg-studio-preview-bright" : "bg-white/20")} />
+                    {c.name}
+                  </div>
+                  <div className="mt-0.5 truncate text-[10px] text-white/45">
+                    {c.type === "image" ? c.imageUrl : c.content}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleChildVisibility(idx)}
+                    className={cn(
+                      "p-0.5 transition-colors",
+                      c.visible ? "text-studio-preview-bright" : "text-white/25"
+                    )}
+                    title={c.visible ? "Masquer" : "Afficher"}
+                  >
+                    {c.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEditChild(idx)}
+                    className="text-white/30 transition hover:text-white"
+                    title="Modifier"
+                  >
+                    <Sparkles className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteChild(idx)}
+                    className="text-white/30 transition hover:text-[#ff8a8a]"
+                    title="Supprimer"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Restore defaults button */}
+      <button
+        type="button"
+        onClick={onRestoreDefaults}
+        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+      >
+        Réinitialiser aux paramètres par défaut
+      </button>
+    </div>
+  );
+}
+
 function ContentPanel({
   layer,
   patchLayerData,
@@ -245,204 +731,13 @@ function ContentPanel({
   if (layer.type === "bible") return <BibleContent bible={bible} />;
 
   if (layer.type === "song") {
-    const stanzas = layer.stanzas ?? [];
-    const activeIndex = layer.activeStanzaIndex ?? 0;
-
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const [stanzaName, setStanzaName] = useState("");
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const [stanzaContent, setStanzaContent] = useState("");
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const [editIndex, setEditIndex] = useState<number | null>(null);
-
-    const handleAddOrUpdateStanza = () => {
-      const name = stanzaName.trim();
-      const content = stanzaContent.trim();
-      if (!name || !content) return;
-
-      const nextStanzas = [...stanzas];
-      if (editIndex !== null) {
-        nextStanzas[editIndex] = { name, content };
-        setEditIndex(null);
-      } else {
-        nextStanzas.push({ name, content });
-      }
-
-      patchLayerData({
-        stanzas: nextStanzas,
-        activeStanzaIndex: editIndex !== null ? activeIndex : nextStanzas.length - 1,
-      });
-
-      setStanzaName("");
-      setStanzaContent("");
-    };
-
-    const handleEditStanza = (index: number) => {
-      const target = stanzas[index];
-      if (!target) return;
-      setStanzaName(target.name);
-      setStanzaContent(target.content);
-      setEditIndex(index);
-    };
-
-    const handleDeleteStanza = (index: number) => {
-      const nextStanzas = stanzas.filter((_, idx) => idx !== index);
-      let nextActive = activeIndex;
-      if (nextActive >= nextStanzas.length) {
-        nextActive = Math.max(0, nextStanzas.length - 1);
-      }
-      patchLayerData({
-        stanzas: nextStanzas,
-        activeStanzaIndex: nextActive,
-      });
-    };
-
     return (
-      <div className="flex flex-col gap-4">
-        {/* Form to add or edit a stanza */}
-        <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
-          <Label className="text-white/70">{editIndex !== null ? "Modifier le couplet/refrain" : "Ajouter un couplet, refrain, pont..."}</Label>
-          <input
-            value={stanzaName}
-            onChange={(e) => setStanzaName(e.target.value)}
-            placeholder="Ex: Couplet 1, Refrain, Pont..."
-            className={FIELD}
-          />
-          <textarea
-            value={stanzaContent}
-            onChange={(e) => setStanzaContent(e.target.value)}
-            placeholder="Saisissez les paroles..."
-            rows={3}
-            className={cn(FIELD, "resize-y")}
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleAddOrUpdateStanza}
-              disabled={!stanzaName.trim() || !stanzaContent.trim()}
-              className="flex-1 rounded-lg bg-gold py-1.5 text-[11.5px] font-extrabold text-ink transition hover:brightness-105 disabled:opacity-50"
-            >
-              {editIndex !== null ? "Mettre à jour" : "Ajouter au chant"}
-            </button>
-            {editIndex !== null && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStanzaName("");
-                  setStanzaContent("");
-                  setEditIndex(null);
-                }}
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-[11.5px] font-bold text-white/75 transition hover:bg-white/5"
-              >
-                Annuler
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Toggle Live Mode for Song (feature/CHR-39) */}
-        <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
-          <div className="flex flex-col">
-            <span className="text-[11px] font-bold text-white">Mode de diffusion direct (Antenne)</span>
-            <span className="text-[9.5px] text-white/40">
-              {layer.songLiveActive ? "Activé · Clic = Envoi immédiat en direct" : "Désactivé · Clic = Aperçu uniquement"}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => patchLayerData({ songLiveActive: !layer.songLiveActive })}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
-              layer.songLiveActive
-                ? "bg-red-500 hover:bg-red-600 text-white"
-                : "bg-studio-onair hover:brightness-110 text-white"
-            )}
-          >
-            {layer.songLiveActive ? (
-              <span className="flex items-center gap-1">
-                <Square className="size-3 fill-current" />
-                STOPPER
-              </span>
-            ) : (
-              <span className="flex items-center gap-1">
-                <Zap className="size-3 fill-current" />
-                DÉMARRER
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* List of stanzas */}
-        <div>
-          <Label className="mb-1.5">Liste des couplets & refrains (cliquez pour projeter)</Label>
-          {stanzas.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-white/10 p-4 text-center text-[11px] text-white/35">
-              Aucun couplet ou refrain. Créez-en un ci-dessus.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {stanzas.map((st, idx) => {
-                const isActive = idx === activeIndex;
-                return (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-colors",
-                      isActive
-                        ? "border-gold/45 bg-gold/[0.08]"
-                        : "border-white/5 bg-white/[0.02] hover:bg-white/5"
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        patchLayerData({ activeStanzaIndex: idx });
-                        setTimeout(() => onPlayAnim?.(), 50);
-                      }}
-                      className="flex-1 text-left"
-                    >
-                      <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
-                        <span className={cn("size-2 rounded-full", isActive ? "bg-gold" : "bg-white/20")} />
-                        {st.name}
-                      </div>
-                      <div className="mt-0.5 truncate text-[10px] text-white/45">
-                        {st.content.replace(/\n/g, " / ")}
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleEditStanza(idx)}
-                        className="text-white/30 transition hover:text-white"
-                        title="Modifier"
-                      >
-                        <Sparkles className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteStanza(idx)}
-                        className="text-white/30 transition hover:text-[#ff8a8a]"
-                        title="Supprimer"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Restore defaults button */}
-        <button
-          type="button"
-          onClick={onRestoreDefaults}
-          className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
-        >
-          Réinitialiser aux paramètres par défaut
-        </button>
-      </div>
+      <SongInspector
+        layer={layer}
+        patchLayerData={patchLayerData}
+        onPlayAnim={onPlayAnim}
+        onRestoreDefaults={onRestoreDefaults}
+      />
     );
   }
 
@@ -486,9 +781,11 @@ function ContentPanel({
 
   if (layer.type === "group") {
     return (
-      <div className="rounded-[9px] border border-dashed border-white/12 p-4 text-[11px] leading-relaxed text-white/45">
-        Groupe de calques — regroupez vos sources pour les organiser. Renommez-le ci-dessus.
-      </div>
+      <GroupInspector
+        layer={layer}
+        patchLayerData={patchLayerData}
+        onRestoreDefaults={onRestoreDefaults}
+      />
     );
   }
 
