@@ -14,6 +14,7 @@ import {
   attachYouTube,
   registerAudioProbe,
   youtubeId,
+  type AudioProbe,
   type MediaMeter,
   type YouTubeController,
 } from "./studio-audio";
@@ -641,33 +642,40 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
 
 /**
  * The playable media of a "Vidéo" source — a network stream (Flux VLC / HLS) or
- * a direct file, played in an owned `<video>` element. When this instance is the
- * audio owner it captures the real signal (Web Audio RMS) and applies the mixer
- * fader/mute via a gain node; non-owner instances render muted (no double audio).
+ * a direct file. Played NATIVELY (no Web Audio / CORS) so both uploads and
+ * external links are always audible and never fail to load. The audio owner
+ * (Preview) exposes a transport controller + a playback-state VU probe (the
+ * mixer meter animates while the clip plays with sound); the mixer fader/mute
+ * drive the element's `volume`/`muted`. Non-owner (Program) mirrors the Preview.
  */
 function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boolean }) {
   const src = (layer.feedUrl || "").trim();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const meterRef = useRef<MediaMeter | null>(null);
-  // Browsers block UNMUTED autoplay; we start muted (so the clip is always
-  // visible in Preview) and unmute once the operator has interacted with the page.
+  // Browsers block UNMUTED autoplay; start muted (so the clip is always visible)
+  // and unmute once the operator has interacted with the page.
   const [primed, setPrimed] = useState(false);
 
   const level = layer.audioLevel ?? 80;
   const mutedSetting = layer.audioMuted ?? false;
   const loop = layer.loop ?? true;
-  // Our own uploads are CORS-enabled → real Web Audio metering; external links
-  // stay same-origin-tainted (meter flat, but playback still works).
-  const isOurMedia = /\/studio\/media\//.test(src);
 
-  // Owner: real audio meter + transport controller registration.
+  // Owner: transport controller + a playback-state VU probe.
   useEffect(() => {
     if (!audioOwner || !src) return;
     const el = videoRef.current;
     if (!el) return;
-    const meter = attachMediaMeter(el);
-    if (meter) meterRef.current = meter;
-    const unregisterProbe = meter ? registerAudioProbe(layer.id, meter) : () => {};
+
+    let peak = 0;
+    const isSounding = () => !el.paused && !el.muted && el.volume > 0.001;
+    const probe: AudioProbe = {
+      getLevel: () => {
+        const ceiling = isSounding() ? el.volume * 88 : 0;
+        peak = Math.max(0, Math.min(100, peak + (Math.random() * ceiling - peak) * 0.5));
+        return peak;
+      },
+      isActive: isSounding,
+    };
+    const unregisterProbe = registerAudioProbe(layer.id, probe);
 
     const controller: VideoController = {
       play: () => void el.play().catch(() => {}),
@@ -701,8 +709,6 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     return () => {
       unregisterProbe();
       unregisterCtl();
-      meter?.dispose();
-      meterRef.current = null;
     };
   }, [audioOwner, layer.id, src]);
 
@@ -713,6 +719,13 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
     window.addEventListener("pointerdown", onGesture, { once: true });
     return () => window.removeEventListener("pointerdown", onGesture);
   }, [audioOwner, primed]);
+
+  // Apply the mixer fader volume to the element (mute is the JSX `muted` attr).
+  useEffect(() => {
+    if (!audioOwner) return;
+    const el = videoRef.current;
+    if (el) el.volume = Math.max(0, Math.min(1, level / 100));
+  }, [audioOwner, level, src]);
 
   // Program (non-owner) = synchronised follower of the Preview: same play/pause
   // and position, so the transport controls (which drive the Preview) are
@@ -726,7 +739,7 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       if (!master) return;
       const s = master.getState();
       if (!s.ready) return;
-      if (Math.abs(el.currentTime - s.currentTime) > 0.35) {
+      if (Math.abs(el.currentTime - s.currentTime) > 0.4) {
         el.currentTime = s.currentTime;
       }
       if (s.paused && !el.paused) {
@@ -734,14 +747,9 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       } else if (!s.paused && el.paused) {
         void el.play().catch(() => {});
       }
-    }, 200);
+    }, 250);
     return () => clearInterval(t);
   }, [audioOwner, layer.id, src]);
-
-  // Apply the mixer fader / mute to the captured signal.
-  useEffect(() => {
-    meterRef.current?.setGain(level, mutedSetting);
-  }, [level, mutedSetting]);
 
   if (!src) {
     return (
@@ -759,10 +767,9 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       key={src}
       ref={videoRef}
       src={src}
-      crossOrigin={isOurMedia ? "anonymous" : undefined}
       className="pointer-events-none absolute inset-0 size-full object-cover"
       autoPlay
-      muted={!audioOwner || mutedSetting || !primed}
+      muted={!audioOwner || !primed || mutedSetting}
       loop={loop}
       playsInline
     />

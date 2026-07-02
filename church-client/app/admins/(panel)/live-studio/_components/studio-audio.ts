@@ -51,11 +51,23 @@ export function hasAudioProbe(id: string): boolean {
 /* ── Shared Web Audio context ─────────────────────────────────────────── */
 
 let sharedCtx: AudioContext | null = null;
+let resumeHookInstalled = false;
+/** Browsers start an AudioContext suspended until a user gesture — keep trying
+ *  to resume it on every interaction so routed media actually produces sound. */
+function installResumeOnGesture(): void {
+  if (resumeHookInstalled || typeof window === "undefined") return;
+  resumeHookInstalled = true;
+  const resume = () => void sharedCtx?.resume().catch(() => {});
+  window.addEventListener("pointerdown", resume);
+  window.addEventListener("keydown", resume);
+}
+
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return null;
   if (!sharedCtx) sharedCtx = new Ctor();
+  installResumeOnGesture();
   if (sharedCtx.state === "suspended") void sharedCtx.resume().catch(() => {});
   return sharedCtx;
 }
