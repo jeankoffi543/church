@@ -65,6 +65,8 @@ export async function publishWhip(opts: {
 
   const pc = new RTCPeerConnection({
     iceServers: iceServers ?? [{ urls: "stun:stun.l.google.com:19302" }],
+    // SRS requires a single BUNDLE group (rejects otherwise: "only support BUNDLE").
+    bundlePolicy: "max-bundle",
   });
 
   pc.addEventListener("connectionstatechange", () => {

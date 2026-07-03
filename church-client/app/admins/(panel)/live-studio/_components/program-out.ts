@@ -165,6 +165,18 @@ export function startProgramOut(opts?: {
   const audioCtx = getAudioContext();
   const mixDest = audioCtx?.createMediaStreamDestination() ?? null;
 
+  // Keep a continuous silent source feeding the mix so the outgoing stream carries
+  // an audio track from t=0. Without it, camera audio can start a few seconds in,
+  // the RTMP relay then maps no audio, and Facebook drops a video-only stream.
+  let keepAlive: ConstantSourceNode | null = null;
+  if (audioCtx && mixDest) {
+    keepAlive = audioCtx.createConstantSource();
+    keepAlive.offset.value = 0;
+    keepAlive.connect(mixDest);
+    keepAlive.start();
+  }
+  void audioCtx?.resume().catch(() => {});
+
   // The scene, ordered bottom→top, kept between frames.
   let scene: StudioLayer[] = [];
   const sources = new Map<string, Source>();
@@ -213,17 +225,22 @@ export function startProgramOut(opts?: {
 
     let src: Source | null = null;
     if (kind === "camera") {
-      const stream = getCameraStream(layer.id);
-      if (!stream) return null;
+      const shared = getCameraStream(layer.id);
+      if (!shared) return null;
+      // Clone the tracks so we never touch the Preview's live stream or its audio
+      // node — attaching the shared MediaStream to a 2nd <video> AND a 2nd
+      // MediaStreamAudioSourceNode froze the Preview element (Chrome). Clones are
+      // independent consumers of the same device.
+      const cloned = new MediaStream(shared.getTracks().map((t) => t.clone()));
       const el = makeVideoEl();
       el.muted = true; // audio taken via the mix, not the element output
-      el.srcObject = stream;
+      el.srcObject = cloned;
       void el.play().catch(() => {});
       const audio =
-        audioCtx && stream.getAudioTracks().length > 0
-          ? connectAudio(audioCtx.createMediaStreamSource(stream))
+        audioCtx && cloned.getAudioTracks().length > 0
+          ? connectAudio(audioCtx.createMediaStreamSource(cloned))
           : undefined;
-      src = { kind, el, key, audio, camStream: stream };
+      src = { kind, el, key, audio, camStream: shared };
     } else if (kind === "video") {
       const el = makeVideoEl();
       el.loop = layer.loop ?? true;
@@ -260,8 +277,13 @@ export function startProgramOut(opts?: {
       /* noop */
     }
     if (src.el instanceof HTMLVideoElement) {
+      const streamObj = src.el.srcObject;
       src.el.pause();
       src.el.srcObject = null;
+      // Stop our own cloned camera tracks (independent of the Preview's stream).
+      if (streamObj instanceof MediaStream) {
+        streamObj.getTracks().forEach((t) => t.stop());
+      }
       src.el.removeAttribute("src");
       src.el.load();
     }
@@ -325,6 +347,12 @@ export function startProgramOut(opts?: {
     stop() {
       cancelAnimationFrame(raf);
       unsubCameras();
+      try {
+        keepAlive?.stop();
+        keepAlive?.disconnect();
+      } catch {
+        /* noop */
+      }
       for (const [id, src] of sources) disposeSource(id, src);
       for (const t of stream.getTracks()) t.stop();
     },

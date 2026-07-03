@@ -98,16 +98,23 @@ class FacebookRelayService
     }
 
     /**
-     * Spawn a detached ffmpeg relay. Video is passed through (`-c:v copy` — SRS
-     * already produced H264), audio is (re)encoded to AAC for Facebook. `nohup`
-     * keeps it alive past the request/worker; the returned pid is ffmpeg's own.
+     * Spawn a detached ffmpeg relay to Facebook. Video and audio are **re-encoded**
+     * with Facebook-safe settings: a fixed 2 s GOP (`-g 60 -keyint_min 60
+     * -sc_threshold 0` at 30 fps) so keyframes are regular, `yuv420p`/High profile,
+     * and stereo AAC. A passthrough (`-c:v copy`) was rejected — the WebRTC
+     * encoder's irregular keyframe interval and late-appearing audio made Facebook
+     * drop the connection. `nohup` keeps it alive; the returned pid is ffmpeg's.
      */
     protected function spawnFfmpeg(string $input, string $target, string $stream): ?int
     {
         $log = storage_path('logs/relay-'.$stream.'.log');
 
         $command = sprintf(
-            'nohup ffmpeg -hide_banner -loglevel warning -i %s -c:v copy -c:a aac -ar 44100 -b:a 128k -f flv %s >> %s 2>&1 & echo $!',
+            'nohup ffmpeg -hide_banner -loglevel warning -i %s '.
+            '-c:v libx264 -preset veryfast -profile:v high -pix_fmt yuv420p -r 30 '.
+            '-g 60 -keyint_min 60 -sc_threshold 0 -b:v 2500k -maxrate 2500k -bufsize 5000k '.
+            '-c:a aac -ar 44100 -b:a 128k -ac 2 '.
+            '-f flv %s >> %s 2>&1 & echo $!',
             escapeshellarg($input),
             escapeshellarg($target),
             escapeshellarg($log),

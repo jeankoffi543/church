@@ -51,8 +51,10 @@ return [
     // internal RTMP stream, which the backend relays to Facebook via ffmpeg.
     'srs' => [
         // Public WHIP endpoint (put SRS's :1985 behind HTTPS — browsers on https
-        // can't POST to http). e.g. https://media.example.ci/rtc/v1/whip
-        'whip_base' => env('SRS_WHIP_BASE', 'http://127.0.0.1:1985/rtc/v1/whip'),
+        // can't POST to http). The trailing slash is required — SRS 302-redirects
+        // the slashless form, which drops the POST body.
+        // e.g. https://media.example.ci/rtc/v1/whip/
+        'whip_base' => env('SRS_WHIP_BASE', 'http://127.0.0.1:1985/rtc/v1/whip/'),
         // Internal RTMP the ffmpeg relay pulls the published stream from.
         'rtmp_internal' => env('SRS_RTMP_INTERNAL', 'rtmp://127.0.0.1:1935/live'),
         // SRS application (must match the WHIP url's ?app=…).
