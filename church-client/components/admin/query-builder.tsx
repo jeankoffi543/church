@@ -3,6 +3,13 @@
 import { useState, useMemo } from "react";
 import { SlidersHorizontal, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 export interface FilterField {
   id: string;
@@ -148,17 +155,21 @@ export function QueryBuilder({
 
             {/* Operator select dropdown */}
             {operators.length > 1 ? (
-              <select
+              <Select
                 value={filter.operator}
-                onChange={(e) => handleOperatorChange(filter.fieldId, e.target.value as FilterOperator)}
-                className="bg-transparent border-0 py-0.5 px-0.5 outline-none text-gold-dark font-semibold cursor-pointer select-none"
+                onValueChange={(val) => handleOperatorChange(filter.fieldId, val as FilterOperator)}
               >
-                {operators.map((op) => (
-                  <option key={op.value} value={op.value}>
-                    {op.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="border-0 bg-transparent py-0.5 px-0.5 shadow-none text-gold-dark font-semibold h-auto w-auto focus:ring-0 gap-1 select-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {operators.map((op) => (
+                    <SelectItem key={op.value} value={op.value}>
+                      {op.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
               <span className="text-gold-dark font-semibold px-0.5">{operators[0].label}</span>
             )}
@@ -175,18 +186,22 @@ export function QueryBuilder({
             )}
 
             {field.type === "select" && (
-              <select
-                value={filter.value}
-                onChange={(e) => handleValueChange(filter.fieldId, e.target.value)}
-                className="bg-transparent border-0 py-0.5 px-1 outline-none text-indigo font-semibold cursor-pointer"
+              <Select
+                value={filter.value || "all_placeholder"}
+                onValueChange={(val) => handleValueChange(filter.fieldId, val === "all_placeholder" ? "" : val)}
               >
-                <option value="">Tous</option>
-                {field.options?.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="border-0 bg-transparent py-0.5 px-1 shadow-none text-indigo font-semibold h-auto w-auto focus:ring-0 gap-1 select-none">
+                  <SelectValue placeholder="Tous" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_placeholder">Tous</SelectItem>
+                  {field.options?.map((opt) => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
 
             {field.type === "async-select" && (

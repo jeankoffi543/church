@@ -17,6 +17,11 @@ import {
   Landmark,
   Church,
   RadioTower,
+  ShoppingBag,
+  Package,
+  ClipboardList,
+  UsersRound,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,7 +33,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
  * titles / breadcrumbs. Add a screen here once — never re-declare it in the nav.
  */
 
-export type AdminNavGroupId = "overview" | "content" | "community" | "finance" | "church" | "admin";
+export type AdminNavGroupId = "overview" | "content" | "community" | "finance" | "boutique" | "church" | "admin";
 
 export type AdminPage = {
   key: string;
@@ -49,6 +54,7 @@ export const ADMIN_NAV_GROUPS: { id: AdminNavGroupId; label: string; short: stri
   { id: "content", label: "Contenu & Diffusion", short: "Contenu", icon: Clapperboard },
   { id: "community", label: "Communauté", short: "Communauté", icon: Users },
   { id: "finance", label: "Finances", short: "Finances", icon: Wallet },
+  { id: "boutique", label: "Boutique", short: "Boutique", icon: ShoppingBag },
   { id: "church", label: "Église & Présentation", short: "Église", icon: Church },
   { id: "admin", label: "Administration", short: "Admin", icon: ShieldCheck },
 ];
@@ -71,6 +77,12 @@ export const ADMIN_PAGES: AdminPage[] = [
 
   // Finances
   { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },
+
+  // Boutique
+  { key: "store", path: "/admins/store", label: "Produits", icon: Package, permission: [PERMISSIONS.manageStore], group: "boutique" },
+  { key: "store-orders", path: "/admins/store/orders", label: "Commandes", icon: ClipboardList, permission: [PERMISSIONS.manageStore], group: "boutique" },
+  { key: "store-clients", path: "/admins/store/clients", label: "Clients", icon: UsersRound, permission: [PERMISSIONS.manageStore], group: "boutique" },
+  { key: "store-finance", path: "/admins/store/finance", label: "Finance", icon: TrendingUp, permission: [PERMISSIONS.manageStore], group: "boutique" },
 
   // Église & Présentation
   { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },

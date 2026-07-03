@@ -32,6 +32,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandButton } from "@/components/ui/brand-button";
 import { HomeGroupsMap } from "@/components/eglise/home-groups-map";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 type Selection = HomeGroup | "general" | null;
 
@@ -389,24 +396,25 @@ export function HomeGroups({
             {/* Group selection dropdown when the general "find a group" was used */}
             {selection === "general" && (
               <Field label="Choisir une cellule">
-                <select
-                  required
-                  value={formGroupId}
-                  onChange={(e) => {
-                    setFormGroupId(e.target.value ? Number(e.target.value) : "");
+                <Select
+                  value={formGroupId ? String(formGroupId) : "placeholder_none"}
+                  onValueChange={(val) => {
+                    setFormGroupId(val === "placeholder_none" ? "" : Number(val));
                     if (formErrors.home_group_id) setFormErrors((p) => ({ ...p, home_group_id: "" }));
                   }}
-                  className="w-full h-11 rounded-xl border border-white/15 bg-[#1f1933] px-3 text-sm text-cream focus:border-gold outline-none transition-all"
                 >
-                  <option value="" disabled className="text-white/30">
-                    -- Sélectionner une cellule --
-                  </option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id} className="text-cream bg-ink">
-                      {g.name} ({g.area})
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full h-11 rounded-xl border border-white/15 bg-[#1f1933] px-3 text-sm text-cream">
+                    <SelectValue placeholder="-- Sélectionner une cellule --" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="placeholder_none">-- Sélectionner une cellule --</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>
+                        {g.name} ({g.area})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {formErrors.home_group_id && (
                   <p className="text-[11px] text-live mt-1">{formErrors.home_group_id}</p>
                 )}

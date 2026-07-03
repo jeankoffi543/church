@@ -484,6 +484,27 @@ export async function getHeroContent(): Promise<HeroContent> {
   };
 }
 
+export type BoutiqueSettings = {
+  storeCatalogTitle: string;
+  storeCatalogDescription: string;
+  deliveryOptions: Array<{ key: string; label: string; desc: string; price: number; icon: string }>;
+};
+
+export async function getBoutiqueSettings(): Promise<BoutiqueSettings> {
+  const boutique = await getSettingsGroup("boutique");
+  return {
+    storeCatalogTitle: (boutique?.store_catalog_title as string) ?? "Espace Catalogue Fidèles",
+    storeCatalogDescription:
+      (boutique?.store_catalog_description as string) ??
+      "Retrouvez nos livres d'étude, vêtements « Génération Feu » et articles d'onction pour édifier votre marche spirituelle.",
+    deliveryOptions: (boutique?.delivery_options as Array<{ key: string; label: string; desc: string; price: number; icon: string }>) ?? [
+      { key: "retrait", label: "Retrait à l'église", desc: "Retrait gratuit à MFM Ficgayo", price: 0, icon: "⛪" },
+      { key: "abidjan", label: "Livraison Abidjan", desc: "Livraison à domicile à Abidjan", price: 3000, icon: "🛵" },
+      { key: "interieur", label: "Livraison intérieur", desc: "Expédition dans les villes de l'intérieur", price: 5000, icon: "📦" }
+    ],
+  };
+}
+
 export type ContactInfo = {
   address: string[];
   phone: string;

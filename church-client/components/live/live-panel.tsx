@@ -5,6 +5,13 @@ import { ShieldCheck, Send, Check, Download, Lock } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
   INITIAL_CHAT,
   type ChatMessage,
 } from "@/lib/data";
@@ -337,20 +344,22 @@ export function PrayerTab() {
         <label className="mb-0.5 block text-[11.5px] font-semibold text-white/70">
           Catégorie <span className="text-gold">*</span>
         </label>
-        <select
-          value={category}
-          onChange={(e) => handleFieldChange(setCategory, e.target.value)}
-          className={cn(inputClass, !category && "text-white/40")}
+        <Select
+          value={category || "placeholder_none"}
+          onValueChange={(val) => handleFieldChange(setCategory, val === "placeholder_none" ? "" : val)}
         >
-          <option value="" disabled>
-            Choisir une catégorie
-          </option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat} className="bg-[#160f33] text-white">
-              {cat}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className={cn(inputClass, !category && "text-white/40")}>
+            <SelectValue placeholder="Choisir une catégorie" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="placeholder_none">Choisir une catégorie</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Message */}

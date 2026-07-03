@@ -6,6 +6,13 @@ import { Product, ProductAttribute, ProductVariant } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 interface ProductFormProps {
   onSave?: (product: Product) => void;
@@ -261,17 +268,18 @@ export function ProductForm({ onSave, onCancel }: ProductFormProps) {
                   </label>
                 </div>
 
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-bold text-white/50">Statut du produit</span>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as "active" | "draft")}
-                    className="w-full bg-[#0f091f] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:border-[#b270ff] outline-none h-10 cursor-pointer"
-                  >
-                    <option value="draft">Brouillon (Draft)</option>
-                    <option value="active">Actif en boutique (Active)</option>
-                  </select>
-                </label>
+                <div className="space-y-1.5">
+                  <span className="block text-xs font-bold text-white/50">Statut du produit</span>
+                  <Select value={status} onValueChange={(val) => setStatus(val as "active" | "draft")}>
+                    <SelectTrigger className="w-full bg-[#0f091f] border-white/10 rounded-xl px-3 py-2.5 text-xs text-white h-10">
+                      <SelectValue placeholder="Choisir un statut" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Brouillon (Draft)</SelectItem>
+                      <SelectItem value="active">Actif en boutique (Active)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </div>
@@ -380,15 +388,19 @@ export function ProductForm({ onSave, onCancel }: ProductFormProps) {
               </div>
 
               <div className="w-full md:w-36">
-                <select
+                <Select
                   value={newAttrType}
-                  onChange={(e) => setNewAttrType(e.target.value as "text" | "color" | "select")}
-                  className="w-full bg-[#0f091f] border border-white/10 rounded-xl px-2 h-9 text-xs text-white outline-none cursor-pointer"
+                  onValueChange={(val) => setNewAttrType(val as "text" | "color" | "select")}
                 >
-                  <option value="text">Texte libre</option>
-                  <option value="color">Couleurs (Hex)</option>
-                  <option value="select">Menu Select</option>
-                </select>
+                  <SelectTrigger className="w-full bg-[#0f091f] border-white/10 rounded-xl px-2 h-9 text-xs text-white">
+                    <SelectValue placeholder="Attribut" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">Texte libre</SelectItem>
+                    <SelectItem value="color">Couleurs (Hex)</SelectItem>
+                    <SelectItem value="select">Menu Select</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <Button
