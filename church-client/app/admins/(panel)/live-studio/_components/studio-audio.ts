@@ -99,6 +99,13 @@ export function getAudioContext(): AudioContext | null {
   return sharedCtx;
 }
 
+export function resumeAudioContext(): void {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === "suspended") {
+    void ctx.resume().catch(() => {});
+  }
+}
+
 export type MediaMeter = {
   setGain: (level0to100: number, muted: boolean) => void;
   getLevel: () => number;
@@ -367,4 +374,33 @@ export function attachYouTube(host: HTMLElement, videoId: string): YouTubeContro
       }
     },
   };
+}
+
+export type AudioTransportState = {
+  currentTime: number;
+  duration: number;
+  paused: boolean;
+  ended: boolean;
+  ready: boolean;
+};
+
+export type AudioController = {
+  play: () => void;
+  pause: () => void;
+  stop: () => void;
+  seek: (time: number) => void;
+  getState: () => AudioTransportState;
+};
+
+const audioControllers = new Map<string, AudioController>();
+
+export function registerAudioController(id: string, controller: AudioController): () => void {
+  audioControllers.set(id, controller);
+  return () => {
+    if (audioControllers.get(id) === controller) audioControllers.delete(id);
+  };
+}
+
+export function getAudioController(id: string): AudioController | undefined {
+  return audioControllers.get(id);
 }

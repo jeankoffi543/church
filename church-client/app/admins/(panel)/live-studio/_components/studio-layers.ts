@@ -56,6 +56,14 @@ export type StudioLayer = {
   audioMuted?: boolean;
   audioGain?: number; // -20..+20 dB
   audioBalance?: number; // -100 (L) .. +100 (R)
+  // audio file configuration (feature/CHR-42)
+  audioSourceType?: "device" | "file";
+  audioFileUrl?: string;
+  audioFileName?: string;
+  audioLoop?: boolean;
+  audioSpeed?: number;
+  audioPlaying?: boolean;
+  audioLiveActive?: boolean;
   // video transport (video source)
   loop?: boolean;
 };
@@ -73,8 +81,10 @@ export function hasAudio(l: StudioLayer): boolean {
  */
 export function isAudioActive(l: StudioLayer): boolean {
   if (!hasAudio(l) || !l.visible || l.audioMuted) return false;
-  if (l.type === "audio") return !!l.device?.trim();
   if (l.type === "camera") return !!l.deviceId;
+  if (l.type === "audio") {
+    return !!l.audioPlaying && !!l.audioFileUrl;
+  }
   return !!l.feedUrl?.trim();
 }
 
@@ -232,7 +242,15 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
     base.listenLocal = false;
   }
   if (type === "audio") {
-    base.device = "Micro Prédicateur";
+    base.audioSourceType = "file";
+    base.audioLevel = 80;
+    base.audioMuted = false;
+    base.audioGain = 0;
+    base.audioBalance = 0;
+    base.audioLoop = false;
+    base.audioSpeed = 1.0;
+    base.audioPlaying = false;
+    base.audioLiveActive = false;
   }
   if (type === "group") {
     base.layers = [
