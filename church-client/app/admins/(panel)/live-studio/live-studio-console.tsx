@@ -29,6 +29,16 @@ import { SourcesDock } from "./_components/sources-dock";
 import { MixerDock } from "./_components/mixer-dock";
 import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
+import { ProgramOutMonitor } from "./_components/program-out-monitor";
+import {
+  lsGet,
+  lsGetJSON,
+  lsSet,
+  lsSetJSON,
+  SS_CURRENT_SCENE,
+  SS_PROGRAM_LAYERS,
+  SS_PROGRAM_SCENE,
+} from "./_components/studio-persist";
 import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
@@ -232,7 +242,18 @@ const DEFAULT_SCENES: StudioScene[] = [
     id: "scene-2",
     name: "Caméra plein cadre",
     layers: [
-      { id: "cam-1", type: "camera", name: "Caméra NDI · Autel", visible: true, style: DEFAULT_STUDIO_SETTINGS },
+      {
+        id: "cam-1",
+        type: "camera",
+        name: "Caméra principale",
+        visible: true,
+        style: {
+          ...DEFAULT_STUDIO_SETTINGS,
+          containerShape: "transparent",
+          positionMode: "predefined",
+          predefinedPosition: "full_screen",
+        },
+      },
     ],
   },
 ];
@@ -612,6 +633,8 @@ export function LiveStudioConsole({
   const [liveTitle, setLiveTitle] = useState((liveSettings.live_title as string) ?? "");
   const [liveDescription, setLiveDescription] = useState((liveSettings.live_description as string) ?? "");
   const [streamKey, setStreamKey] = useState((liveSettings.live_stream_key as string) ?? "");
+  const [facebookRtmpsUrl, setFacebookRtmpsUrl] = useState((liveSettings.facebook_rtmps_url as string) ?? "");
+  const [facebookStreamKey, setFacebookStreamKey] = useState((liveSettings.facebook_stream_key as string) ?? "");
   const [liveFallbackImage, setLiveFallbackImage] = useState((liveSettings.live_fallback_image as string) ?? "");
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
@@ -1035,6 +1058,8 @@ export function LiveStudioConsole({
         { key: "live_title", value: liveTitle, group: "live" },
         { key: "live_description", value: liveDescription, group: "live" },
         { key: "live_stream_key", value: streamKey, group: "live" },
+        { key: "facebook_rtmps_url", value: facebookRtmpsUrl, group: "live" },
+        { key: "facebook_stream_key", value: facebookStreamKey, group: "live" },
         { 
           key: "live_fallback_image", 
           value: liveFallbackImage.startsWith("blob:") ? "" : liveFallbackImage, 
@@ -1215,6 +1240,35 @@ export function LiveStudioConsole({
     { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
+
+  // Persist the session view state so a refresh keeps the current scene + the
+  // on-air snapshot (scene DEFINITIONS live in the backend; this is the view).
+  // Values are captured ONCE at init so the persist effects below can't clobber
+  // them before the restore runs.
+  const savedSessionRef = useRef<{
+    cs: string | null;
+    ps: string | null;
+    pl: StudioLayer[] | null;
+  } | null>(null);
+  if (savedSessionRef.current === null) {
+    savedSessionRef.current = {
+      cs: lsGet(SS_CURRENT_SCENE),
+      ps: lsGet(SS_PROGRAM_SCENE),
+      pl: lsGetJSON<StudioLayer[]>(SS_PROGRAM_LAYERS),
+    };
+  }
+  useEffect(() => void lsSet(SS_CURRENT_SCENE, currentSceneId), [currentSceneId]);
+  useEffect(() => void lsSet(SS_PROGRAM_SCENE, programSceneId), [programSceneId]);
+  useEffect(() => void lsSetJSON(SS_PROGRAM_LAYERS, programLayers), [programLayers]);
+  useEffect(() => {
+    const saved = savedSessionRef.current;
+    const t = setTimeout(() => {
+      if (saved?.cs) setCurrentSceneId(saved.cs);
+      if (saved?.ps) setProgramSceneId(saved.ps);
+      if (saved?.pl && saved.pl.length > 0) setProgramLayers(saved.pl);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const selectedLayer = layers.find((l) => l.id === selectedLayerId) ?? null;
   const effectiveStyle = selectedLayerId === "bible" ? settings : selectedLayer?.style ?? settings;
@@ -1534,6 +1588,8 @@ export function LiveStudioConsole({
   /* eslint-enable react-hooks/preserve-manual-memoization */
 
   const addLayer = (type: StudioLayerType, parentId?: string) => {
+    // The bible is the broadcast anchor — one per scene.
+    if (type === "bible" && layers.some((l) => l.type === "bible")) return;
     const count = layers.filter((l) => l.type === type).length;
     const nl = createLayer(type, count);
     if (parentId) {
@@ -1999,6 +2055,13 @@ export function LiveStudioConsole({
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
         />
+        <ProgramOutMonitor
+          layers={programBlack ? [] : programLayers}
+          bibleVerse={programBlack ? null : live}
+          bibleStyle={onAirSettings}
+          animNonce={programAnimNonce}
+          previewStageRef={previewStageRef}
+        />
       </section>
 
       <StatusBar statusRight={status?.message ?? "Prêt"} />
@@ -2030,6 +2093,10 @@ export function LiveStudioConsole({
         onEmbedUrl={setLiveEmbedUrl}
         streamKey={streamKey}
         onStreamKey={setStreamKey}
+        facebookRtmpsUrl={facebookRtmpsUrl}
+        onFacebookRtmpsUrl={setFacebookRtmpsUrl}
+        facebookStreamKey={facebookStreamKey}
+        onFacebookStreamKey={setFacebookStreamKey}
         fallbackImage={liveFallbackImage}
         getPreviewUrl={getPreviewUrl}
         onImageSelect={handleImageSelect}

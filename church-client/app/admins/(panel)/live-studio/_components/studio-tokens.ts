@@ -11,6 +11,16 @@ export const MONO = "font-studio-mono";
 
 export const COLOR_SWATCHES = ["#ffffff", "#e2b85f", "#b270ff", "#34d399", "#160f33"] as const;
 
+/** Text-colour gradient presets (CSS strings — rendered on the DOM overlay and
+ *  the program-out canvas alike). */
+export const TEXT_GRADIENTS = [
+  "linear-gradient(90deg, #e2b85f, #fff3c4)",
+  "linear-gradient(90deg, #b270ff, #6c5ce7)",
+  "linear-gradient(90deg, #34d399, #22d3ee)",
+  "linear-gradient(90deg, #ff6b6b, #ffd93d)",
+  "linear-gradient(135deg, #f6d365, #fda085)",
+] as const;
+
 export const FONT_OPTIONS = [
   "Cormorant Garamond",
   "Plus Jakarta Sans",

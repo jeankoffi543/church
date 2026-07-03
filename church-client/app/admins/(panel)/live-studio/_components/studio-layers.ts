@@ -33,8 +33,14 @@ export type StudioLayer = {
   imageUrl?: string;
   imageHue?: number;
   fill?: "cover" | "frame";
-  // camera / video / embed (external YouTube/Facebook/HLS link)
+  // video / embed (external YouTube/Facebook/HLS link)
   feedUrl?: string;
+  // camera / capture (getUserMedia device — webcam, capture card, NDI virtual input)
+  deviceId?: string;
+  deviceLabel?: string;
+  audioDeviceId?: string;
+  /** Camera only: hear the capture audio locally (off by default — anti-Larsen). */
+  listenLocal?: boolean;
   // audio input (audio source device)
   device?: string;
   // song stanzas (feature/CHR-39)
@@ -70,11 +76,12 @@ export function hasAudio(l: StudioLayer): boolean {
 /**
  * Whether an audio channel is actually producing sound right now: the source
  * must be visible (not masked), not muted, and have a real input — a feed link
- * for embed/video, a device for audio. Drives the animated VU meter so it only
- * moves when the source is genuinely on.
+ * for embed/video, a device for audio/camera. Drives the animated VU meter so it
+ * only moves when the source is genuinely on.
  */
 export function isAudioActive(l: StudioLayer): boolean {
   if (!hasAudio(l) || !l.visible || l.audioMuted) return false;
+  if (l.type === "camera") return !!l.deviceId;
   if (l.type === "audio") {
     return !!l.audioPlaying && !!l.audioFileUrl;
   }
@@ -97,15 +104,17 @@ export const LAYER_META: Record<
   text: { label: "Texte", color: "#60a5fa", typeLabel: "Texte surimpression" },
   song: { label: "Chant", color: "#b270ff", typeLabel: "Chant · Paroles" },
   image: { label: "Image / Fond", color: "#34d399", typeLabel: "Image / Fond" },
-  camera: { label: "Caméra NDI", color: "#c89af0", typeLabel: "Caméra NDI" },
+  camera: { label: "Caméra / Capture", color: "#c89af0", typeLabel: "Caméra · webcam / capture" },
   video: { label: "Vidéo", color: "#f0a868", typeLabel: "Vidéo · lien ou fichier" },
   embed: { label: "Direct externe", color: "#ff6b6b", typeLabel: "YouTube / Facebook" },
   audio: { label: "Audio", color: "#86d0e0", typeLabel: "Entrée audio" },
   group: { label: "Groupe", color: "#d0c090", typeLabel: "Groupe de calques" },
 };
 
-/** Source types offered in the "+" menu (bible excluded — one real bible layer). */
+/** Source types offered in the "+" menu. Bible is included but capped at one per
+ *  scene (it's the broadcast anchor) — the dock hides it once a scene has one. */
 export const ADD_TYPES: StudioLayerType[] = [
+  "bible",
   "text",
   "song",
   "image",
@@ -118,7 +127,7 @@ export const ADD_TYPES: StudioLayerType[] = [
 
 /** Background layers fill the whole frame and sit behind overlays. */
 export function isBackgroundLayer(l: StudioLayer): boolean {
-  return l.type === "camera" || (l.type === "image" && l.fill !== "frame");
+  return l.type === "image" && l.fill !== "frame";
 }
 
 /** Audio has no visual output — it never renders on a monitor. */
@@ -168,7 +177,7 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       fontBodyWeight: "700",
     };
   }
-  if (type === "embed" || type === "video") {
+  if (type === "embed" || type === "video" || type === "camera") {
     // A movable / resizable video window (PiP-style); set it full-frame via the
     // "Plein écran" layout preset.
     return {
@@ -222,11 +231,15 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
     base.imageHue = Math.floor(Math.random() * 360);
     base.imageUrl = "";
   }
-  if (type === "camera" || type === "video" || type === "embed") {
+  if (type === "video" || type === "embed") {
     base.feedUrl = "";
   }
   if (type === "video") {
     base.loop = true;
+  }
+  if (type === "camera") {
+    base.deviceId = "";
+    base.listenLocal = false;
   }
   if (type === "audio") {
     base.audioSourceType = "file";

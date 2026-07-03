@@ -89,7 +89,7 @@ function installResumeOnGesture(): void {
   window.addEventListener("keydown", resume);
 }
 
-function getAudioContext(): AudioContext | null {
+export function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
   const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return null;
@@ -160,6 +160,58 @@ export function attachMediaMeter(el: HTMLMediaElement): MediaMeter | null {
       try {
         source.disconnect();
         gain.disconnect();
+        analyser.disconnect();
+      } catch {
+        /* noop */
+      }
+    },
+  };
+}
+
+export type StreamMeter = {
+  /** Raw RMS level 0..100 of the stream's audio (not scaled by any fader). */
+  getLevel: () => number;
+  /** Whether the stream currently carries a live audio track. */
+  hasAudio: () => boolean;
+  dispose: () => void;
+};
+
+/**
+ * Analyse a local `MediaStream`'s audio (camera / capture). Same-origin, so the
+ * analyser reads the REAL waveform. We only connect source → analyser (never to
+ * `destination`) — the `<video>` element plays the audio itself, so we don't
+ * double it. Returns `null` when there is no audio track or Web Audio is absent.
+ */
+export function attachStreamMeter(stream: MediaStream): StreamMeter | null {
+  const ctx = getAudioContext();
+  if (!ctx || stream.getAudioTracks().length === 0) return null;
+  let source: MediaStreamAudioSourceNode;
+  try {
+    source = ctx.createMediaStreamSource(stream);
+  } catch {
+    return null;
+  }
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  source.connect(analyser);
+  const buf = new Uint8Array(analyser.fftSize);
+
+  return {
+    getLevel() {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i += 1) {
+        const c = (buf[i] - 128) / 128;
+        sum += c * c;
+      }
+      return Math.max(0, Math.min(100, Math.sqrt(sum / buf.length) * 220));
+    },
+    hasAudio() {
+      return stream.getAudioTracks().some((t) => t.enabled && t.readyState === "live");
+    },
+    dispose() {
+      try {
+        source.disconnect();
         analyser.disconnect();
       } catch {
         /* noop */

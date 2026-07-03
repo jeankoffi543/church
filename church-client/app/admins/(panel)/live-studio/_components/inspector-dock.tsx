@@ -19,8 +19,11 @@ import {
   Repeat,
   Eye,
   EyeOff,
+  Camera,
+  RefreshCw,
+  Volume2,
+  VolumeX,
   Music,
-  Sliders,
   Trash2,
   Headphones,
 } from "lucide-react";
@@ -30,6 +33,7 @@ import { uploadStudioMedia } from "@/lib/admin-api";
 import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getVideoController, type VideoTransportState } from "./studio-video";
+import { listInputs, requestCameraPermission, type MediaDeviceLite } from "./studio-camera";
 import { getAudioController, type AudioTransportState, getMonitorMuted, setMonitorMuted, subscribeMonitorMuted } from "./studio-audio";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";
@@ -38,6 +42,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   MONO,
   COLOR_SWATCHES,
+  TEXT_GRADIENTS,
   FONT_OPTIONS,
   WEIGHT_OPTIONS,
   PREDEFINED_POSITIONS,
@@ -1292,27 +1297,143 @@ function ContentPanel({
     return <VideoContent layer={layer} patchLayerData={patchLayerData} />;
   }
 
-  // camera
+  // camera / capture
+  return <CameraContent layer={layer} patchLayerData={patchLayerData} />;
+}
+
+/**
+ * Contenu for a "Caméra / Capture" source: pick a local device (webcam, capture
+ * card, or an NDI source exposed as a virtual webcam). Real NDI isn't consumable
+ * in a browser — capture devices are.
+ */
+function CameraContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceLite[]>([]);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceLite[]>([]);
+  const [asking, setAsking] = useState(false);
+
+  const refresh = async () => {
+    const vids = await listInputs("videoinput");
+    const auds = await listInputs("audioinput");
+    setVideoDevices(vids);
+    setAudioDevices(auds);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const vids = await listInputs("videoinput");
+      const auds = await listInputs("audioinput");
+      if (!cancelled) {
+        setVideoDevices(vids);
+        setAudioDevices(auds);
+      }
+    };
+    void load();
+    const md = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    const onChange = () => void load();
+    md?.addEventListener?.("devicechange", onChange);
+    return () => {
+      cancelled = true;
+      md?.removeEventListener?.("devicechange", onChange);
+    };
+  }, []);
+
+  // Labels are hidden until the operator grants permission at least once.
+  const needsPermission = videoDevices.length === 0 || videoDevices.every((d) => !d.label);
+  const listenLocal = layer.listenLocal ?? false;
+
+  const grant = async () => {
+    setAsking(true);
+    await requestCameraPermission();
+    await refresh();
+    setAsking(false);
+  };
+
   return (
     <>
       <div>
-        <Label className="mb-1.5">Source NDI</Label>
-        <input
-          value={layer.feedUrl ?? ""}
-          onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
-          placeholder="ndi://camera-autel"
-          className={MONO_FIELD}
-        />
+        <Label className="mb-1.5">Périphérique caméra</Label>
+        <Select
+          value={layer.deviceId ?? ""}
+          onValueChange={(v) => {
+            const dev = videoDevices.find((d) => d.deviceId === v);
+            patchLayerData({ deviceId: v, deviceLabel: dev?.label ?? "" });
+          }}
+          className={FIELD}
+        >
+          <option value="" className="bg-studio-field">
+            — Choisir une caméra —
+          </option>
+          {videoDevices.map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId} className="bg-studio-field">
+              {d.label || layer.deviceLabel || `Caméra ${i + 1}`}
+            </option>
+          ))}
+        </Select>
       </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={grant}
+          disabled={asking}
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20 disabled:opacity-50"
+        >
+          <Camera className="size-3.5" />
+          {asking ? "…" : "Autoriser l'accès"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          title="Rafraîchir la liste"
+          className="flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-white/[0.04] px-3 py-2 text-[11px] font-bold text-white/60 transition hover:text-white"
+        >
+          <RefreshCw className="size-3.5" />
+        </button>
+      </div>
+
+      {needsPermission && (
+        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+          Cliquez « Autoriser l&apos;accès » pour lister vos caméras. Pour une source NDI, activez
+          « NDI Virtual Input » : elle apparaîtra comme une webcam.
+        </div>
+      )}
+
+      <div>
+        <Label className="mb-1.5">Périphérique audio (optionnel)</Label>
+        <Select
+          value={layer.audioDeviceId ?? ""}
+          onValueChange={(v) => patchLayerData({ audioDeviceId: v || undefined })}
+          className={FIELD}
+        >
+          <option value="" className="bg-studio-field">
+            Audio de la caméra / par défaut
+          </option>
+          {audioDevices.map((d, i) => (
+            <option key={d.deviceId} value={d.deviceId} className="bg-studio-field">
+              {d.label || `Micro ${i + 1}`}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => patchLayerData({ listenLocal: !listenLocal })}
+        className={cn(
+          "flex items-center justify-center gap-2 rounded-lg border py-2 text-[11.5px] font-bold transition-colors",
+          listenLocal
+            ? "border-gold/40 bg-gold/15 text-gold"
+            : "border-white/12 bg-white/[0.03] text-white/60 hover:text-white",
+        )}
+      >
+        {listenLocal ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+        {listenLocal ? "Écoute locale activée" : "Écouter en local (risque de Larsen)"}
+      </button>
+
       <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-        <div className="flex justify-between">
-          <span>Type</span>
-          <span className="font-semibold text-white">Capture NDI</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Résolution</span>
-          <span className={cn("text-white", MONO)}>1920×1080</span>
-        </div>
+        Aperçu live dans les moniteurs, déplaçable/redimensionnable. Le son passe par la table de
+        mixage (VU réel) — coupé en local par défaut pour éviter l&apos;effet Larsen.
       </div>
     </>
   );
@@ -1941,6 +2062,21 @@ function TypoPanel({
             }
             className="size-[26px] cursor-pointer rounded-[7px] border-2 border-white/15 bg-transparent"
           />
+        </div>
+        <div className="mt-1.5 flex gap-1.5">
+          {TEXT_GRADIENTS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              title="Dégradé"
+              onClick={() => setStudioField(tk("Color"), g as StudioSettings[keyof StudioSettings])}
+              className={cn(
+                "h-[26px] flex-1 rounded-[7px] border-2",
+                tv("Color") === g ? "border-white" : "border-white/15",
+              )}
+              style={{ backgroundImage: g }}
+            />
+          ))}
         </div>
       </div>
     </>

@@ -91,6 +91,10 @@ Route::prefix('v1')->group(function (): void {
         Route::post('rtmp/auth', [Public\RtmpController::class, 'authorizePublish'])->name('rtmp.auth');
         Route::post('rtmp/done', [Public\RtmpController::class, 'publishDone'])->name('rtmp.done');
         Route::post('rtmp/recorded', [Public\RtmpController::class, 'recorded'])->name('rtmp.recorded');
+
+        // SRS (studio WHIP→Facebook): publish authorization + relay lifecycle.
+        Route::post('srs/on_publish', [Public\SrsController::class, 'onPublish'])->name('srs.on_publish');
+        Route::post('srs/on_unpublish', [Public\SrsController::class, 'onUnpublish'])->name('srs.on_unpublish');
     });
 
     // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────
@@ -135,6 +139,9 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('live/scripture/prepared', [Admin\LiveScriptureController::class, 'prepared'])->name('live.scripture.prepared');
                 Route::put('live/scripture/prepared', [Admin\LiveScriptureController::class, 'updatePrepared'])->name('live.scripture.prepared.update');
                 Route::post('studio/media', [Admin\StudioMediaController::class, 'store'])->name('studio.media.store');
+                // Studio → Facebook broadcast (own SRS + ffmpeg relay).
+                Route::post('studio/broadcast/facebook/start', [Admin\StudioBroadcastController::class, 'startFacebook'])->name('studio.broadcast.facebook.start');
+                Route::post('studio/broadcast/facebook/stop', [Admin\StudioBroadcastController::class, 'stopFacebook'])->name('studio.broadcast.facebook.stop');
             });
 
             // Médiathèque / messages
