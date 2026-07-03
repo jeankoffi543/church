@@ -173,6 +173,27 @@ export async function uploadStudioMedia(
   return response.data;
 }
 
+/**
+ * Start a studio→Facebook broadcast. The backend issues a one-shot stream name +
+ * publish token and returns the WHIP url the studio publishes its program feed to
+ * (our own SRS, which relays to Facebook RTMPS with the stored stream key).
+ */
+export async function startFacebookBroadcast(): Promise<{ whipUrl: string; stream: string }> {
+  const response = await adminFetch<{ data: { whip_url: string; stream: string } }>(
+    "/studio/broadcast/facebook/start",
+    { method: "POST" },
+  );
+  return { whipUrl: response.data.whip_url, stream: response.data.stream };
+}
+
+/** Stop a running studio→Facebook broadcast (kills the server-side ffmpeg relay). */
+export async function stopFacebookBroadcast(stream: string): Promise<void> {
+  await adminFetch<unknown>("/studio/broadcast/facebook/stop", {
+    method: "POST",
+    body: JSON.stringify({ stream }),
+  });
+}
+
 export type AdminPastorWord = {
   pastor_word: {
     user_id: number;

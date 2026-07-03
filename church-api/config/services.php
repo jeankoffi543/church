@@ -47,4 +47,22 @@ return [
         'publish_key' => env('RTMP_PUBLISH_KEY'),
     ],
 
+    // SRS media server — translates the studio's WHIP (WebRTC) publish into an
+    // internal RTMP stream, which the backend relays to Facebook via ffmpeg.
+    'srs' => [
+        // Public WHIP endpoint (put SRS's :1985 behind HTTPS — browsers on https
+        // can't POST to http). e.g. https://media.example.ci/rtc/v1/whip
+        'whip_base' => env('SRS_WHIP_BASE', 'http://127.0.0.1:1985/rtc/v1/whip'),
+        // Internal RTMP the ffmpeg relay pulls the published stream from.
+        'rtmp_internal' => env('SRS_RTMP_INTERNAL', 'rtmp://127.0.0.1:1935/live'),
+        // SRS application (must match the WHIP url's ?app=…).
+        'app' => env('SRS_APP', 'live'),
+    ],
+
+    // Facebook Live ingest. The client's own stream key is appended to this base
+    // and stays server-side — never exposed to the browser or a third party.
+    'facebook' => [
+        'ingest_url' => env('FACEBOOK_INGEST_URL', 'rtmps://live-api-s.facebook.com:443/rtmp/'),
+    ],
+
 ];

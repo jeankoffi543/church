@@ -1,0 +1,19 @@
+services:
+  srs:
+    image: ossrs/srs:5           # SRS 5 : ingest WHIP (WebRTC) + rtc_to_rtmp
+    container_name: mfm-srs
+    restart: unless-stopped
+    ports:
+      - "1985:1985"                    # API HTTP + WHIP — à mettre DERRIÈRE HTTPS
+      - "8000:8000/udp"                # média WebRTC (ICE)
+      - "127.0.0.1:1935:1935"          # RTMP interne — host uniquement (relais ffmpeg)
+    environment:
+      # IP publique du VPS en prod (annoncée aux navigateurs pour l'ICE). En local,
+      # 127.0.0.1 suffit pour un test même-machine.
+      - CANDIDATE=${CANDIDATE:-127.0.0.1}
+    volumes:
+      - ./srs.conf:/usr/local/srs/conf/srs.conf:ro
+    command: ["./objs/srs", "-c", "conf/srs.conf"]
+    # Laisse SRS joindre l'API Laravel sur l'hôte (hooks on_publish/on_unpublish).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

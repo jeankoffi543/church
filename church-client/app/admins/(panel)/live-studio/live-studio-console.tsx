@@ -29,6 +29,7 @@ import { SourcesDock } from "./_components/sources-dock";
 import { MixerDock } from "./_components/mixer-dock";
 import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
+import { ProgramOutMonitor } from "./_components/program-out-monitor";
 import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
@@ -490,6 +491,8 @@ export function LiveStudioConsole({
   const [liveTitle, setLiveTitle] = useState((liveSettings.live_title as string) ?? "");
   const [liveDescription, setLiveDescription] = useState((liveSettings.live_description as string) ?? "");
   const [streamKey, setStreamKey] = useState((liveSettings.live_stream_key as string) ?? "");
+  const [facebookRtmpsUrl, setFacebookRtmpsUrl] = useState((liveSettings.facebook_rtmps_url as string) ?? "");
+  const [facebookStreamKey, setFacebookStreamKey] = useState((liveSettings.facebook_stream_key as string) ?? "");
   const [liveFallbackImage, setLiveFallbackImage] = useState((liveSettings.live_fallback_image as string) ?? "");
   const [pendingLiveFallbackFile, setPendingLiveFallbackFile] = useState<File | null>(null);
 
@@ -913,6 +916,8 @@ export function LiveStudioConsole({
         { key: "live_title", value: liveTitle, group: "live" },
         { key: "live_description", value: liveDescription, group: "live" },
         { key: "live_stream_key", value: streamKey, group: "live" },
+        { key: "facebook_rtmps_url", value: facebookRtmpsUrl, group: "live" },
+        { key: "facebook_stream_key", value: facebookStreamKey, group: "live" },
         { 
           key: "live_fallback_image", 
           value: liveFallbackImage.startsWith("blob:") ? "" : liveFallbackImage, 
@@ -1816,6 +1821,7 @@ export function LiveStudioConsole({
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
         />
+        <ProgramOutMonitor layers={programBlack ? [] : programLayers} />
       </section>
 
       <StatusBar statusRight={status?.message ?? "Prêt"} />
@@ -1847,6 +1853,10 @@ export function LiveStudioConsole({
         onEmbedUrl={setLiveEmbedUrl}
         streamKey={streamKey}
         onStreamKey={setStreamKey}
+        facebookRtmpsUrl={facebookRtmpsUrl}
+        onFacebookRtmpsUrl={setFacebookRtmpsUrl}
+        facebookStreamKey={facebookStreamKey}
+        onFacebookStreamKey={setFacebookStreamKey}
         fallbackImage={liveFallbackImage}
         getPreviewUrl={getPreviewUrl}
         onImageSelect={handleImageSelect}
