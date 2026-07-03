@@ -112,7 +112,7 @@ class FacebookRelayService
         $command = sprintf(
             'nohup ffmpeg -hide_banner -loglevel warning -i %s '.
             '-c:v libx264 -preset veryfast -profile:v high -pix_fmt yuv420p -r 30 '.
-            '-g 60 -keyint_min 60 -sc_threshold 0 -b:v 2500k -maxrate 2500k -bufsize 5000k '.
+            '-g 60 -keyint_min 60 -sc_threshold 0 -b:v 4000k -maxrate 4000k -bufsize 8000k '.
             '-c:a aac -ar 44100 -b:a 128k -ac 2 '.
             '-f flv %s >> %s 2>&1 & echo $!',
             escapeshellarg($input),

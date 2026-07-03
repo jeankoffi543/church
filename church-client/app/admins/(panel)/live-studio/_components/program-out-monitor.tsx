@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Loader2, Radio, Square, RadioTower } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { startFacebookBroadcast, stopFacebookBroadcast } from "@/lib/admin-api";
 import { MONO } from "./studio-tokens";
-import { startProgramOut, type ProgramOut } from "./program-out";
+import { startProgramOut, type BibleContext, type ProgramOut } from "./program-out";
 import { publishWhip, type WhipPublisher, type WhipState } from "./whip-publisher";
-import type { StudioLayer } from "./studio-layers";
+import type { ScriptureVerse, StudioLayer } from "./studio-layers";
+import type { StudioSettings } from "@/lib/studio";
 
 /**
  * "Sortie programme" — the flat feed (camera + backgrounds burned in) the studio
@@ -24,7 +25,18 @@ import type { StudioLayer } from "./studio-layers";
  * The compositor is driven imperatively (not via an effect) so the button click
  * is the user gesture that unlocks autoplay + the AudioContext.
  */
-export function ProgramOutMonitor({ layers }: { layers: StudioLayer[] }) {
+export function ProgramOutMonitor({
+  layers,
+  bibleVerse,
+  bibleStyle,
+  previewStageRef,
+}: {
+  layers: StudioLayer[];
+  bibleVerse: ScriptureVerse | null;
+  bibleStyle: StudioSettings;
+  /** The preview stage — its height is the reference for scaling burned-in text. */
+  previewStageRef: RefObject<HTMLDivElement | null>;
+}) {
   const [on, setOn] = useState(false);
   const [whipState, setWhipState] = useState<WhipState | "idle">("idle");
   const [busy, setBusy] = useState(false);
@@ -35,14 +47,18 @@ export function ProgramOutMonitor({ layers }: { layers: StudioLayer[] }) {
   const publisherRef = useRef<WhipPublisher | null>(null);
   const broadcastStreamRef = useRef<string | null>(null);
   const layersRef = useRef(layers);
+  const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
 
   const broadcasting = whipState !== "idle";
 
   /** Create the compositor (once) and mirror its stream in the preview. */
   function startCompositor(): ProgramOut {
     if (outRef.current) return outRef.current;
-    const out = startProgramOut({ width: 1280, height: 720, fps: 30 });
-    out.setScene(layersRef.current);
+    // Scale burned-in text to match the preview the operator tuned against.
+    const refH = previewStageRef.current?.getBoundingClientRect().height ?? 0;
+    const scale = refH > 0 ? 720 / refH : 1;
+    const out = startProgramOut({ width: 1280, height: 720, fps: 30, scale });
+    out.setScene(layersRef.current, bibleRef.current);
     outRef.current = out;
     const el = videoRef.current;
     if (el) {
@@ -108,11 +124,12 @@ export function ProgramOutMonitor({ layers }: { layers: StudioLayer[] }) {
     setBusy(false);
   }
 
-  // Keep the compositor scene in sync with the ON-AIR layers.
+  // Keep the compositor scene + on-air verse in sync.
   useEffect(() => {
     layersRef.current = layers;
-    outRef.current?.setScene(layers);
-  }, [layers]);
+    bibleRef.current = { verse: bibleVerse, style: bibleStyle };
+    outRef.current?.setScene(layers, bibleRef.current);
+  }, [layers, bibleVerse, bibleStyle]);
 
   // Release everything on unmount.
   useEffect(

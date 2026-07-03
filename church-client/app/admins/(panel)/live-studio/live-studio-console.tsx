@@ -1821,7 +1821,12 @@ export function LiveStudioConsole({
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
         />
-        <ProgramOutMonitor layers={programBlack ? [] : programLayers} />
+        <ProgramOutMonitor
+          layers={programBlack ? [] : programLayers}
+          bibleVerse={programBlack ? null : live}
+          bibleStyle={onAirSettings}
+          previewStageRef={previewStageRef}
+        />
       </section>
 
       <StatusBar statusRight={status?.message ?? "Prêt"} />

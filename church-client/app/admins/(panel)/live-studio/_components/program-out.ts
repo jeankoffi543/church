@@ -21,8 +21,12 @@
 
 import { getAudioContext } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
-import { isBackgroundLayer, type StudioLayer } from "./studio-layers";
+import { drawBibleLayer, drawContentLayer } from "./program-out-text";
+import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
+
+/** On-air bible verse + its style (owned by the console, not the layer). */
+export type BibleContext = { verse: ScriptureVerse | null; style: StudioSettings } | null;
 
 /* ── URL + geometry helpers (mirror composite-layer / studio-style) ──────── */
 
@@ -54,10 +58,8 @@ const PREDEFINED_BOX: Record<string, Box> = {
   centered_bottom: { x: 0.1, y: 0.72, w: 0.8, h: 0.2 },
 };
 
-/** Layer box as 0..1 fractions of the frame (mirror of `getOverlayBoxStyle`). */
-function layerBox(layer: StudioLayer): Box {
-  if (isBackgroundLayer(layer)) return { x: 0, y: 0, w: 1, h: 1 };
-  const s: StudioSettings = layer.style;
+/** Box as 0..1 fractions of the frame from a style (mirror of `getOverlayBoxStyle`). */
+function boxFromStyle(s: StudioSettings): Box {
   if (s.positionMode === "custom") {
     return {
       x: (s.customX ?? 0) / 100,
@@ -67,6 +69,12 @@ function layerBox(layer: StudioLayer): Box {
     };
   }
   return PREDEFINED_BOX[s.predefinedPosition || "centered_bottom"] ?? PREDEFINED_BOX.centered_bottom;
+}
+
+/** Layer box: full-frame backgrounds, else the layer's own style geometry. */
+function layerBox(layer: StudioLayer): Box {
+  if (isBackgroundLayer(layer)) return { x: 0, y: 0, w: 1, h: 1 };
+  return boxFromStyle(layer.style);
 }
 
 /** `object-fit: cover` draw of a media source clipped to a pixel box. */
@@ -137,8 +145,8 @@ export type ProgramOut = {
   readonly stream: MediaStream;
   /** The backing canvas (handy to mirror the outgoing feed in a preview). */
   readonly canvas: HTMLCanvasElement;
-  /** Update the composited scene (ordered bottom→top). */
-  setScene: (layers: StudioLayer[]) => void;
+  /** Update the composited scene (ordered bottom→top) + the on-air bible verse. */
+  setScene: (layers: StudioLayer[], bible?: BibleContext) => void;
   /** Tear down the loop, media elements and audio graph. */
   stop: () => void;
 };
@@ -152,10 +160,14 @@ export function startProgramOut(opts?: {
   width?: number;
   height?: number;
   fps?: number;
+  /** Text px scale = canvas height ÷ preview-stage height, so burned-in overlays
+   *  match the size the operator tuned in the (smaller) preview. */
+  scale?: number;
 }): ProgramOut {
   const width = opts?.width ?? 1280;
   const height = opts?.height ?? 720;
   const fps = opts?.fps ?? 30;
+  const textScale = opts?.scale && opts.scale > 0 ? opts.scale : 1;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -179,6 +191,7 @@ export function startProgramOut(opts?: {
 
   // The scene, ordered bottom→top, kept between frames.
   let scene: StudioLayer[] = [];
+  let bibleContext: BibleContext = null;
   const sources = new Map<string, Source>();
 
   function makeVideoEl(): HTMLVideoElement {
@@ -290,8 +303,9 @@ export function startProgramOut(opts?: {
     sources.delete(id);
   }
 
-  function setScene(layers: StudioLayer[]) {
+  function setScene(layers: StudioLayer[], bible?: BibleContext) {
     scene = layers;
+    bibleContext = bible ?? null;
     const live = new Set<string>();
     for (const layer of layers) {
       const d = drawableKey(layer);
@@ -305,37 +319,87 @@ export function startProgramOut(opts?: {
     }
   }
 
-  let raf = 0;
-  function frame() {
+  function drawFrame() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
-    for (const layer of scene) {
-      const src = sources.get(layer.id);
-      if (!src) continue;
+    // Painter's order = bottom→top. The DOM assigns z = length-idx (index 0 on
+    // top), so draw the array in REVERSE — otherwise a full-frame camera (bottom
+    // of the list) would paint over the overlays.
+    for (let i = scene.length - 1; i >= 0; i -= 1) {
+      const layer = scene[i];
+      if (!layer.visible) continue;
       const b = layerBox(layer);
-      const bx = b.x * width;
-      const by = b.y * height;
-      const bw = b.w * width;
-      const bh = b.h * height;
-      if (src.el instanceof HTMLVideoElement) {
-        if (src.el.readyState >= 2 && src.el.videoWidth > 0) {
-          drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, bx, by, bw, bh);
+      const box = { x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height };
+
+      // Media layers (camera / image / video) draw from their pooled element.
+      const src = sources.get(layer.id);
+      if (src) {
+        if (src.el instanceof HTMLVideoElement) {
+          if (src.el.readyState >= 2 && src.el.videoWidth > 0) {
+            drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
+          }
+        } else if (src.el.complete && src.el.naturalWidth > 0) {
+          drawCover(ctx, src.el, src.el.naturalWidth, src.el.naturalHeight, box.x, box.y, box.w, box.h);
         }
-      } else if (src.el.complete && src.el.naturalWidth > 0) {
-        drawCover(ctx, src.el, src.el.naturalWidth, src.el.naturalHeight, bx, by, bw, bh);
+        continue;
+      }
+
+      // Text overlays — burned into the frame so they reach Facebook (v2).
+      if (layer.type === "text") {
+        drawContentLayer(ctx, box, layer.style, layer.content ?? "", textScale, layer.sub);
+      } else if (layer.type === "song") {
+        const stanza =
+          layer.stanzas && layer.activeStanzaIndex !== undefined
+            ? layer.stanzas[layer.activeStanzaIndex]
+            : null;
+        drawContentLayer(ctx, box, layer.style, stanza ? stanza.content : (layer.content ?? ""), textScale);
+      } else if (layer.type === "bible" && bibleContext?.verse) {
+        // The bible's real geometry + style is the on-air one, not the snapshot's.
+        const bb = boxFromStyle(bibleContext.style);
+        const bibleBox = { x: bb.x * width, y: bb.y * height, w: bb.w * width, h: bb.h * height };
+        drawBibleLayer(ctx, bibleBox, bibleContext.style, bibleContext.verse, textScale);
       }
     }
-    raf = requestAnimationFrame(frame);
   }
-  raf = requestAnimationFrame(frame);
+
+  // Manual-capture track: we push frames ourselves so the feed keeps flowing even
+  // when the tab is hidden (rAF pauses in background → the feed would freeze).
+  const captured = canvas.captureStream(0);
+  const captureTrack = captured.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
+
+  let lastDraw = 0;
+  const minInterval = 1000 / fps - 2;
+  function tick() {
+    const now = performance.now();
+    if (now - lastDraw < minInterval) return;
+    lastDraw = now;
+    drawFrame();
+    captureTrack?.requestFrame?.();
+  }
+
+  // rAF drives smooth frames while the tab is visible…
+  let raf = requestAnimationFrame(function loop() {
+    tick();
+    raf = requestAnimationFrame(loop);
+  });
+
+  // …and an AudioContext-based clock keeps ticking when it isn't (audio isn't
+  // throttled in background tabs, unlike rAF/timers), so the broadcast survives
+  // the operator switching windows to check Facebook.
+  let clock: ScriptProcessorNode | null = null;
+  if (audioCtx) {
+    clock = audioCtx.createScriptProcessor(1024, 1, 1);
+    clock.onaudioprocess = () => tick();
+    clock.connect(audioCtx.destination);
+  }
 
   // Re-resolve when a camera stream is (re)acquired after the scene was set —
   // the snapshot array reference doesn't change, so we refresh here instead.
-  const unsubCameras = subscribeCameraStreams(() => setScene(scene));
+  const unsubCameras = subscribeCameraStreams(() => setScene(scene, bibleContext));
 
   // Combine the canvas video track with the mixed audio track (silence when no
   // audio layer is connected — the destination always exposes one track).
-  const stream = canvas.captureStream(fps);
+  const stream = captured;
   if (mixDest) {
     for (const t of mixDest.stream.getAudioTracks()) stream.addTrack(t);
   }
@@ -346,6 +410,14 @@ export function startProgramOut(opts?: {
     setScene,
     stop() {
       cancelAnimationFrame(raf);
+      if (clock) {
+        clock.onaudioprocess = null;
+        try {
+          clock.disconnect();
+        } catch {
+          /* noop */
+        }
+      }
       unsubCameras();
       try {
         keepAlive?.stop();
