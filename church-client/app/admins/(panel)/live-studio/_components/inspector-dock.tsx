@@ -38,6 +38,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   MONO,
   COLOR_SWATCHES,
+  TEXT_GRADIENTS,
   FONT_OPTIONS,
   WEIGHT_OPTIONS,
   PREDEFINED_POSITIONS,
@@ -1671,6 +1672,21 @@ function TypoPanel({
             }
             className="size-[26px] cursor-pointer rounded-[7px] border-2 border-white/15 bg-transparent"
           />
+        </div>
+        <div className="mt-1.5 flex gap-1.5">
+          {TEXT_GRADIENTS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              title="Dégradé"
+              onClick={() => setStudioField(tk("Color"), g as StudioSettings[keyof StudioSettings])}
+              className={cn(
+                "h-[26px] flex-1 rounded-[7px] border-2",
+                tv("Color") === g ? "border-white" : "border-white/15",
+              )}
+              style={{ backgroundImage: g }}
+            />
+          ))}
         </div>
       </div>
     </>

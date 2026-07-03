@@ -25,13 +25,117 @@ type Prefix = "fontRef" | "fontBody" | "fontVer";
 /** A stacked run of text sharing one typography (bible = ref + body + version). */
 type Block = { text: string; prefix: Prefix; gapBefore: number };
 
-/** Solid colour for canvas — CSS gradients aren't paintable as text fill, so we
- *  pull the first colour out of the gradient string, or fall back to white. */
-function resolveColor(value: string | undefined): string {
+/* ── CSS gradient → canvas paint ─────────────────────────────────────────── */
+
+/** Split on top-level commas only (colours like `rgb(…, …)` keep their commas). */
+function splitTopLevel(input: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of input) {
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth -= 1;
+    if (ch === "," && depth === 0) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/** `to right` / `to bottom left` → CSS angle in degrees (0 = up, clockwise). */
+function angleFromKeyword(kw: string): number {
+  const s = kw.replace("to", "").trim();
+  const map: Record<string, number> = {
+    top: 0,
+    right: 90,
+    bottom: 180,
+    left: 270,
+    "top right": 45,
+    "right top": 45,
+    "bottom right": 135,
+    "right bottom": 135,
+    "bottom left": 225,
+    "left bottom": 225,
+    "top left": 315,
+    "left top": 315,
+  };
+  return map[s] ?? 180;
+}
+
+/** Parse `<color> [<pos>%]` → stop. */
+function parseStop(token: string): { color: string; pos: number | null } | null {
+  const m = token.trim().match(/^(.*?)(?:\s+([\d.]+)%)?$/);
+  if (!m || !m[1]) return null;
+  return { color: m[1].trim(), pos: m[2] !== undefined ? parseFloat(m[2]) / 100 : null };
+}
+
+/** Endpoints of the CSS gradient line across a box for a given angle. */
+function gradientLine(angle: number, box: Box): [number, number, number, number] {
+  const rad = (angle * Math.PI) / 180;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  const halfLen = (Math.abs(box.w * dx) + Math.abs(box.h * dy)) / 2;
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  return [cx - dx * halfLen, cy - dy * halfLen, cx + dx * halfLen, cy + dy * halfLen];
+}
+
+function addStops(g: CanvasGradient, stops: Array<{ color: string; pos: number | null }>) {
+  stops.forEach((s, i) => g.addColorStop(s.pos ?? i / Math.max(1, stops.length - 1), s.color));
+}
+
+/** Build a canvas fill (solid string or gradient) from a CSS colour value. */
+function paintStyle(
+  ctx: CanvasRenderingContext2D,
+  value: string | undefined,
+  box: Box,
+): string | CanvasGradient {
   if (!value) return "#ffffff";
-  if (!value.includes("gradient")) return value;
-  const hit = value.match(/#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)/);
-  return hit ? hit[0] : "#ffffff";
+  const isLinear = value.includes("linear-gradient");
+  const isRadial = value.includes("radial-gradient");
+  if (isLinear || isRadial) {
+    try {
+      const inner = value.substring(value.indexOf("(") + 1, value.lastIndexOf(")"));
+      const parts = splitTopLevel(inner);
+      let i = 0;
+      let angle = 180;
+      const first = parts[0] ?? "";
+      if (/-?[\d.]+deg\s*$/.test(first)) {
+        angle = parseFloat(first);
+        i = 1;
+      } else if (first.startsWith("to ")) {
+        angle = angleFromKeyword(first);
+        i = 1;
+      } else if (isRadial && !/^#|^rgb|^hsl|^[a-z]+$/i.test(first)) {
+        i = 1; // skip radial shape/position (e.g. "circle at center")
+      }
+      const stops = parts.slice(i).map(parseStop).filter((s): s is NonNullable<typeof s> => !!s);
+      if (stops.length >= 2) {
+        const g = isLinear
+          ? ctx.createLinearGradient(...gradientLine(angle, box))
+          : ctx.createRadialGradient(
+              box.x + box.w / 2,
+              box.y + box.h / 2,
+              0,
+              box.x + box.w / 2,
+              box.y + box.h / 2,
+              Math.max(box.w, box.h) / 2,
+            );
+        addStops(g, stops);
+        return g;
+      }
+    } catch {
+      /* malformed gradient — fall through to solid */
+    }
+    // Fallback: first colour found, or white.
+    const hit = value.match(/#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)/);
+    return hit ? hit[0] : "#ffffff";
+  }
+  return value;
 }
 
 function num(s: StudioSettings, key: string, fallback: number): number {
@@ -50,7 +154,7 @@ function fontOf(s: StudioSettings, p: Prefix, scale: number) {
     size,
     lineHeight: num(s, `${p}LineHeight`, 1.3),
     spacing: num(s, `${p}Spacing`, 0) * scale,
-    color: resolveColor(str(s, `${p}Color`, "#ffffff")),
+    color: str(s, `${p}Color`, "#ffffff"),
     upper: str(s, `${p}Transform`, "none") === "uppercase",
   };
 }
@@ -86,7 +190,7 @@ function drawContainer(ctx: CanvasRenderingContext2D, box: Box, s: StudioSetting
     ctx.shadowOffsetY = num(s, "shadowOffsetY", 0) * scale;
   }
   containerPath(ctx, box, radii);
-  ctx.fillStyle = resolveColor(str(s, "containerBg", "rgba(22,15,51,0.95)"));
+  ctx.fillStyle = paintStyle(ctx, str(s, "containerBg", "rgba(22,15,51,0.95)"), box);
   ctx.fill();
   ctx.restore();
 
@@ -191,7 +295,7 @@ function drawBlocks(
     y += m.gapBefore;
     ctx.font = m.f.font;
     ctx.letterSpacing = `${m.f.spacing}px`;
-    ctx.fillStyle = m.f.color;
+    ctx.fillStyle = paintStyle(ctx, m.f.color, box);
     // Baseline = top of the line box + centred leading + ascent (CSS line-box model).
     const leadTop = (m.advance - (m.ascent + m.descent)) / 2;
     // Typewriter reveal applies to the body only; keep the full layout stable.
@@ -264,7 +368,7 @@ export function drawScrollLayer(
   const f = fontOf(s, "fontBody", scale);
   ctx.font = f.font;
   ctx.letterSpacing = `${f.spacing}px`;
-  ctx.fillStyle = f.color;
+  ctx.fillStyle = paintStyle(ctx, f.color, box);
   ctx.textBaseline = "middle";
   const advance = f.size * f.lineHeight;
 
