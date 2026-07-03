@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle, AlertCircle, AlertTriangle, Square, Maximize } from "lucide-react";
 
@@ -38,6 +38,7 @@ import {
   type StudioLayerType,
   type StudioScene,
 } from "./_components/studio-layers";
+import { attachMediaMeter, registerAudioProbe, resumeAudioContext, registerAudioController, getMonitorMuted, subscribeMonitorMuted } from "./_components/studio-audio";
 
 type Status = { type: "success" | "error"; message: string } | null;
 
@@ -255,6 +256,138 @@ function sanitizeScenes(scenes: StudioScene[]): StudioScene[] {
       l.imageUrl?.startsWith("blob:") ? { ...l, imageUrl: "" } : l,
     ),
   }));
+}
+
+const getAudioUrl = (url: string | undefined | null): string => {
+  if (!url) return "";
+  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("http:") || url.startsWith("https:")) {
+    return url;
+  }
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
+  return url.startsWith("/") ? `${backendUrl}${url}` : url;
+};
+
+function AudioElementPlayer({
+  layer,
+  onEnded,
+}: {
+  layer: StudioLayer;
+  onEnded: () => void;
+}) {
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastLoadedUrlRef = useRef<string | undefined>(undefined);
+
+  // Register AudioController so the inspector can control playback and seek
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    const controller = {
+      play: () => {
+        el.play().catch((err) => console.log("Audio playback failed:", err));
+      },
+      pause: () => {
+        el.pause();
+      },
+      stop: () => {
+        el.pause();
+        el.currentTime = 0;
+      },
+      seek: (time: number) => {
+        const parsedTime = parseFloat(String(time));
+        if (!isNaN(parsedTime) && isFinite(parsedTime)) {
+          el.currentTime = parsedTime;
+        }
+      },
+      getState: () => ({
+        currentTime: el.currentTime,
+        duration: el.duration || 0,
+        paused: el.paused,
+        ended: el.ended,
+        ready: el.readyState >= 2,
+      }),
+    };
+
+    const unregister = registerAudioController(layer.id, controller);
+    return () => {
+      unregister();
+    };
+  }, [layer.id, layer.audioFileUrl]);
+
+  // Register AudioProbe for VU meter animation
+  useEffect(() => {
+    const unregister = registerAudioProbe(layer.id, {
+      getLevel: () => {
+        if (layer.audioPlaying && !layer.audioMuted) {
+          // Generate a lively simulated peak level scaled by current volume
+          return Math.max(5, Math.random() * (layer.audioLevel ?? 80) * 0.9);
+        }
+        return 0;
+      },
+      isActive: () => !!layer.audioPlaying && !layer.audioMuted,
+    });
+    return () => {
+      unregister();
+    };
+  }, [layer.id, layer.audioPlaying, layer.audioMuted, layer.audioLevel]);
+
+  // Sync src imperatively using a reference to the raw URL
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (layer.audioFileUrl) {
+      if (lastLoadedUrlRef.current !== layer.audioFileUrl) {
+        lastLoadedUrlRef.current = layer.audioFileUrl;
+        el.src = getAudioUrl(layer.audioFileUrl);
+        el.load();
+      }
+    } else {
+      if (lastLoadedUrlRef.current !== undefined) {
+        lastLoadedUrlRef.current = undefined;
+        el.removeAttribute("src");
+        el.load();
+      }
+    }
+  }, [layer.audioFileUrl]);
+
+  // Sync settings — ONLY write to DOM when the value actually changed
+  // to prevent browser soft-reset of the audio buffer on redundant assignments
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    const targetLoop = !!layer.audioLoop;
+    if (el.loop !== targetLoop) el.loop = targetLoop;
+
+    const targetSpeed = layer.audioSpeed ?? 1.0;
+    if (el.playbackRate !== targetSpeed) el.playbackRate = targetSpeed;
+
+    const targetVolume = (layer.audioMuted || monitorMuted) ? 0 : (layer.audioLevel ?? 80) / 100;
+    if (el.volume !== targetVolume) el.volume = targetVolume;
+  }, [layer.audioLoop, layer.audioSpeed, layer.audioLevel, layer.audioMuted, monitorMuted]);
+
+  // Sync playing state — only act if the DOM state disagrees with the layer state
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+
+    if (layer.audioPlaying && el.paused) {
+      el.play().catch((err) => console.log("Audio playback blocked:", err));
+    } else if (!layer.audioPlaying && !el.paused) {
+      el.pause();
+    }
+  }, [layer.audioPlaying]);
+
+  return (
+    <audio
+      ref={audioRef}
+      onEnded={onEnded}
+      preload="auto"
+      style={{ display: "none" }}
+    />
+  );
 }
 
 export function LiveStudioConsole({
@@ -1309,6 +1442,24 @@ export function LiveStudioConsole({
       );
       setAnimNonce((n) => n + 1);
       setStatus({ type: "success", message: "Paramètres du groupe réinitialisés !" });
+    } else if (selectedLayer.type === "audio") {
+      setLayers((ls) =>
+        ls.map((l) =>
+          l.id === selectedLayerId
+            ? {
+                ...l,
+                audioLevel: 80,
+                audioMuted: false,
+                audioGain: 0,
+                audioBalance: 0,
+                audioLoop: false,
+                audioSpeed: 1.0,
+                audioPlaying: false,
+              }
+            : l,
+        ),
+      );
+      setStatus({ type: "success", message: "Paramètres audio réinitialisés !" });
     }
   }, [selectedLayerId, selectedLayer, setLayers]);
   const onImageFile = useCallback(
@@ -1333,6 +1484,37 @@ export function LiveStudioConsole({
       } catch (err) {
         console.error("Failed to upload image layer", err);
         setStatus({ type: "error", message: "Erreur lors de l'importation de l'image." });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [selectedLayerId, patchSelectedData]
+  );
+  const onAudioFile = useCallback(
+    async (file: File) => {
+      if (!selectedLayerId) return;
+      setBusy(true);
+      setStatus(null);
+      const key = `live_layer_audio_${selectedLayerId}`;
+      try {
+        const payload = [{ key, value: "", group: "live" }];
+        const files = { [key]: file };
+        const res = (await updateAdminSettings(payload, files)) as {
+          data: Record<string, Record<string, unknown>>;
+        };
+        const uploadedPath = res?.data?.live?.[key] as string;
+        if (uploadedPath) {
+          patchSelectedData({
+            audioFileUrl: uploadedPath,
+            audioFileName: file.name,
+          });
+          setStatus({ type: "success", message: "Fichier audio importé avec succès !" });
+        } else {
+          throw new Error("Aucun chemin retourné par le serveur.");
+        }
+      } catch (err) {
+        console.error("Failed to upload audio file", err);
+        setStatus({ type: "error", message: "Erreur lors de l'importation de l'audio." });
       } finally {
         setBusy(false);
       }
@@ -1684,6 +1866,17 @@ export function LiveStudioConsole({
 
   return (
     <div className="-mx-6 -my-8 flex min-h-screen flex-col gap-3 bg-studio-bg p-3 text-white md:-mx-10 md:-my-10 md:p-4">
+      {layers
+        .filter((l) => l.type === "audio" && l.audioFileUrl)
+        .map((l) => (
+          <AudioElementPlayer
+            key={l.id}
+            layer={l}
+            onEnded={() => {
+              setLayers((ls) => ls.map((item) => (item.id === l.id ? { ...item, audioPlaying: false } : item)));
+            }}
+          />
+        ))}
       <StudioHeader
         mode={mode}
         onModeChange={handleModeChange}
@@ -1787,6 +1980,7 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
+          onAudioFile={onAudioFile}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
           bible={bibleInspectorProps}

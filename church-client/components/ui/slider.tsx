@@ -9,16 +9,15 @@ import { cn } from "@/lib/utils";
  * (gold thumb on a faint track) but theme-neutral and reusable elsewhere via
  * `className`. Use `onValueChange` for a number, or standard `onChange`.
  */
-function Slider({
-  className,
-  onValueChange,
-  onChange,
-  ...props
-}: Omit<React.ComponentProps<"input">, "type"> & {
-  onValueChange?: (value: number) => void;
-}) {
+const Slider = React.forwardRef<
+  HTMLInputElement,
+  Omit<React.ComponentPropsWithoutRef<"input">, "type"> & {
+    onValueChange?: (value: number) => void;
+  }
+>(({ className, onValueChange, onChange, ...props }, ref) => {
   return (
     <input
+      ref={ref}
       type="range"
       data-slot="slider"
       className={cn("studio-range", className)}
@@ -29,6 +28,7 @@ function Slider({
       {...props}
     />
   );
-}
+});
+Slider.displayName = "Slider";
 
 export { Slider };
