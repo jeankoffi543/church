@@ -101,8 +101,10 @@ export const LAYER_META: Record<
   group: { label: "Groupe", color: "#d0c090", typeLabel: "Groupe de calques" },
 };
 
-/** Source types offered in the "+" menu (bible excluded — one real bible layer). */
+/** Source types offered in the "+" menu. Bible is included but capped at one per
+ *  scene (it's the broadcast anchor) — the dock hides it once a scene has one. */
 export const ADD_TYPES: StudioLayerType[] = [
+  "bible",
   "text",
   "song",
   "image",

@@ -21,7 +21,8 @@
 
 import { getAudioContext } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
-import { drawBibleLayer, drawContentLayer } from "./program-out-text";
+import { drawBibleLayer, drawContentLayer, drawScrollLayer } from "./program-out-text";
+import { computeEntrance } from "./program-out-anim";
 import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
 
@@ -75,6 +76,14 @@ function boxFromStyle(s: StudioSettings): Box {
 function layerBox(layer: StudioLayer): Box {
   if (isBackgroundLayer(layer)) return { x: 0, y: 0, w: 1, h: 1 };
   return boxFromStyle(layer.style);
+}
+
+/** A song layer's on-air lyrics: the active stanza, else the raw content. */
+function layerSongText(layer: StudioLayer): string {
+  if (layer.stanzas && layer.activeStanzaIndex !== undefined) {
+    return layer.stanzas[layer.activeStanzaIndex]?.content ?? "";
+  }
+  return layer.content ?? "";
 }
 
 /** `object-fit: cover` draw of a media source clipped to a pixel box. */
@@ -146,7 +155,7 @@ export type ProgramOut = {
   /** The backing canvas (handy to mirror the outgoing feed in a preview). */
   readonly canvas: HTMLCanvasElement;
   /** Update the composited scene (ordered bottom→top) + the on-air bible verse. */
-  setScene: (layers: StudioLayer[], bible?: BibleContext) => void;
+  setScene: (layers: StudioLayer[], bible?: BibleContext, animNonce?: number) => void;
   /** Tear down the loop, media elements and audio graph. */
   stop: () => void;
 };
@@ -192,6 +201,13 @@ export function startProgramOut(opts?: {
   // The scene, ordered bottom→top, kept between frames.
   let scene: StudioLayer[] = [];
   let bibleContext: BibleContext = null;
+  // When each layer entered the scene, to time its entrance animation.
+  const animStart = new Map<string, number>();
+  // The last on-air verse, so a new verse re-triggers the bible's entrance.
+  let lastBibleSig = "";
+  // Program animation nonce — the console bumps it on CUT / advance / on-air edit
+  // (the DOM replays via a key change); we replay all entrances when it changes.
+  let lastAnimNonce = -1;
   const sources = new Map<string, Source>();
 
   function makeVideoEl(): HTMLVideoElement {
@@ -303,7 +319,7 @@ export function startProgramOut(opts?: {
     sources.delete(id);
   }
 
-  function setScene(layers: StudioLayer[], bible?: BibleContext) {
+  function setScene(layers: StudioLayer[], bible?: BibleContext, animNonce = 0) {
     scene = layers;
     bibleContext = bible ?? null;
     const live = new Set<string>();
@@ -317,21 +333,61 @@ export function startProgramOut(opts?: {
     for (const [id, src] of sources) {
       if (!live.has(id)) disposeSource(id, src);
     }
+    // Start an entrance animation when a layer first appears on the program
+    // (matches the DOM, which animates on mount); reset it when it leaves so a
+    // re-appearance (e.g. after a black cut) plays again.
+    const now = performance.now();
+    const present = new Set<string>();
+    for (const layer of layers) {
+      if (!layer.visible) continue;
+      present.add(layer.id);
+      if (!animStart.has(layer.id)) animStart.set(layer.id, now);
+    }
+    for (const id of animStart.keys()) {
+      if (!present.has(id)) animStart.delete(id);
+    }
+    // The console's program nonce bumps on CUT / advance / on-air edit — replay
+    // every entrance so operators see the animation on air (and on Facebook).
+    // The bible is excluded: its on-air verse/style arrives a tick later (async
+    // pushLive), so a nonce-driven replay would play the PREVIOUS verse first —
+    // it re-triggers on the verse change (bibleSig) below instead.
+    if (animNonce !== lastAnimNonce) {
+      lastAnimNonce = animNonce;
+      for (const id of present) {
+        if (layers.find((x) => x.id === id)?.type === "bible") continue;
+        animStart.set(id, now);
+      }
+    }
+    // A new verse also re-triggers the bible layer's entrance animation.
+    const bibleSig = bibleContext?.verse
+      ? `${bibleContext.verse.reference}|${bibleContext.verse.text}`
+      : "";
+    if (bibleSig && bibleSig !== lastBibleSig) {
+      const bibleLayer = layers.find((l) => l.type === "bible" && l.visible);
+      if (bibleLayer) animStart.set(bibleLayer.id, now);
+    }
+    lastBibleSig = bibleSig;
   }
 
   function drawFrame() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
+    const now = performance.now();
     // Painter's order = bottom→top. The DOM assigns z = length-idx (index 0 on
     // top), so draw the array in REVERSE — otherwise a full-frame camera (bottom
     // of the list) would paint over the overlays.
     for (let i = scene.length - 1; i >= 0; i -= 1) {
       const layer = scene[i];
       if (!layer.visible) continue;
-      const b = layerBox(layer);
+
+      // The bible's real geometry + style is the on-air one, not the snapshot's.
+      const style = layer.type === "bible" ? bibleContext?.style : layer.style;
+      const b = layer.type === "bible" && style ? boxFromStyle(style) : layerBox(layer);
       const box = { x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height };
 
-      // Media layers (camera / image / video) draw from their pooled element.
+      // Media layers (camera / image / video): drawn straight, WITHOUT an entrance
+      // transform — the default fade_slide made the camera vanish/slide on every
+      // CUT. Media stays put; only text/bible/song overlays animate.
       const src = sources.get(layer.id);
       if (src) {
         if (src.el instanceof HTMLVideoElement) {
@@ -344,21 +400,58 @@ export function startProgramOut(opts?: {
         continue;
       }
 
-      // Text overlays — burned into the frame so they reach Facebook (v2).
-      if (layer.type === "text") {
-        drawContentLayer(ctx, box, layer.style, layer.content ?? "", textScale, layer.sub);
-      } else if (layer.type === "song") {
-        const stanza =
-          layer.stanzas && layer.activeStanzaIndex !== undefined
-            ? layer.stanzas[layer.activeStanzaIndex]
-            : null;
-        drawContentLayer(ctx, box, layer.style, stanza ? stanza.content : (layer.content ?? ""), textScale);
-      } else if (layer.type === "bible" && bibleContext?.verse) {
-        // The bible's real geometry + style is the on-air one, not the snapshot's.
-        const bb = boxFromStyle(bibleContext.style);
-        const bibleBox = { x: bb.x * width, y: bb.y * height, w: bb.w * width, h: bb.h * height };
-        drawBibleLayer(ctx, bibleBox, bibleContext.style, bibleContext.verse, textScale);
+      if (layer.type !== "text" && layer.type !== "song" && layer.type !== "bible") continue;
+
+      const variant = style?.animation ?? "none";
+      const content =
+        layer.type === "bible"
+          ? (bibleContext?.verse?.text ?? "")
+          : layer.type === "song"
+            ? layerSongText(layer)
+            : (layer.content ?? "");
+
+      // Scroll ticker (continuous) — its own clip, no entrance transform.
+      if (variant.startsWith("scroll_")) {
+        const dur = style?.animDuration ?? 500;
+        const loopMs = dur > 100 ? dur * 12 : 12000;
+        const phase = (now % loopMs) / loopMs;
+        drawScrollLayer(ctx, box, style ?? layer.style, content, textScale, variant, phase);
+        continue;
       }
+
+      // Entrance animation transform (v3) — overlays only.
+      const anim = computeEntrance(
+        variant,
+        now - (animStart.get(layer.id) ?? now),
+        style?.animDuration ?? 500,
+        style?.animEasing ?? "ease-out",
+        textScale,
+      );
+      ctx.save();
+      ctx.globalAlpha = anim.alpha;
+      if (anim.tx || anim.ty) ctx.translate(anim.tx, anim.ty);
+      if (anim.scale !== 1) {
+        const cx = box.x + box.w / 2;
+        const cy = box.y + box.h / 2;
+        ctx.translate(cx, cy);
+        ctx.scale(anim.scale, anim.scale);
+        ctx.translate(-cx, -cy);
+      }
+      if (anim.clipRevealX !== undefined) {
+        ctx.beginPath();
+        ctx.rect(box.x, box.y, box.w * anim.clipRevealX, box.h);
+        ctx.clip();
+      }
+
+      if (layer.type === "bible" && bibleContext?.verse && style) {
+        drawBibleLayer(ctx, box, style, bibleContext.verse, textScale, anim.reveal);
+      } else if (layer.type === "text") {
+        drawContentLayer(ctx, box, layer.style, content, textScale, layer.sub, anim.reveal);
+      } else if (layer.type === "song") {
+        drawContentLayer(ctx, box, layer.style, content, textScale, undefined, anim.reveal);
+      }
+
+      ctx.restore();
     }
   }
 

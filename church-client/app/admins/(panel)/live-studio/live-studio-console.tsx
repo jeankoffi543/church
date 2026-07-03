@@ -30,6 +30,15 @@ import { MixerDock } from "./_components/mixer-dock";
 import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
 import { ProgramOutMonitor } from "./_components/program-out-monitor";
+import {
+  lsGet,
+  lsGetJSON,
+  lsSet,
+  lsSetJSON,
+  SS_CURRENT_SCENE,
+  SS_PROGRAM_LAYERS,
+  SS_PROGRAM_SCENE,
+} from "./_components/studio-persist";
 import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
@@ -1099,6 +1108,35 @@ export function LiveStudioConsole({
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
 
+  // Persist the session view state so a refresh keeps the current scene + the
+  // on-air snapshot (scene DEFINITIONS live in the backend; this is the view).
+  // Values are captured ONCE at init so the persist effects below can't clobber
+  // them before the restore runs.
+  const savedSessionRef = useRef<{
+    cs: string | null;
+    ps: string | null;
+    pl: StudioLayer[] | null;
+  } | null>(null);
+  if (savedSessionRef.current === null) {
+    savedSessionRef.current = {
+      cs: lsGet(SS_CURRENT_SCENE),
+      ps: lsGet(SS_PROGRAM_SCENE),
+      pl: lsGetJSON<StudioLayer[]>(SS_PROGRAM_LAYERS),
+    };
+  }
+  useEffect(() => void lsSet(SS_CURRENT_SCENE, currentSceneId), [currentSceneId]);
+  useEffect(() => void lsSet(SS_PROGRAM_SCENE, programSceneId), [programSceneId]);
+  useEffect(() => void lsSetJSON(SS_PROGRAM_LAYERS, programLayers), [programLayers]);
+  useEffect(() => {
+    const saved = savedSessionRef.current;
+    const t = setTimeout(() => {
+      if (saved?.cs) setCurrentSceneId(saved.cs);
+      if (saved?.ps) setProgramSceneId(saved.ps);
+      if (saved?.pl && saved.pl.length > 0) setProgramLayers(saved.pl);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   const selectedLayer = layers.find((l) => l.id === selectedLayerId) ?? null;
   const effectiveStyle = selectedLayerId === "bible" ? settings : selectedLayer?.style ?? settings;
   const pendingDeleteLayer = layers.find((l) => l.id === pendingDeleteId) ?? null;
@@ -1368,6 +1406,8 @@ export function LiveStudioConsole({
   /* eslint-enable react-hooks/preserve-manual-memoization */
 
   const addLayer = (type: StudioLayerType, parentId?: string) => {
+    // The bible is the broadcast anchor — one per scene.
+    if (type === "bible" && layers.some((l) => l.type === "bible")) return;
     const count = layers.filter((l) => l.type === type).length;
     const nl = createLayer(type, count);
     if (parentId) {
@@ -1825,6 +1865,7 @@ export function LiveStudioConsole({
           layers={programBlack ? [] : programLayers}
           bibleVerse={programBlack ? null : live}
           bibleStyle={onAirSettings}
+          animNonce={programAnimNonce}
           previewStageRef={previewStageRef}
         />
       </section>

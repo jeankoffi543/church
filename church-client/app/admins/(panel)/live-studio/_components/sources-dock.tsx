@@ -191,7 +191,7 @@ export function SourcesDock({
             <div className="px-2 pt-1 pb-1 text-[9px] font-extrabold tracking-[1px] text-white/40 uppercase">
               Ajouter au groupe
             </div>
-            {ADD_TYPES.filter((type) => type !== "group" && type !== "audio").map((t) => {
+            {ADD_TYPES.filter((type) => type !== "group" && type !== "audio" && type !== "bible").map((t) => {
               const ChildIcon = TYPE_ICON[t];
               return (
                 <button
@@ -271,7 +271,9 @@ export function SourcesDock({
               <div className="px-2 pt-1.5 pb-1 text-[9px] font-extrabold tracking-[1px] text-white/40 uppercase">
                 Ajouter une source
               </div>
-              {ADD_TYPES.map((t) => {
+              {ADD_TYPES.filter(
+                (t) => t !== "bible" || !layers.some((l) => l.type === "bible"),
+              ).map((t) => {
                 const Icon = TYPE_ICON[t];
                 return (
                   <button

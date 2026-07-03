@@ -55,15 +55,10 @@ function fontOf(s: StudioSettings, p: Prefix, scale: number) {
   };
 }
 
-function roundRectPath(ctx: CanvasRenderingContext2D, b: Box, r: number) {
-  const rad = Math.max(0, Math.min(r, b.w / 2, b.h / 2));
+/** Trace the container path (rounded / asymmetric / capsule / rectangle). */
+function containerPath(ctx: CanvasRenderingContext2D, box: Box, radii: number | number[]) {
   ctx.beginPath();
-  ctx.moveTo(b.x + rad, b.y);
-  ctx.arcTo(b.x + b.w, b.y, b.x + b.w, b.y + b.h, rad);
-  ctx.arcTo(b.x + b.w, b.y + b.h, b.x, b.y + b.h, rad);
-  ctx.arcTo(b.x, b.y + b.h, b.x, b.y, rad);
-  ctx.arcTo(b.x, b.y, b.x + b.w, b.y, rad);
-  ctx.closePath();
+  ctx.roundRect(box.x, box.y, box.w, box.h, radii);
 }
 
 /** Draw the container box (background, border, shadow) behind the text. */
@@ -71,9 +66,16 @@ function drawContainer(ctx: CanvasRenderingContext2D, box: Box, s: StudioSetting
   const shape = str(s, "containerShape", "rounded_rectangle");
   if (shape === "transparent") return;
 
-  let radius = num(s, "containerBorderRadius", 16) * scale;
-  if (shape === "rectangle") radius = 0;
-  if (shape === "capsule") radius = box.h / 2;
+  const r = num(s, "containerBorderRadius", 16) * scale;
+  const small = 6 * scale;
+  const radii: number | number[] =
+    shape === "rectangle"
+      ? 0
+      : shape === "capsule"
+        ? box.h / 2
+        : shape === "asymmetric"
+          ? [r, small, r, small]
+          : r;
 
   ctx.save();
   const blur = num(s, "shadowBlur", 0) * scale;
@@ -83,7 +85,7 @@ function drawContainer(ctx: CanvasRenderingContext2D, box: Box, s: StudioSetting
     ctx.shadowOffsetX = num(s, "shadowOffsetX", 0) * scale;
     ctx.shadowOffsetY = num(s, "shadowOffsetY", 0) * scale;
   }
-  roundRectPath(ctx, box, radius);
+  containerPath(ctx, box, radii);
   ctx.fillStyle = resolveColor(str(s, "containerBg", "rgba(22,15,51,0.95)"));
   ctx.fill();
   ctx.restore();
@@ -98,7 +100,7 @@ function drawContainer(ctx: CanvasRenderingContext2D, box: Box, s: StudioSetting
       ctx.shadowColor = ctx.strokeStyle;
       ctx.shadowBlur = 18 * scale;
     }
-    roundRectPath(ctx, box, radius);
+    containerPath(ctx, box, radii);
     ctx.stroke();
     ctx.restore();
   }
@@ -128,13 +130,16 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return out;
 }
 
-/** Draw stacked text blocks inside a box, honouring H/V alignment + padding. */
+/** Draw stacked text blocks inside a box, honouring H/V alignment + padding.
+ *  `reveal` (0..1) progressively unveils the body text for the typewriter
+ *  animation, keeping the wrapped layout stable (no reflow). */
 function drawBlocks(
   ctx: CanvasRenderingContext2D,
   box: Box,
   s: StudioSettings,
   blocks: Block[],
   scale: number,
+  reveal: number,
 ) {
   const padX = num(s, "containerPaddingX", 28) * scale;
   const padY = num(s, "containerPaddingY", 24) * scale;
@@ -154,6 +159,7 @@ function drawBlocks(
     descent: number;
     f: ReturnType<typeof fontOf>;
     gapBefore: number;
+    prefix: Prefix;
   };
   const measured: Measured[] = [];
   let totalH = 0;
@@ -170,7 +176,7 @@ function drawBlocks(
     const descent = tm.fontBoundingBoxDescent || f.size * 0.2;
     const advance = f.size * f.lineHeight;
     const gapBefore = block.gapBefore * scale;
-    measured.push({ lines, advance, ascent, descent, f, gapBefore });
+    measured.push({ lines, advance, ascent, descent, f, gapBefore, prefix: block.prefix });
     totalH += gapBefore + lines.length * advance;
   }
 
@@ -188,8 +194,31 @@ function drawBlocks(
     ctx.fillStyle = m.f.color;
     // Baseline = top of the line box + centred leading + ascent (CSS line-box model).
     const leadTop = (m.advance - (m.ascent + m.descent)) / 2;
+    // Typewriter reveal applies to the body only; keep the full layout stable.
+    const revealBody = m.prefix === "fontBody" && reveal < 1;
+    let budget = revealBody
+      ? Math.ceil(reveal * m.lines.reduce((a, l) => a + l.length, 0))
+      : Number.POSITIVE_INFINITY;
     for (const line of m.lines) {
-      ctx.fillText(line, x, y + leadTop + m.ascent);
+      const baseY = y + leadTop + m.ascent;
+      if (revealBody) {
+        if (budget <= 0) {
+          y += m.advance;
+          continue;
+        }
+        const partial = line.length > budget ? line.slice(0, budget) : line;
+        budget -= line.length;
+        // Anchor at the full line's left edge so characters reveal left→right in
+        // place, instead of a centred partial string growing both ways.
+        const flw = ctx.measureText(line).width;
+        const leftEdge =
+          hAlign === "right" ? innerX + innerW - flw : hAlign === "center" ? innerX + innerW / 2 - flw / 2 : innerX;
+        ctx.textAlign = "left";
+        ctx.fillText(partial, leftEdge, baseY);
+        ctx.textAlign = hAlign;
+      } else {
+        ctx.fillText(line, x, baseY);
+      }
       y += m.advance;
     }
   }
@@ -204,12 +233,63 @@ export function drawContentLayer(
   content: string,
   scale: number,
   sub?: string,
+  reveal = 1,
 ) {
   if (!content && !sub) return;
   drawContainer(ctx, box, s, scale);
   const blocks: Block[] = [{ text: content ?? "", prefix: "fontBody", gapBefore: 0 }];
   if (sub) blocks.push({ text: sub, prefix: "fontBody", gapBefore: 6 });
-  drawBlocks(ctx, box, s, blocks, scale);
+  drawBlocks(ctx, box, s, blocks, scale, reveal);
+}
+
+/** Render a scrolling ticker (scroll_left/right/up/down): a single-line marquee
+ *  (horizontal) or a scrolling block (vertical), clipped to the box and looping.
+ *  `phase` is the loop position 0..1. */
+export function drawScrollLayer(
+  ctx: CanvasRenderingContext2D,
+  box: Box,
+  s: StudioSettings,
+  content: string,
+  scale: number,
+  variant: string,
+  phase: number,
+) {
+  if (!content) return;
+  drawContainer(ctx, box, s, scale);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.w, box.h);
+  ctx.clip();
+
+  const f = fontOf(s, "fontBody", scale);
+  ctx.font = f.font;
+  ctx.letterSpacing = `${f.spacing}px`;
+  ctx.fillStyle = f.color;
+  ctx.textBaseline = "middle";
+  const advance = f.size * f.lineHeight;
+
+  if (variant === "scroll_up" || variant === "scroll_down") {
+    const hAlign = (s.textAlign ?? "center") as "left" | "center" | "right";
+    ctx.textAlign = hAlign;
+    const padX = num(s, "containerPaddingX", 28) * scale;
+    const innerW = Math.max(1, box.w - padX * 2);
+    const x = hAlign === "left" ? box.x + padX : hAlign === "right" ? box.x + box.w - padX : box.x + box.w / 2;
+    const lines = wrapText(ctx, f.upper ? content.toUpperCase() : content, innerW);
+    const totalH = lines.length * advance;
+    const travel = box.h + totalH;
+    const yTop = variant === "scroll_up" ? box.y + box.h - phase * travel : box.y - totalH + phase * travel;
+    lines.forEach((line, i) => ctx.fillText(line, x, yTop + i * advance + advance / 2));
+  } else {
+    ctx.textAlign = "left";
+    const text = (f.upper ? content.toUpperCase() : content).replace(/\n/g, "  ");
+    const tw = ctx.measureText(text).width;
+    const cy = box.y + box.h / 2;
+    const travel = box.w + tw;
+    const x = variant === "scroll_left" ? box.x + box.w - phase * travel : box.x - tw + phase * travel;
+    ctx.fillText(text, x, cy);
+  }
+  ctx.letterSpacing = "0px";
+  ctx.restore();
 }
 
 /** Render the bible verse layer: reference + body + version label. */
@@ -219,6 +299,7 @@ export function drawBibleLayer(
   s: StudioSettings,
   verse: ScriptureVerse,
   scale: number,
+  reveal = 1,
 ) {
   drawContainer(ctx, box, s, scale);
   const versionLabel = verse.texts ? Object.keys(verse.texts)[0] : verse.translation || "LSG";
@@ -232,5 +313,6 @@ export function drawBibleLayer(
       { text: versionLabel, prefix: "fontVer", gapBefore: 4 },
     ],
     scale,
+    reveal,
   );
 }

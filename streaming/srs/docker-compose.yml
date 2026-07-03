@@ -6,7 +6,8 @@ services:
     ports:
       - "1985:1985"                    # API HTTP + WHIP — à mettre DERRIÈRE HTTPS
       - "8000:8000/udp"                # média WebRTC (ICE)
-      - "127.0.0.1:1935:1935"          # RTMP interne — host uniquement (relais ffmpeg)
+      - "127.0.0.1:1936:1935"          # RTMP interne — host only (relais ffmpeg). 1936
+                                        # côté hôte pour coexister avec nginx-rtmp (1935).
     environment:
       # IP publique du VPS en prod (annoncée aux navigateurs pour l'ICE). En local,
       # 127.0.0.1 suffit pour un test même-machine.

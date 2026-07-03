@@ -55,8 +55,9 @@ return [
         // the slashless form, which drops the POST body.
         // e.g. https://media.example.ci/rtc/v1/whip/
         'whip_base' => env('SRS_WHIP_BASE', 'http://127.0.0.1:1985/rtc/v1/whip/'),
-        // Internal RTMP the ffmpeg relay pulls the published stream from.
-        'rtmp_internal' => env('SRS_RTMP_INTERNAL', 'rtmp://127.0.0.1:1935/live'),
+        // Internal RTMP the ffmpeg relay pulls the published stream from. Host
+        // port 1936 (SRS listens on 1935 inside) so it coexists with nginx-rtmp.
+        'rtmp_internal' => env('SRS_RTMP_INTERNAL', 'rtmp://127.0.0.1:1936/live'),
         // SRS application (must match the WHIP url's ?app=…).
         'app' => env('SRS_APP', 'live'),
     ],

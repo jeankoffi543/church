@@ -11,6 +11,26 @@ import { publishWhip, type WhipPublisher, type WhipState } from "./whip-publishe
 import type { ScriptureVerse, StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
 
+// Persist the program-out state so a page refresh can resume it (the compositor
+// and WHIP publish live in the tab — a reload otherwise drops the broadcast).
+const LS_ON = "studio_progout_on";
+const LS_BROADCASTING = "studio_progout_broadcasting";
+function setFlag(key: string, value: boolean) {
+  try {
+    if (value) window.localStorage.setItem(key, "1");
+    else window.localStorage.removeItem(key);
+  } catch {
+    /* private mode / storage disabled */
+  }
+}
+function getFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * "Sortie programme" — the flat feed (camera + backgrounds burned in) the studio
  * pushes to Facebook. Fed with the ON-AIR layers so it mirrors the antenne.
@@ -29,11 +49,14 @@ export function ProgramOutMonitor({
   layers,
   bibleVerse,
   bibleStyle,
+  animNonce,
   previewStageRef,
 }: {
   layers: StudioLayer[];
   bibleVerse: ScriptureVerse | null;
   bibleStyle: StudioSettings;
+  /** Program animation nonce — bumps on CUT / advance / on-air edit to replay entrances. */
+  animNonce: number;
   /** The preview stage — its height is the reference for scaling burned-in text. */
   previewStageRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -48,6 +71,7 @@ export function ProgramOutMonitor({
   const broadcastStreamRef = useRef<string | null>(null);
   const layersRef = useRef(layers);
   const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
+  const resumedRef = useRef(false);
 
   const broadcasting = whipState !== "idle";
 
@@ -58,7 +82,7 @@ export function ProgramOutMonitor({
     const refH = previewStageRef.current?.getBoundingClientRect().height ?? 0;
     const scale = refH > 0 ? 720 / refH : 1;
     const out = startProgramOut({ width: 1280, height: 720, fps: 30, scale });
-    out.setScene(layersRef.current, bibleRef.current);
+    out.setScene(layersRef.current, bibleRef.current, animNonce);
     outRef.current = out;
     const el = videoRef.current;
     if (el) {
@@ -66,6 +90,7 @@ export function ProgramOutMonitor({
       void el.play().catch(() => {});
     }
     setOn(true);
+    setFlag(LS_ON, true);
     return out;
   }
 
@@ -74,6 +99,8 @@ export function ProgramOutMonitor({
     outRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setOn(false);
+    setFlag(LS_ON, false);
+    setFlag(LS_BROADCASTING, false);
   }
 
   async function startBroadcast() {
@@ -89,6 +116,7 @@ export function ProgramOutMonitor({
         stream: out.stream,
         onState: setWhipState,
       });
+      setFlag(LS_BROADCASTING, true);
     } catch (e) {
       setError(broadcastError(e));
       await teardownBroadcast();
@@ -109,6 +137,7 @@ export function ProgramOutMonitor({
     const stream = broadcastStreamRef.current;
     broadcastStreamRef.current = null;
     setWhipState("idle");
+    setFlag(LS_BROADCASTING, false);
     if (stream) {
       try {
         await stopFacebookBroadcast(stream);
@@ -124,12 +153,37 @@ export function ProgramOutMonitor({
     setBusy(false);
   }
 
-  // Keep the compositor scene + on-air verse in sync.
+  // Keep the compositor scene + on-air verse in sync (animNonce replays entrances).
   useEffect(() => {
     layersRef.current = layers;
     bibleRef.current = { verse: bibleVerse, style: bibleStyle };
-    outRef.current?.setScene(layers, bibleRef.current);
-  }, [layers, bibleVerse, bibleStyle]);
+    outRef.current?.setScene(layers, bibleRef.current, animNonce);
+  }, [layers, bibleVerse, bibleStyle, animNonce]);
+
+  // On mount, resume a broadcast/preview a page refresh interrupted (it lives in
+  // the tab). The camera permission + admin session persist; audio resumes on the
+  // operator's first click (AudioContext gesture policy).
+  useEffect(() => {
+    if (resumedRef.current) return;
+    resumedRef.current = true;
+    const t = setTimeout(() => {
+      if (getFlag(LS_BROADCASTING)) void startBroadcast();
+      else if (getFlag(LS_ON)) startCompositor();
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Warn before leaving/refreshing while the output or a broadcast is live.
+  useEffect(() => {
+    if (!on && !broadcasting) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [on, broadcasting]);
 
   // Release everything on unmount.
   useEffect(
