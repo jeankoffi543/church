@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useRef, useSyncExternalStore, type ReactNode } from "react";
 import {
   Sparkles,
   Search,
@@ -18,7 +18,11 @@ import {
   SkipForward,
   Repeat,
   Eye,
-  EyeOff
+  EyeOff,
+  Music,
+  Sliders,
+  Trash2,
+  Headphones,
 } from "lucide-react";
 
 import { uploadStudioMedia } from "@/lib/admin-api";
@@ -26,6 +30,7 @@ import { uploadStudioMedia } from "@/lib/admin-api";
 import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getVideoController, type VideoTransportState } from "./studio-video";
+import { getAudioController, type AudioTransportState, getMonitorMuted, setMonitorMuted, subscribeMonitorMuted } from "./studio-audio";
 import { Slider } from "@/components/ui/slider";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -79,6 +84,13 @@ const FIELD =
   "w-full rounded-lg border border-white/10 bg-studio-field px-2 py-2 text-[12px] text-white outline-none";
 const MONO_FIELD = cn(FIELD, MONO, "text-[11px]");
 
+const fmtTime = (s: number) => {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+};
+
 function SliderLabel({ label, value }: { label: string; value: string }) {
   return (
     <div className="mb-1.5 flex justify-between text-[11px] font-semibold text-white/60">
@@ -102,6 +114,7 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
+  onAudioFile,
   bible,
   presets,
   newPresetName,
@@ -118,6 +131,7 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onAudioFile: (file: File) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
@@ -183,14 +197,15 @@ export function InspectorDock({
             </div>
 
             {activeTab === "contenu" && (
-              <ContentPanel
-                layer={selectedLayer}
-                patchLayerData={patchLayerData}
-                onImageFile={onImageFile}
-                onRestoreDefaults={onRestoreDefaults}
-                bible={bible}
-                onPlayAnim={onPlayAnim}
-              />
+               <ContentPanel
+                 layer={selectedLayer}
+                 patchLayerData={patchLayerData}
+                 onImageFile={onImageFile}
+                 onAudioFile={onAudioFile}
+                 onRestoreDefaults={onRestoreDefaults}
+                 bible={bible}
+                 onPlayAnim={onPlayAnim}
+               />
             )}
             {activeTab === "layout" && (
               <LayoutPanel settings={effectiveStyle} setStudioField={patchStyleField} />
@@ -713,10 +728,400 @@ function GroupInspector({
   );
 }
 
+function AudioInspector({
+  layer,
+  patchLayerData,
+  onAudioFile,
+  onRestoreDefaults,
+}: {
+  layer: StudioLayer;
+  patchLayerData: Patch;
+  onAudioFile?: (file: File) => void;
+  onRestoreDefaults?: () => void;
+}) {
+  const audioLevel = layer.audioLevel ?? 80;
+  const audioMuted = layer.audioMuted ?? false;
+  const audioGain = layer.audioGain ?? 0;
+  const audioBalance = layer.audioBalance ?? 0;
+  const audioLoop = layer.audioLoop ?? false;
+  const audioSpeed = layer.audioSpeed ?? 1.0;
+  const audioLiveActive = layer.audioLiveActive ?? false;
+
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+
+  const [dragOver, setDragOver] = useState(false);
+  const [transport, setTransport] = useState<AudioTransportState | null>(null);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+
+  const sliderRef = useRef<HTMLInputElement>(null);
+  const isDraggingRef = useRef(false);
+
+  const hasSource = !!layer.audioFileUrl;
+
+  const ctl = () => getAudioController(layer.id);
+  const ready = !!transport?.ready;
+  const paused = transport?.paused ?? true;
+  const duration = transport?.duration ?? 0;
+  const current = transport?.currentTime ?? 0;
+
+  // Poll the Audio player's playback state to drive the scrubber/timeline slider
+  useEffect(() => {
+    if (!hasSource) return;
+    const t = setInterval(() => {
+      if (isDraggingRef.current) return;
+      const state = ctl()?.getState();
+      if (state) {
+        setTransport(state);
+        if (sliderRef.current) {
+          sliderRef.current.value = String(Math.min(state.currentTime, state.duration || state.currentTime));
+        }
+      }
+    }, 250);
+    return () => clearInterval(t);
+  }, [hasSource, layer.id]);
+
+  // Window-level mouseup/touchend listeners to commit seek
+  useEffect(() => {
+    const handleRelease = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        if (sliderRef.current) {
+          const parsedVal = parseFloat(sliderRef.current.value);
+          if (!isNaN(parsedVal) && isFinite(parsedVal)) {
+            ctl()?.seek(parsedVal);
+          }
+        }
+        setScrubTime(null);
+      }
+    };
+    window.addEventListener("mouseup", handleRelease);
+    window.addEventListener("touchend", handleRelease);
+    return () => {
+      window.removeEventListener("mouseup", handleRelease);
+      window.removeEventListener("touchend", handleRelease);
+    };
+  }, [layer.id]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onAudioFile) {
+      onAudioFile(file);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && onAudioFile) {
+      onAudioFile(file);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Toggle Live Mode & Local Monitor Mute for Audio (feature/CHR-42) */}
+      <div className="flex flex-col gap-2 rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-white">Mode de diffusion direct (Antenne)</span>
+            <span className="text-[9.5px] text-white/40">
+              {audioLiveActive ? "Activé · Diffusion en direct" : "Désactivé · Hors antenne"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => patchLayerData({ audioLiveActive: !audioLiveActive })}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
+              audioLiveActive
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-studio-onair hover:brightness-110 text-white"
+            )}
+          >
+            {audioLiveActive ? (
+              <span className="flex items-center gap-1">
+                <Square className="size-3 fill-current" />
+                STOPPER
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Zap className="size-3 fill-current" />
+                DÉMARRER
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Local Monitor Mute / Retour Local */}
+        <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
+          <div className="flex flex-col">
+            <span className="text-[10px] font-bold text-white/70">Retour Local (Régie)</span>
+            <span className="text-[9px] text-white/40">
+              {monitorMuted ? "Sourdine active · Aucun son local" : "Actif · Écoute locale"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMonitorMuted(!monitorMuted)}
+            className={cn(
+              "rounded px-2.5 py-1 text-[9.5px] font-extrabold transition flex items-center gap-1 border",
+              monitorMuted
+                ? "bg-red-500/10 border-red-500/30 text-red-400"
+                : "bg-studio-purple/10 border-studio-purple/30 text-studio-purple hover:bg-studio-purple/20"
+            )}
+          >
+            <Headphones className="size-3" />
+            {monitorMuted ? "ACTIVER L'ÉCOUTE" : "COUPER L'ÉCOUTE"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+        <Label className="text-white/70 flex items-center gap-1">
+          <Music className="size-3.5" /> Fichier de la bande sonore
+        </Label>
+
+        {/* Upload Drop Zone */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={cn(
+            "relative grid place-items-center rounded-lg border border-dashed py-5 text-center transition-colors cursor-pointer",
+            dragOver ? "border-gold bg-gold/10" : "border-white/12 hover:bg-white/[0.02]"
+          )}
+          onClick={() => document.getElementById(`audio-file-upload-${layer.id}`)?.click()}
+        >
+          <input
+            id={`audio-file-upload-${layer.id}`}
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          {layer.audioFileUrl ? (
+            <div className="flex flex-col items-center px-3">
+              <span className="text-[11.5px] font-bold text-white max-w-[200px] truncate">
+                {layer.audioFileName || "Bande audio chargée"}
+              </span>
+              <span className="text-[9.5px] text-white/40 mt-1">Cliquez pour remplacer</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center">
+              <Upload className="size-5 text-white/30 mb-1" />
+              <span className="text-[11px] text-white/60">Glissez-déposez ou cliquez</span>
+              <span className="text-[9px] text-white/30 mt-0.5">Formats MP3, WAV...</span>
+            </div>
+          )}
+        </div>
+
+        {/* Audio Player Controls */}
+        {layer.audioFileUrl && (
+          <div className="flex flex-col gap-3 border-t border-white/5 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-white/55">LECTEUR AUDIO</span>
+              {!paused && (
+                <span className="text-[9px] text-emerald-400 font-extrabold flex items-center gap-1">
+                  <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" /> En lecture
+                </span>
+              )}
+            </div>
+
+            {/* Scrubber / Control Slide */}
+            <div className="flex items-center gap-2">
+              <span className={cn("w-9 text-right text-[10px] text-white/50", MONO)}>
+                {fmtTime(scrubTime !== null ? scrubTime : current)}
+              </span>
+              <Slider
+                ref={sliderRef}
+                min={0}
+                max={Math.max(1, Math.floor(duration))}
+                defaultValue={Math.min(current, duration || current)}
+                onMouseDown={() => {
+                  isDraggingRef.current = true;
+                }}
+                onTouchStart={() => {
+                  isDraggingRef.current = true;
+                }}
+                onChange={(e) => {
+                  setScrubTime(Number(e.target.value));
+                }}
+                className="flex-1"
+              />
+              <span className={cn("w-9 text-[10px] text-white/50", MONO)}>{fmtTime(duration)}</span>
+            </div>
+
+            {/* Play, Pause, Stop, Trash, Loop, Speed */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (paused) {
+                    ctl()?.play();
+                    patchLayerData({ audioPlaying: true });
+                  } else {
+                    ctl()?.pause();
+                    patchLayerData({ audioPlaying: false });
+                  }
+                }}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-[10.5px] font-bold transition flex items-center justify-center gap-1.5",
+                  paused ? "bg-emerald-500 text-white" : "bg-amber-500 text-white"
+                )}
+              >
+                {paused ? (
+                  <>
+                    <Play className="size-3.5 fill-current" /> LECTURE
+                  </>
+                ) : (
+                  <>
+                    <Pause className="size-3.5 fill-current" /> PAUSE
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  ctl()?.stop();
+                  patchLayerData({ audioPlaying: false });
+                }}
+                className="rounded-md border border-white/10 px-3 py-1.5 text-[10.5px] font-bold text-white/70 hover:bg-white/5 transition flex items-center justify-center"
+                title="Arrêter"
+              >
+                <Square className="size-3.5 fill-current" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  ctl()?.stop();
+                  patchLayerData({ audioFileUrl: undefined, audioFileName: undefined, audioPlaying: false });
+                }}
+                className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10.5px] font-bold text-red-400 hover:bg-red-500/20 transition flex items-center justify-center"
+                title="Supprimer"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+
+            {/* Loop and Playback Speed */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => patchLayerData({ audioLoop: !audioLoop })}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-[9.5px] font-bold border transition flex items-center gap-1",
+                    audioLoop ? "bg-studio-purple border-studio-purple text-white" : "border-white/10 text-white/50"
+                  )}
+                >
+                  <Repeat className="size-3" /> Boucle
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9.5px] text-white/40">Vitesse :</span>
+                <select
+                  value={audioSpeed}
+                  onChange={(e) => patchLayerData({ audioSpeed: parseFloat(e.target.value) })}
+                  className="bg-black/30 border border-white/10 text-[10px] text-white rounded px-1.5 py-0.5 outline-none"
+                >
+                  <option value={0.5}>0.5x</option>
+                  <option value={0.75}>0.75x</option>
+                  <option value={1.0}>Normal</option>
+                  <option value={1.25}>1.25x</option>
+                  <option value={1.5}>1.5x</option>
+                  <option value={2.0}>2.0x</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mixer Audio Controls */}
+      <div className="flex flex-col gap-3.5 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+        <span className="text-[10px] font-bold text-white/55">RÉGLAGES AUDIO DE LA TRANCHE</span>
+
+        {/* Fader Volume */}
+        <div>
+          <SliderLabel label="Volume (Fader)" value={`${audioLevel}%`} />
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => patchLayerData({ audioMuted: !audioMuted })}
+              className={cn(
+                "rounded-md p-1.5 transition-colors border",
+                audioMuted ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-white/5 border-white/10 text-white/60"
+              )}
+              title={audioMuted ? "Activer le son" : "Couper le son"}
+            >
+              <Music className="size-4" />
+            </button>
+            <Slider
+              value={audioLevel}
+              onValueChange={(v) => patchLayerData({ audioLevel: v })}
+              min={0}
+              max={100}
+              step={1}
+              className="flex-1"
+            />
+          </div>
+        </div>
+
+        {/* Gain Slider */}
+        <div>
+          <SliderLabel label="Gain" value={`${audioGain > 0 ? "+" : ""}${audioGain} dB`} />
+          <Slider
+            value={audioGain}
+            onValueChange={(v) => patchLayerData({ audioGain: v })}
+            min={-20}
+            max={20}
+            step={1}
+          />
+        </div>
+
+        {/* Balance Slider */}
+        <div>
+          <SliderLabel
+            label="Panoramique / Balance"
+            value={
+              audioBalance === 0
+                ? "Centré"
+                : audioBalance < 0
+                ? `L ${Math.abs(audioBalance)}`
+                : `R ${audioBalance}`
+            }
+          />
+          <Slider
+            value={audioBalance}
+            onValueChange={(v) => patchLayerData({ audioBalance: v })}
+            min={-100}
+            max={100}
+            step={5}
+          />
+        </div>
+      </div>
+
+      {/* Restore defaults button */}
+      <button
+        type="button"
+        onClick={onRestoreDefaults}
+        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+      >
+        Réinitialiser aux paramètres par défaut
+      </button>
+    </div>
+  );
+}
+
 function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
+  onAudioFile,
   onRestoreDefaults,
   bible,
   onPlayAnim,
@@ -724,6 +1129,7 @@ function ContentPanel({
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onAudioFile: (file: File) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
   onPlayAnim?: () => void;
@@ -762,20 +1168,12 @@ function ContentPanel({
 
   if (layer.type === "audio") {
     return (
-      <>
-        <div>
-          <Label className="mb-1.5">Périphérique</Label>
-          <input
-            value={layer.device ?? ""}
-            onChange={(e) => patchLayerData({ device: e.target.value })}
-            placeholder="Micro prédicateur, table de mixage…"
-            className={FIELD}
-          />
-        </div>
-        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          Source audio (sans rendu visuel). Réglez son niveau dans la table de mixage.
-        </div>
-      </>
+      <AudioInspector
+        layer={layer}
+        patchLayerData={patchLayerData}
+        onAudioFile={onAudioFile}
+        onRestoreDefaults={onRestoreDefaults}
+      />
     );
   }
 
@@ -919,13 +1317,6 @@ function ContentPanel({
     </>
   );
 }
-
-const fmtTime = (s: number) => {
-  if (!Number.isFinite(s) || s < 0) s = 0;
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-};
 
 /**
  * Contenu for a "Vidéo" source: paste a link, OR drag-drop / click to import a
