@@ -146,8 +146,15 @@ function drawBlocks(
   const hAlign = (s.textAlign ?? "center") as "left" | "center" | "right";
   const vAlign = (s.textVerticalAlign ?? "center") as "top" | "center" | "bottom";
 
-  // Measure: wrap each block and accumulate total height.
-  type Measured = { lines: string[]; advance: number; f: ReturnType<typeof fontOf>; gapBefore: number };
+  // Measure: wrap each block, capture real font metrics, accumulate total height.
+  type Measured = {
+    lines: string[];
+    advance: number;
+    ascent: number;
+    descent: number;
+    f: ReturnType<typeof fontOf>;
+    gapBefore: number;
+  };
   const measured: Measured[] = [];
   let totalH = 0;
   for (const block of blocks) {
@@ -156,9 +163,14 @@ function drawBlocks(
     ctx.letterSpacing = `${f.spacing}px`;
     const text = f.upper ? block.text.toUpperCase() : block.text;
     const lines = wrapText(ctx, text, innerW);
+    // Real vertical metrics so the glyph sits inside its line box like CSS,
+    // instead of being hung from the top of the em box.
+    const tm = ctx.measureText("Mg");
+    const ascent = tm.fontBoundingBoxAscent || f.size * 0.8;
+    const descent = tm.fontBoundingBoxDescent || f.size * 0.2;
     const advance = f.size * f.lineHeight;
     const gapBefore = block.gapBefore * scale;
-    measured.push({ lines, advance, f, gapBefore });
+    measured.push({ lines, advance, ascent, descent, f, gapBefore });
     totalH += gapBefore + lines.length * advance;
   }
 
@@ -167,15 +179,17 @@ function drawBlocks(
 
   const x = hAlign === "left" ? innerX : hAlign === "right" ? innerX + innerW : innerX + innerW / 2;
   ctx.textAlign = hAlign === "left" ? "left" : hAlign === "right" ? "right" : "center";
-  ctx.textBaseline = "top";
+  ctx.textBaseline = "alphabetic";
 
   for (const m of measured) {
     y += m.gapBefore;
     ctx.font = m.f.font;
     ctx.letterSpacing = `${m.f.spacing}px`;
     ctx.fillStyle = m.f.color;
+    // Baseline = top of the line box + centred leading + ascent (CSS line-box model).
+    const leadTop = (m.advance - (m.ascent + m.descent)) / 2;
     for (const line of m.lines) {
-      ctx.fillText(line, x, y);
+      ctx.fillText(line, x, y + leadTop + m.ascent);
       y += m.advance;
     }
   }
