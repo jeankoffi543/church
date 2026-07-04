@@ -496,7 +496,7 @@ export function LiveStudioConsole({
   const handleSavePreset = async () => {
     const name = newPresetName.trim();
     if (!name) return;
-    const targetStyle = selectedLayerId === "bible" ? settings : (selectedLayer?.style ?? settings);
+    const targetStyle = selectedLayer?.type === "bible" ? settings : (selectedLayer?.style ?? settings);
     const updated = [
       ...presets.filter((p) => p.name !== name),
       { name, settings: { ...targetStyle } }
@@ -1276,12 +1276,16 @@ export function LiveStudioConsole({
   }, []);
 
   const selectedLayer = layers.find((l) => l.id === selectedLayerId) ?? null;
-  const effectiveStyle = selectedLayerId === "bible" ? settings : selectedLayer?.style ?? settings;
+  // Any BIBLE layer (not only the anchor id "bible") is the broadcast anchor: its
+  // style/position live in the orchestrator's global `settings`, so drag/resize/
+  // filters must edit `settings`, not `layer.style` (which the render ignores).
+  const selectedIsBible = selectedLayer?.type === "bible";
+  const effectiveStyle = selectedIsBible ? settings : selectedLayer?.style ?? settings;
   const pendingDeleteLayer = layers.find((l) => l.id === pendingDeleteId) ?? null;
 
   const patchStyleField = useCallback(
     <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => {
-      if (selectedLayerId === "bible") {
+      if (selectedIsBible) {
         setStudioField(key, value);
       } else {
         setLayers((ls) =>
@@ -1289,11 +1293,11 @@ export function LiveStudioConsole({
         );
       }
     },
-    [selectedLayerId, setStudioField, setLayers],
+    [selectedLayerId, selectedIsBible, setStudioField, setLayers],
   );
   const setSelectedStyle = useCallback(
     (next: StudioSettings) => {
-      if (selectedLayerId === "bible") {
+      if (selectedIsBible) {
         setSettings(next);
       } else {
         setLayers((ls) =>
@@ -1321,7 +1325,7 @@ export function LiveStudioConsole({
       }
       setAnimNonce((n) => n + 1);
     },
-    [selectedLayerId, selectedLayer, setSettings, setLayers],
+    [selectedLayerId, selectedIsBible, setSettings, setLayers],
   );
   const patchSelectedData = useCallback(
     (patch: Partial<StudioLayer>) => {
@@ -1628,7 +1632,9 @@ export function LiveStudioConsole({
   const confirmDeleteLayer = () => {
     if (!pendingDeleteId) return;
     setLayers((ls) => ls.filter((l) => l.id !== pendingDeleteId));
-    if (selectedLayerId === pendingDeleteId) setSelectedLayerId("bible");
+    if (selectedLayerId === pendingDeleteId) {
+      setSelectedLayerId(layers.find((l) => l.id !== pendingDeleteId)?.id ?? "");
+    }
     setPendingDeleteId(null);
   };
 
@@ -1717,8 +1723,9 @@ export function LiveStudioConsole({
     const y0 = ((lr.top - rect.top) / rect.height) * 100;
 
     // Use current layer settings if they exist to prevent layout shift during move
-    const isBible = layerId === "bible";
-    const layerStyle = isBible ? settings : scenes.find((s) => s.id === currentSceneIdRef.current)?.layers.find((l) => l.id === layerId)?.style;
+    const targetLayer = scenes.find((s) => s.id === currentSceneIdRef.current)?.layers.find((l) => l.id === layerId);
+    const isBible = targetLayer?.type === "bible";
+    const layerStyle = isBible ? settings : targetLayer?.style;
     const originalWidth = layerStyle?.customWidth ?? Math.round((lr.width / rect.width) * 100);
     const originalHeight = layerStyle?.customHeight ?? Math.round((lr.height / rect.height) * 100);
     const w0 = Math.max(10, originalWidth);
@@ -1741,7 +1748,7 @@ export function LiveStudioConsole({
       const dy = ((ev.clientY - sy) / rect.height) * 100;
       const nx = Math.max(0, Math.min(100 - w0, Math.round(x0 + dx)));
       const ny = Math.max(0, Math.min(100 - h0, Math.round(y0 + dy)));
-      if (layerId === "bible") {
+      if (isBible) {
         setStudioField("positionMode", "custom");
         setStudioField("customX", nx);
         setStudioField("customY", ny);
@@ -1797,10 +1804,12 @@ export function LiveStudioConsole({
     const startH = (box.height / rect.height) * 100;
     const sx = e.clientX;
     const sy = e.clientY;
+    const isBible =
+      scenes.find((s) => s.id === currentSceneIdRef.current)?.layers.find((l) => l.id === layerId)?.type === "bible";
     setSelectedLayerId(layerId);
     const apply = (x: number, y: number, w: number, h: number) => {
       const p = { customX: Math.round(x), customY: Math.round(y), customWidth: Math.round(w), customHeight: Math.round(h) };
-      if (layerId === "bible") {
+      if (isBible) {
         setStudioField("positionMode", "custom");
         setStudioField("customX", p.customX);
         setStudioField("customY", p.customY);

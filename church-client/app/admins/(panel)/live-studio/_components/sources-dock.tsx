@@ -170,19 +170,17 @@ export function SourcesDock({
           >
             {l.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
           </button>
-          {l.type !== "bible" && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRequestDelete(l.id);
-              }}
-              title="Supprimer"
-              className="p-0.5 text-white/30 transition-colors hover:text-[#ff8a8a]"
-            >
-              <X className="size-3.5" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDelete(l.id);
+            }}
+            title="Supprimer"
+            className="p-0.5 text-white/30 transition-colors hover:text-[#ff8a8a]"
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
 
         {/* Group Add Child Dropdown Inline */}
