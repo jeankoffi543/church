@@ -119,6 +119,7 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageFile,
+  onImageUrl,
   onAudioFile,
   bible,
   presets,
@@ -136,6 +137,7 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onImageUrl: (url: string) => void;
   onAudioFile: (file: File) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
@@ -206,6 +208,7 @@ export function InspectorDock({
                  layer={selectedLayer}
                  patchLayerData={patchLayerData}
                  onImageFile={onImageFile}
+                 onImageUrl={onImageUrl}
                  onAudioFile={onAudioFile}
                  onRestoreDefaults={onRestoreDefaults}
                  bible={bible}
@@ -1122,10 +1125,37 @@ function AudioInspector({
   );
 }
 
+/** Image URL field that imports on commit (never binds the raw URL to the layer,
+ *  so the image is only ever displayed from our re-hosted, CORS-safe copy). */
+function ImageUrlImport({ current, onImport }: { current: string; onImport: (url: string) => void }) {
+  const [draft, setDraft] = useState(current);
+  return (
+    <div className="flex gap-1.5">
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onImport(draft);
+        }}
+        placeholder="https://…"
+        className={MONO_FIELD}
+      />
+      <button
+        type="button"
+        onClick={() => onImport(draft)}
+        className="shrink-0 rounded-lg border border-gold/30 bg-gold/15 px-3 text-[11px] font-bold text-gold transition hover:bg-gold/25"
+      >
+        Importer
+      </button>
+    </div>
+  );
+}
+
 function ContentPanel({
   layer,
   patchLayerData,
   onImageFile,
+  onImageUrl,
   onAudioFile,
   onRestoreDefaults,
   bible,
@@ -1134,6 +1164,7 @@ function ContentPanel({
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageFile: (file: File) => void;
+  onImageUrl: (url: string) => void;
   onAudioFile: (file: File) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
@@ -1229,15 +1260,22 @@ function ContentPanel({
       <>
         <div>
           <Label className="mb-1.5">URL de l&apos;image</Label>
-          <input
-            value={layer.imageUrl ?? ""}
-            onChange={(e) => patchLayerData({ imageUrl: e.target.value })}
-            placeholder="https://… ou /storage/…"
-            className={MONO_FIELD}
-          />
+          <ImageUrlImport key={layer.id} current={layer.imageUrl ?? ""} onImport={onImageUrl} />
+          <span className="mt-1 block text-[10px] text-white/35">
+            L&apos;image est téléchargée sur le serveur puis affichée (jamais directement depuis
+            l&apos;URL).
+          </span>
         </div>
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/14 bg-white/[0.03] py-3 text-[11px] font-bold text-white/55 transition-colors hover:border-gold/40 hover:text-gold">
-          <Upload className="size-3.5" /> Importer un fichier…
+        <label
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f && f.type.startsWith("image/")) void onImageFile(f);
+          }}
+          className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/14 bg-white/[0.03] py-3 text-[11px] font-bold text-white/55 transition-colors hover:border-gold/40 hover:text-gold"
+        >
+          <Upload className="size-3.5" /> Importer ou glisser-déposer…
           <input
             type="file"
             accept="image/*"

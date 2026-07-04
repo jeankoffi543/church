@@ -346,6 +346,81 @@ export function drawContentLayer(
   drawBlocks(ctx, box, s, blocks, scale, reveal);
 }
 
+/** Draw an image layer with its container frame (bg / border / radius / shadow),
+ *  clipped to that shape, cover-filled and H/V aligned like the DOM overlay. */
+export function drawImageLayer(
+  ctx: CanvasRenderingContext2D,
+  img: CanvasImageSource,
+  sw: number,
+  sh: number,
+  box: Box,
+  s: StudioSettings,
+  scale: number,
+  contain: boolean,
+) {
+  const shape = str(s, "containerShape", "transparent");
+  const r = num(s, "containerBorderRadius", 16) * scale;
+  const small = 6 * scale;
+  const radii: number | number[] =
+    shape === "rectangle" || shape === "transparent"
+      ? 0
+      : shape === "capsule"
+        ? box.h / 2
+        : shape === "asymmetric"
+          ? [r, small, r, small]
+          : r;
+
+  // Background + shadow behind the image (a framed container only).
+  if (shape !== "transparent") {
+    ctx.save();
+    const blur = num(s, "shadowBlur", 0) * scale;
+    if (blur > 0 || num(s, "shadowOffsetX", 0) || num(s, "shadowOffsetY", 0)) {
+      ctx.shadowColor = str(s, "shadowColor", "rgba(0,0,0,0.5)");
+      ctx.shadowBlur = blur;
+      ctx.shadowOffsetX = num(s, "shadowOffsetX", 0) * scale;
+      ctx.shadowOffsetY = num(s, "shadowOffsetY", 0) * scale;
+    }
+    containerPath(ctx, box, radii);
+    ctx.fillStyle = paintStyle(ctx, str(s, "containerBg", "rgba(22,15,51,0.95)"), box);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // The image inside the box: `contain` (framed overlay — fit, keep ratio, never
+  // crop) or cover (full-frame background — fill + crop). Both H/V aligned, and
+  // clipped to the (rounded) box shape.
+  if (sw > 0 && sh > 0) {
+    const fit = contain ? Math.min(box.w / sw, box.h / sh) : Math.max(box.w / sw, box.h / sh);
+    const dw = sw * fit;
+    const dh = sh * fit;
+    const hAlign = (s.textAlign ?? "center") as "left" | "center" | "right";
+    const vAlign = (s.textVerticalAlign ?? "center") as "top" | "center" | "bottom";
+    const dx = box.x + (hAlign === "left" ? 0 : hAlign === "right" ? box.w - dw : (box.w - dw) / 2);
+    const dy = box.y + (vAlign === "top" ? 0 : vAlign === "bottom" ? box.h - dh : (box.h - dh) / 2);
+    ctx.save();
+    containerPath(ctx, box, radii);
+    ctx.clip();
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // Border on top of the image.
+  const borderStyle = str(s, "containerBorderStyle", "solid");
+  if (shape !== "transparent" && borderStyle !== "none" && num(s, "containerBorderWidth", 0) > 0) {
+    ctx.save();
+    ctx.lineWidth = num(s, "containerBorderWidth", 1) * scale;
+    ctx.strokeStyle = str(s, "containerBorderColor", "rgba(255,255,255,0.1)");
+    if (borderStyle === "dashed") ctx.setLineDash([8 * scale, 6 * scale]);
+    if (borderStyle === "glow") {
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 18 * scale;
+    }
+    containerPath(ctx, box, radii);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 /** Render a scrolling ticker (scroll_left/right/up/down): a single-line marquee
  *  (horizontal) or a scrolling block (vertical), clipped to the box and looping.
  *  `phase` is the loop position 0..1. */

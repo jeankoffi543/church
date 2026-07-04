@@ -174,6 +174,20 @@ export async function uploadStudioMedia(
 }
 
 /**
+ * Re-host an external image URL on our CORS-enabled media route (downloaded
+ * server-side) so it's drawable on the program-out canvas and persists.
+ */
+export async function importStudioMediaFromUrl(
+  url: string
+): Promise<{ url: string; name: string }> {
+  const response = await adminFetch<{ data: { url: string; name: string } }>(
+    "/studio/media/from-url",
+    { method: "POST", body: JSON.stringify({ url }) }
+  );
+  return response.data;
+}
+
+/**
  * Start a studio→Facebook broadcast. The backend issues a one-shot stream name +
  * publish token and returns the WHIP url the studio publishes its program feed to
  * (our own SRS, which relays to Facebook RTMPS with the stored stream key).

@@ -419,11 +419,14 @@ export function CompositeLayer({
 
   // Image layer
   if (layer.type === "image") {
+    // H/V alignment picks which part of a cover image stays visible.
+    const bgPos = `${layer.style.textAlign ?? "center"} ${layer.style.textVerticalAlign ?? "center"}`;
     const bgStyle: React.CSSProperties = layer.imageUrl
       ? {
           backgroundImage: `url(${getImageUrl(layer.imageUrl)})`,
-          backgroundPosition: "center",
-          backgroundSize: "cover",
+          backgroundPosition: bgPos,
+          // Overlay images fit (keep ratio, no crop); full-frame backgrounds cover.
+          backgroundSize: isBg ? "cover" : "contain",
           backgroundRepeat: "no-repeat",
         }
       : {

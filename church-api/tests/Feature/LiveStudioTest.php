@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Testing\File;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -157,4 +158,47 @@ it('streams an uploaded studio video and 404s for a missing file', function () {
 
     getJson('/api/v1/public/studio/media/clip.mp4')->assertOk();
     getJson('/api/v1/public/studio/media/missing.mp4')->assertNotFound();
+});
+
+it('uploads a local studio image to studio/images with a CORS stream url', function () {
+    Storage::fake('public');
+
+    $data = actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media', [
+            'file' => File::fake()->image('overlay.png'),
+        ])
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['url'])->toContain('/api/v1/public/studio/media/');
+    expect(Storage::disk('public')->files('studio/images'))->toHaveCount(1);
+    expect(Storage::disk('public')->files('studio/videos'))->toBeEmpty();
+});
+
+it('streams an uploaded studio image', function () {
+    Storage::fake('public');
+    Storage::disk('public')->put('studio/images/overlay.png', 'binary-data');
+
+    getJson('/api/v1/public/studio/media/overlay.png')->assertOk();
+});
+
+it('re-hosts an external image URL server-side', function () {
+    Storage::fake('public');
+    Http::fake(['*' => Http::response('fake-png-bytes', 200, ['Content-Type' => 'image/png'])]);
+
+    $data = actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media/from-url', ['url' => 'https://example.com/logo.png'])
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['url'])->toContain('/api/v1/public/studio/media/');
+    expect(Storage::disk('public')->files('studio/images'))->toHaveCount(1);
+});
+
+it('rejects a from-url import that is not an image', function () {
+    Http::fake(['*' => Http::response('<html></html>', 200, ['Content-Type' => 'text/html'])]);
+
+    actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media/from-url', ['url' => 'https://example.com/page'])
+        ->assertStatus(422);
 });

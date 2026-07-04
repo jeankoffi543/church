@@ -21,7 +21,7 @@
 
 import { getAudioContext } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
-import { drawBibleLayer, drawContentLayer, drawScrollLayer } from "./program-out-text";
+import { drawBibleLayer, drawContentLayer, drawImageLayer, drawScrollLayer } from "./program-out-text";
 import { computeEntrance } from "./program-out-anim";
 import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
@@ -182,6 +182,8 @@ export function startProgramOut(opts?: {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d", { alpha: false })!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   const audioCtx = getAudioContext();
   const mixDest = audioCtx?.createMediaStreamDestination() ?? null;
@@ -385,17 +387,52 @@ export function startProgramOut(opts?: {
       const b = layer.type === "bible" && style ? boxFromStyle(style) : layerBox(layer);
       const box = { x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height };
 
-      // Media layers (camera / image / video): drawn straight, WITHOUT an entrance
-      // transform — the default fade_slide made the camera vanish/slide on every
-      // CUT. Media stays put; only text/bible/song overlays animate.
       const src = sources.get(layer.id);
       if (src) {
-        if (src.el instanceof HTMLVideoElement) {
-          if (src.el.readyState >= 2 && src.el.videoWidth > 0) {
-            drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
+        if (layer.type === "image") {
+          // Images are overlays: they get the container frame + entrance animation.
+          if (!(src.el instanceof HTMLImageElement) || !src.el.complete || src.el.naturalWidth === 0) {
+            continue;
           }
-        } else if (src.el.complete && src.el.naturalWidth > 0) {
-          drawCover(ctx, src.el, src.el.naturalWidth, src.el.naturalHeight, box.x, box.y, box.w, box.h);
+          const a = computeEntrance(
+            layer.style.animation,
+            now - (animStart.get(layer.id) ?? now),
+            layer.style.animDuration ?? 500,
+            layer.style.animEasing ?? "ease-out",
+            textScale,
+          );
+          ctx.save();
+          ctx.globalAlpha = a.alpha;
+          if (a.tx || a.ty) ctx.translate(a.tx, a.ty);
+          if (a.scale !== 1) {
+            const cx = box.x + box.w / 2;
+            const cy = box.y + box.h / 2;
+            ctx.translate(cx, cy);
+            ctx.scale(a.scale, a.scale);
+            ctx.translate(-cx, -cy);
+          }
+          if (a.clipRevealX !== undefined) {
+            ctx.beginPath();
+            ctx.rect(box.x, box.y, box.w * a.clipRevealX, box.h);
+            ctx.clip();
+          }
+          drawImageLayer(
+            ctx,
+            src.el,
+            src.el.naturalWidth,
+            src.el.naturalHeight,
+            box,
+            layer.style,
+            textScale,
+            !isBackgroundLayer(layer),
+          );
+          ctx.restore();
+          continue;
+        }
+        // Camera / video: drawn straight, WITHOUT an entrance transform — the
+        // default fade_slide made the camera vanish on every CUT.
+        if (src.el instanceof HTMLVideoElement && src.el.readyState >= 2 && src.el.videoWidth > 0) {
+          drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
         }
         continue;
       }
@@ -455,9 +492,13 @@ export function startProgramOut(opts?: {
     }
   }
 
-  // Manual-capture track: we push frames ourselves so the feed keeps flowing even
-  // when the tab is hidden (rAF pauses in background → the feed would freeze).
-  const captured = canvas.captureStream(0);
+  // Auto-capture at a steady frame rate — when the tab is VISIBLE this reliably
+  // captures continuous motion (scroll / typewriter). When the tab is HIDDEN the
+  // browser throttles both rAF and the canvas presentation, so the audio clock
+  // (unthrottled) keeps drawing and we force each frame with `requestFrame()` —
+  // the feed (and its animations) never freezes, and the operator can switch
+  // tabs freely.
+  const captured = canvas.captureStream(fps);
   const captureTrack = captured.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
 
   let lastDraw = 0;
@@ -467,7 +508,10 @@ export function startProgramOut(opts?: {
     if (now - lastDraw < minInterval) return;
     lastDraw = now;
     drawFrame();
-    captureTrack?.requestFrame?.();
+    // Foreground: auto-capture handles it. Background: force the frame.
+    if (typeof document !== "undefined" && document.hidden) {
+      captureTrack?.requestFrame?.();
+    }
   }
 
   // rAF drives smooth frames while the tab is visible…
