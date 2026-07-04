@@ -79,9 +79,10 @@ export function ProgramOutMonitor({
   function startCompositor(): ProgramOut {
     if (outRef.current) return outRef.current;
     // Scale burned-in text to match the preview the operator tuned against.
+    // Render at 1080p so HD images/text stay sharp through the H264 encode.
     const refH = previewStageRef.current?.getBoundingClientRect().height ?? 0;
-    const scale = refH > 0 ? 720 / refH : 1;
-    const out = startProgramOut({ width: 1280, height: 720, fps: 30, scale });
+    const scale = refH > 0 ? 1080 / refH : 1;
+    const out = startProgramOut({ width: 1920, height: 1080, fps: 30, scale });
     out.setScene(layersRef.current, bibleRef.current, animNonce);
     outRef.current = out;
     const el = videoRef.current;

@@ -15,7 +15,13 @@ import {
   type StudioSettings,
   type NavigateDirection,
 } from "@/lib/studio";
-import { broadcastScripture, setPreparedVerses, updateAdminSettings } from "@/lib/admin-api";
+import {
+  broadcastScripture,
+  importStudioMediaFromUrl,
+  setPreparedVerses,
+  updateAdminSettings,
+  uploadStudioMedia,
+} from "@/lib/admin-api";
 import {
   getContainerStyle,
   getElementStyle,
@@ -1521,23 +1527,47 @@ export function LiveStudioConsole({
       if (!selectedLayerId) return;
       setBusy(true);
       setStatus(null);
-      const key = `live_layer_img_${selectedLayerId}`;
       try {
-        const payload = [{ key, value: "", group: "live" }];
-        const files = { [key]: file };
-        const res = (await updateAdminSettings(payload, files)) as {
-          data: Record<string, Record<string, unknown>>;
-        };
-        const uploadedPath = res?.data?.live?.[key] as string;
-        if (uploadedPath) {
-          patchSelectedData({ imageUrl: uploadedPath });
-          setStatus({ type: "success", message: "Image importée avec succès !" });
-        } else {
-          throw new Error("Aucun chemin retourné par le serveur.");
-        }
+        // Upload via the CORS-enabled /studio/media route (like videos) so the
+        // program-out canvas can draw the image without tainting it — the
+        // /storage symlink used by the settings upload carries no CORS headers.
+        const form = new FormData();
+        form.append("file", file);
+        const { url } = await uploadStudioMedia(form);
+        patchSelectedData({ imageUrl: url });
+        setStatus({ type: "success", message: "Image importée avec succès !" });
       } catch (err) {
         console.error("Failed to upload image layer", err);
         setStatus({ type: "error", message: "Erreur lors de l'importation de l'image." });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [selectedLayerId, patchSelectedData]
+  );
+  const onImageUrl = useCallback(
+    async (rawUrl: string) => {
+      if (!selectedLayerId) return;
+      const url = rawUrl.trim();
+      if (!url) {
+        patchSelectedData({ imageUrl: "" });
+        return;
+      }
+      // Already hosted by us → use directly; external → download server-side so
+      // it's CORS-drawable on the canvas (never display straight from the URL).
+      if (url.includes("/studio/media/") || url.startsWith("/storage")) {
+        patchSelectedData({ imageUrl: url });
+        return;
+      }
+      setBusy(true);
+      setStatus(null);
+      try {
+        const { url: hosted } = await importStudioMediaFromUrl(url);
+        patchSelectedData({ imageUrl: hosted });
+        setStatus({ type: "success", message: "Image importée depuis l'URL." });
+      } catch (err) {
+        console.error("Failed to import image from url", err);
+        setStatus({ type: "error", message: "Impossible d'importer l'image depuis cette URL." });
       } finally {
         setBusy(false);
       }
@@ -2036,6 +2066,7 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageFile={onImageFile}
+          onImageUrl={onImageUrl}
           onAudioFile={onAudioFile}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}

@@ -139,6 +139,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('live/scripture/prepared', [Admin\LiveScriptureController::class, 'prepared'])->name('live.scripture.prepared');
                 Route::put('live/scripture/prepared', [Admin\LiveScriptureController::class, 'updatePrepared'])->name('live.scripture.prepared.update');
                 Route::post('studio/media', [Admin\StudioMediaController::class, 'store'])->name('studio.media.store');
+                Route::post('studio/media/from-url', [Admin\StudioMediaController::class, 'storeFromUrl'])->name('studio.media.from-url');
                 // Studio → Facebook broadcast (own SRS + ffmpeg relay).
                 Route::post('studio/broadcast/facebook/start', [Admin\StudioBroadcastController::class, 'startFacebook'])->name('studio.broadcast.facebook.start');
                 Route::post('studio/broadcast/facebook/stop', [Admin\StudioBroadcastController::class, 'stopFacebook'])->name('studio.broadcast.facebook.stop');
