@@ -1366,28 +1366,28 @@ export function LiveStudioConsole({
       if (targetLayer && targetLayer.type === "group") {
         const isCurrentlyLive = targetLayer.groupLiveActive;
         const willBeLive = patch.groupLiveActive !== undefined ? patch.groupLiveActive : isCurrentlyLive;
-        
+
         if (willBeLive) {
           setProgramBlack(false);
+          // Flat model: the group + its `parentId` children are all real scene
+          // layers. Sending the group to air upserts the group and every child
+          // into the program so the container AND its content diffuse.
+          const groupChildren = layers.filter((l) => l.parentId === selectedLayerId);
+          const mergedGroup = { ...targetLayer, ...patch };
           setProgramLayers((pls) => {
-            const hasGroup = pls.some((l) => l.id === selectedLayerId);
-            const targetChildLayers = patch.layers !== undefined ? patch.layers : targetLayer.layers;
-            
-            if (hasGroup) {
-              return pls.map((l) =>
-                l.id === selectedLayerId
-                  ? { ...l, ...patch, layers: targetChildLayers }
-                  : l
-              );
-            } else {
-              return [...pls, { ...targetLayer, ...patch, layers: targetChildLayers }];
-            }
+            const next = [...pls];
+            const upsert = (nl: StudioLayer) => {
+              const i = next.findIndex((l) => l.id === nl.id);
+              if (i >= 0) next[i] = { ...next[i], ...nl };
+              else next.push(nl);
+            };
+            upsert(mergedGroup);
+            groupChildren.forEach(upsert);
+            return next;
           });
-          
-          const targetChildLayers = patch.layers !== undefined ? patch.layers : targetLayer.layers;
-          const childLayersChanged = patch.layers !== undefined && JSON.stringify(targetLayer.layers) !== JSON.stringify(patch.layers);
+
           const liveActivated = patch.groupLiveActive === true && !isCurrentlyLive;
-          if (childLayersChanged || liveActivated) {
+          if (liveActivated) {
             setProgramAnimNonce((n) => n + 1);
           }
           return;
@@ -1400,10 +1400,6 @@ export function LiveStudioConsole({
             if (l.id === selectedLayerId) {
               if (l.type === "song" && !l.songLiveActive) {
                 const { activeStanzaIndex, ...rest } = patch;
-                return { ...l, ...rest };
-              }
-              if (l.type === "group" && !l.groupLiveActive) {
-                const { layers: childLayers, ...rest } = patch;
                 return { ...l, ...rest };
               }
               if (patch.activeStanzaIndex !== undefined && l.activeStanzaIndex !== patch.activeStanzaIndex) {
@@ -1598,6 +1594,8 @@ export function LiveStudioConsole({
     });
   const toggleLayerVisible = (id: string) =>
     setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)));
+  const patchLayerById = (id: string, patch: Partial<StudioLayer>) =>
+    setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   const reorderLayer = (dragId: string, targetId: string) =>
     setLayers((ls) => {
       if (dragId === targetId) return ls;
@@ -2034,6 +2032,12 @@ export function LiveStudioConsole({
           onNewPresetNameChange={setNewPresetName}
           onSavePreset={handleSavePreset}
           onDeletePreset={handleDeletePreset}
+          allLayers={layers}
+          onAddChild={addLayer}
+          onSelectLayer={setSelectedLayerId}
+          onToggleLayer={toggleLayerVisible}
+          onRemoveLayer={setPendingDeleteId}
+          onPatchLayer={patchLayerById}
         />
         <ControlsDock
           recording={recording}

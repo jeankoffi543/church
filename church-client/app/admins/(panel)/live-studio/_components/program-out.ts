@@ -23,6 +23,7 @@ import { getAudioContext, getAudioController } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
 import {
   drawBibleLayer,
+  drawContainerBox,
   drawContentLayer,
   drawImageLayer,
   drawScrollLayer,
@@ -438,12 +439,15 @@ export function startProgramOut(opts?: {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
     const now = performance.now();
+    // A group hides its children with it (mirror the DOM's visible filter).
+    const hiddenGroups = new Set(scene.filter((l) => !l.visible).map((l) => l.id));
     // Painter's order = bottom→top. The DOM assigns z = length-idx (index 0 on
     // top), so draw the array in REVERSE — otherwise a full-frame camera (bottom
     // of the list) would paint over the overlays.
     for (let i = scene.length - 1; i >= 0; i -= 1) {
       const layer = scene[i];
       if (!layer.visible) continue;
+      if (layer.parentId && hiddenGroups.has(layer.parentId)) continue;
 
       // The bible's real geometry + style is the on-air one, not the snapshot's.
       const style = layer.type === "bible" ? bibleContext?.style : layer.style;
@@ -493,6 +497,22 @@ export function startProgramOut(opts?: {
         if (src.el instanceof HTMLVideoElement && src.el.readyState >= 2 && src.el.videoWidth > 0) {
           drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
         }
+        continue;
+      }
+
+      // Group = a styled panel behind its children (which are separate layers).
+      if (layer.type === "group") {
+        const a = computeEntrance(
+          layer.style.animation,
+          now - (animStart.get(layer.id) ?? now),
+          layer.style.animDuration ?? 500,
+          layer.style.animEasing ?? "ease-out",
+          textScale,
+        );
+        ctx.save();
+        applyEntranceTransform(ctx, a, box);
+        drawContainerBox(ctx, box, layer.style, textScale);
+        ctx.restore();
         continue;
       }
 

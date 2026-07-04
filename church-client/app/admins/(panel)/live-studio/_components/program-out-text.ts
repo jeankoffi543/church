@@ -346,6 +346,17 @@ export function drawContentLayer(
   drawBlocks(ctx, box, s, blocks, scale, reveal);
 }
 
+/** Draw just a container box (bg / border / radius / shadow) — used for the group
+ *  layer, whose visual is only its panel; its children are separate layers. */
+export function drawContainerBox(
+  ctx: CanvasRenderingContext2D,
+  box: Box,
+  s: StudioSettings,
+  scale: number,
+) {
+  drawContainer(ctx, box, s, scale);
+}
+
 /** Draw an image layer with its container frame (bg / border / radius / shadow),
  *  clipped to that shape, cover-filled and H/V aligned like the DOM overlay. */
 export function drawImageLayer(
