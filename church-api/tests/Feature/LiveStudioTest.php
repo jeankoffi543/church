@@ -195,7 +195,21 @@ it('re-hosts an external image URL server-side', function () {
     expect(Storage::disk('public')->files('studio/images'))->toHaveCount(1);
 });
 
-it('rejects a from-url import that is not an image', function () {
+it('re-hosts an external video URL to studio/videos', function () {
+    Storage::fake('public');
+    Http::fake(['*' => Http::response('fake-mp4-bytes', 200, ['Content-Type' => 'video/mp4'])]);
+
+    $data = actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media/from-url', ['url' => 'https://example.com/clip.mp4'])
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['url'])->toContain('/api/v1/public/studio/media/');
+    expect(Storage::disk('public')->files('studio/videos'))->toHaveCount(1);
+    expect(Storage::disk('public')->files('studio/images'))->toBeEmpty();
+});
+
+it('rejects a from-url import that is neither image nor video', function () {
     Http::fake(['*' => Http::response('<html></html>', 200, ['Content-Type' => 'text/html'])]);
 
     actingAs(liveAdmin(), 'sanctum')

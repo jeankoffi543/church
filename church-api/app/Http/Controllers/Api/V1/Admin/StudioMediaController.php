@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Http\File;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -42,9 +43,10 @@ class StudioMediaController extends Controller
     }
 
     /**
-     * Download an image from an external URL server-side and re-host it on our
-     * CORS-enabled media route, so an operator-pasted URL is drawable on the
-     * program-out canvas (and survives the source going away).
+     * Download an image OR video from an external URL server-side and re-host it
+     * on our CORS-enabled media route, so an operator-pasted URL is drawable on
+     * the program-out canvas (and survives the source going away). The download
+     * streams straight to disk (`sink`) so a large video never loads into memory.
      */
     public function storeFromUrl(Request $request): JsonResponse
     {
@@ -55,29 +57,55 @@ class StudioMediaController extends Controller
         $url = $validated['url'];
         abort_unless(Str::startsWith($url, ['http://', 'https://']), 422, 'URL invalide.');
 
+        $tmp = (string) tempnam(sys_get_temp_dir(), 'studio_');
+
         try {
-            $response = Http::timeout(15)->get($url);
+            $response = Http::timeout(120)->sink($tmp)->get($url);
         } catch (Throwable) {
-            abort(422, "Impossible de télécharger l'image depuis l'URL.");
+            @unlink($tmp);
+            abort(422, "Impossible de télécharger le média depuis l'URL.");
         }
 
-        abort_unless($response->successful(), 422, "Impossible de télécharger l'image depuis l'URL.");
+        if (! $response->successful()) {
+            @unlink($tmp);
+            abort(422, "Impossible de télécharger le média depuis l'URL.");
+        }
 
         $contentType = (string) $response->header('Content-Type');
-        abort_unless(Str::startsWith($contentType, 'image/'), 422, "L'URL ne pointe pas vers une image.");
+        if ($contentType === '' && function_exists('mime_content_type')) {
+            $contentType = (string) (mime_content_type($tmp) ?: '');
+        }
 
-        $body = $response->body();
-        abort_if(strlen($body) > 25 * 1024 * 1024, 422, 'Image trop volumineuse (max 25 Mo).');
+        $isImage = Str::startsWith($contentType, 'image/');
+        $isVideo = Str::startsWith($contentType, 'video/');
+        if (! $isImage && ! $isVideo) {
+            @unlink($tmp);
+            abort(422, "L'URL ne pointe pas vers une image ou une vidéo.");
+        }
+
+        $maxBytes = $isVideo ? 512 * 1024 * 1024 : 25 * 1024 * 1024;
+        if ((filesize($tmp) ?: 0) > $maxBytes) {
+            @unlink($tmp);
+            abort(422, 'Média trop volumineux.');
+        }
 
         $ext = match (true) {
             Str::contains($contentType, 'png') => 'png',
             Str::contains($contentType, 'webp') => 'webp',
             Str::contains($contentType, 'gif') => 'gif',
             Str::contains($contentType, 'avif') => 'avif',
+            Str::contains($contentType, 'webm') => 'webm',
+            Str::contains($contentType, 'quicktime') => 'mov',
+            Str::contains($contentType, 'matroska') => 'mkv',
+            Str::contains($contentType, 'ogg') => 'ogv',
+            Str::contains($contentType, 'mp4') => 'mp4',
+            $isVideo => 'mp4',
             default => 'jpg',
         };
-        $name = 'url-'.Str::lower(Str::random(24)).'.'.$ext;
-        Storage::disk('public')->put('studio/images/'.$name, $body);
+        $dir = $isImage ? 'studio/images' : 'studio/videos';
+        $name = ($isImage ? 'url-' : 'vid-').Str::lower(Str::random(24)).'.'.$ext;
+        Storage::disk('public')->putFileAs($dir, new File($tmp), $name);
+        @unlink($tmp);
 
         return response()->json([
             'data' => [

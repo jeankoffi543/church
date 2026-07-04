@@ -421,6 +421,32 @@ export function drawImageLayer(
   }
 }
 
+/** Draw a video layer to match the DOM overlay: a black, rounded (rounded-xl)
+ *  box with the video cover-filled (object-cover) and clipped to the rounding. */
+export function drawVideoFrame(
+  ctx: CanvasRenderingContext2D,
+  video: CanvasImageSource,
+  sw: number,
+  sh: number,
+  box: Box,
+  scale: number,
+) {
+  const r = Math.min(12 * scale, box.w / 2, box.h / 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(box.x, box.y, box.w, box.h, r);
+  ctx.fillStyle = "#000";
+  ctx.fill();
+  ctx.clip();
+  if (sw > 0 && sh > 0) {
+    const cover = Math.max(box.w / sw, box.h / sh);
+    const dw = sw * cover;
+    const dh = sh * cover;
+    ctx.drawImage(video, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
+  }
+  ctx.restore();
+}
+
 /** Render a scrolling ticker (scroll_left/right/up/down): a single-line marquee
  *  (horizontal) or a scrolling block (vertical), clipped to the box and looping.
  *  `phase` is the loop position 0..1. */
