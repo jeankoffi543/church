@@ -1550,46 +1550,21 @@ export function LiveStudioConsole({
     },
     [selectedLayerId, patchSelectedData]
   );
-  const onAudioFile = useCallback(
-    async (file: File) => {
-      if (!selectedLayerId) return;
-      setBusy(true);
-      setStatus(null);
-      const key = `live_layer_audio_${selectedLayerId}`;
-      try {
-        const payload = [{ key, value: "", group: "live" }];
-        const files = { [key]: file };
-        const res = (await updateAdminSettings(payload, files)) as {
-          data: Record<string, Record<string, unknown>>;
-        };
-        const uploadedPath = res?.data?.live?.[key] as string;
-        if (uploadedPath) {
-          patchSelectedData({
-            audioFileUrl: uploadedPath,
-            audioFileName: file.name,
-          });
-          setStatus({ type: "success", message: "Fichier audio importé avec succès !" });
-        } else {
-          throw new Error("Aucun chemin retourné par le serveur.");
-        }
-      } catch (err) {
-        console.error("Failed to upload audio file", err);
-        setStatus({ type: "error", message: "Erreur lors de l'importation de l'audio." });
-      } finally {
-        setBusy(false);
-      }
-    },
-    [selectedLayerId, patchSelectedData]
-  );
 
   // ── Audio mixer ─────────────────────────────────────────────────────────
   // Channels are the current scene's audio-bearing sources; the mixer writes
   // volume/mute/gain/pan straight back onto the layer so it persists.
   const mixerLayers = layers.filter(hasAudio);
   const setLayerAudio = useCallback(
-    (id: string, patch: Partial<StudioLayer>) =>
-      setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l))),
-    [setLayers],
+    (id: string, patch: Partial<StudioLayer>) => {
+      setLayers((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+      // Reflect the mixer live on the program snapshot so fader/mute/mode changes
+      // reach the Facebook feed in real time (not only at the next CUT).
+      if (programSceneId === currentSceneIdRef.current && !programBlack) {
+        setProgramLayers((pls) => pls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+      }
+    },
+    [setLayers, programSceneId, programBlack],
   );
   /* eslint-enable react-hooks/preserve-manual-memoization */
 
@@ -2042,7 +2017,6 @@ export function LiveStudioConsole({
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
           onImageUrl={onImageUrl}
-          onAudioFile={onAudioFile}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
           bible={bibleInspectorProps}

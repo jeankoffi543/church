@@ -18,7 +18,7 @@ class StudioMediaController extends Controller
      */
     public function stream(string $file): BinaryFileResponse
     {
-        foreach (['studio/images/', 'studio/videos/'] as $prefix) {
+        foreach (['studio/images/', 'studio/videos/', 'studio/audio/'] as $prefix) {
             $relativePath = $prefix.$file;
             if (Storage::disk('public')->exists($relativePath)) {
                 return response()->file(Storage::disk('public')->path($relativePath));

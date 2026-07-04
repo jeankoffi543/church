@@ -14,10 +14,11 @@ use Throwable;
 class StudioMediaController extends Controller
 {
     /**
-     * Store a local video or image uploaded from a Live Studio source and return
-     * a stable stream URL to persist on the layer. Serving through this `api/*`
-     * route (not the `/storage` symlink) means the response carries CORS headers,
-     * so the program-out `<canvas>` can draw the media without tainting it.
+     * Store a local video, image or audio file uploaded from a Live Studio source
+     * and return a stable stream URL to persist on the layer. Serving through this
+     * `api/*` route (not the `/storage` symlink) means the response carries CORS
+     * headers, so the program-out `<canvas>` can draw the media — and Web Audio
+     * can mix an audio file — without tainting it.
      */
     public function store(Request $request): JsonResponse
     {
@@ -25,13 +26,20 @@ class StudioMediaController extends Controller
             'file' => [
                 'required',
                 'file',
-                'mimetypes:video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,image/jpeg,image/png,image/webp,image/gif,image/avif',
+                'mimetypes:video/mp4,video/webm,video/ogg,video/quicktime,video/x-matroska,'.
+                'image/jpeg,image/png,image/webp,image/gif,image/avif,'.
+                'audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/webm,audio/flac,audio/x-m4a',
                 'max:512000',
             ],
         ]);
 
-        $isImage = str_starts_with((string) $validated['file']->getMimeType(), 'image/');
-        $path = $validated['file']->store($isImage ? 'studio/images' : 'studio/videos', 'public');
+        $mime = (string) $validated['file']->getMimeType();
+        $dir = match (true) {
+            str_starts_with($mime, 'image/') => 'studio/images',
+            str_starts_with($mime, 'audio/') => 'studio/audio',
+            default => 'studio/videos',
+        };
+        $path = $validated['file']->store($dir, 'public');
         $name = basename($path);
 
         return response()->json([
@@ -78,32 +86,44 @@ class StudioMediaController extends Controller
 
         $isImage = Str::startsWith($contentType, 'image/');
         $isVideo = Str::startsWith($contentType, 'video/');
-        if (! $isImage && ! $isVideo) {
+        $isAudio = Str::startsWith($contentType, 'audio/');
+        if (! $isImage && ! $isVideo && ! $isAudio) {
             @unlink($tmp);
-            abort(422, "L'URL ne pointe pas vers une image ou une vidéo.");
+            abort(422, "L'URL ne pointe pas vers une image, une vidéo ou un audio.");
         }
 
-        $maxBytes = $isVideo ? 512 * 1024 * 1024 : 25 * 1024 * 1024;
+        $maxBytes = $isImage ? 25 * 1024 * 1024 : 512 * 1024 * 1024;
         if ((filesize($tmp) ?: 0) > $maxBytes) {
             @unlink($tmp);
             abort(422, 'Média trop volumineux.');
         }
 
-        $ext = match (true) {
-            Str::contains($contentType, 'png') => 'png',
-            Str::contains($contentType, 'webp') => 'webp',
-            Str::contains($contentType, 'gif') => 'gif',
-            Str::contains($contentType, 'avif') => 'avif',
-            Str::contains($contentType, 'webm') => 'webm',
-            Str::contains($contentType, 'quicktime') => 'mov',
-            Str::contains($contentType, 'matroska') => 'mkv',
-            Str::contains($contentType, 'ogg') => 'ogv',
-            Str::contains($contentType, 'mp4') => 'mp4',
-            $isVideo => 'mp4',
-            default => 'jpg',
+        [$dir, $prefix, $ext] = match (true) {
+            $isImage => ['studio/images', 'url-', match (true) {
+                Str::contains($contentType, 'png') => 'png',
+                Str::contains($contentType, 'webp') => 'webp',
+                Str::contains($contentType, 'gif') => 'gif',
+                Str::contains($contentType, 'avif') => 'avif',
+                default => 'jpg',
+            }],
+            $isAudio => ['studio/audio', 'aud-', match (true) {
+                Str::contains($contentType, 'mpeg') => 'mp3',
+                Str::contains($contentType, 'wav') => 'wav',
+                Str::contains($contentType, 'ogg') => 'ogg',
+                Str::contains($contentType, 'flac') => 'flac',
+                Str::contains($contentType, 'aac') => 'aac',
+                Str::contains($contentType, 'mp4'), Str::contains($contentType, 'm4a') => 'm4a',
+                default => 'mp3',
+            }],
+            default => ['studio/videos', 'vid-', match (true) {
+                Str::contains($contentType, 'webm') => 'webm',
+                Str::contains($contentType, 'quicktime') => 'mov',
+                Str::contains($contentType, 'matroska') => 'mkv',
+                Str::contains($contentType, 'ogg') => 'ogv',
+                default => 'mp4',
+            }],
         };
-        $dir = $isImage ? 'studio/images' : 'studio/videos';
-        $name = ($isImage ? 'url-' : 'vid-').Str::lower(Str::random(24)).'.'.$ext;
+        $name = $prefix.Str::lower(Str::random(24)).'.'.$ext;
         Storage::disk('public')->putFileAs($dir, new File($tmp), $name);
         @unlink($tmp);
 
