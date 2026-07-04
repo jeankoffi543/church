@@ -11,6 +11,7 @@ import { isBackgroundLayer, imageHatch, type StudioLayer } from "./studio-layers
 import { resolveEmbed } from "./embed";
 import {
   attachMediaMeter,
+  attachStreamMeter,
   attachYouTube,
   getMonitorMuted,
   registerAudioProbe,
@@ -18,9 +19,16 @@ import {
   youtubeId,
   type AudioProbe,
   type MediaMeter,
+  type StreamMeter,
   type YouTubeController,
 } from "./studio-audio";
 import { getVideoController, registerVideoController, type VideoController } from "./studio-video";
+import {
+  acquireCameraStream,
+  getCameraStream,
+  setCameraStream,
+  subscribeCameraStreams,
+} from "./studio-camera";
 import { MONO } from "./studio-tokens";
 
 const EASING_MAP: Record<string, Easing> = {
@@ -382,9 +390,8 @@ export function CompositeLayer({
     );
   }
 
-  // Camera feed placeholder (background)
+  // Camera / capture — real getUserMedia preview, movable overlay
   if (layer.type === "camera") {
-    const meta = { label: "FLUX CAMÉRA · NDI", color: "rgba(255,255,255,.5)", hatch: "rgba(255,255,255,.03)", hatch2: "rgba(255,255,255,.06)" };
     return (
       <motion.div
         key={layer.id}
@@ -392,30 +399,34 @@ export function CompositeLayer({
         initial="initial"
         animate="animate"
         exit="exit"
-        {...selectProps}
-        className={cn("absolute inset-0 flex items-center justify-center", draggable && "cursor-pointer", ring)}
-        style={{
-          zIndex: z,
-          backgroundImage: `repeating-linear-gradient(45deg,${meta.hatch} 0 14px,${meta.hatch2} 14px 28px)`,
-        }}
+        data-layer
+        {...dragProps}
+        className={cn(
+          "absolute overflow-hidden rounded-xl bg-black",
+          movable && "cursor-move",
+          ring,
+        )}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
-        <div className="max-w-[80%] text-center">
-          <div className={cn("text-[13px] font-semibold tracking-[2px]", MONO)} style={{ color: meta.color }}>
-            {meta.label}
-          </div>
-          <div className="mt-1 truncate text-[10px] text-white/30">{layer.feedUrl || layer.name}</div>
-        </div>
+        {handles}
+        <CameraMedia layer={layer} audioOwner={audioOwner} />
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#c89af0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+          CAMÉRA
+        </span>
       </motion.div>
     );
   }
 
   // Image layer
   if (layer.type === "image") {
+    // H/V alignment picks which part of a cover image stays visible.
+    const bgPos = `${layer.style.textAlign ?? "center"} ${layer.style.textVerticalAlign ?? "center"}`;
     const bgStyle: React.CSSProperties = layer.imageUrl
       ? {
           backgroundImage: `url(${getImageUrl(layer.imageUrl)})`,
-          backgroundPosition: "center",
-          backgroundSize: "cover",
+          backgroundPosition: bgPos,
+          // Overlay images fit (keep ratio, no crop); full-frame backgrounds cover.
+          backgroundSize: isBg ? "cover" : "contain",
           backgroundRepeat: "no-repeat",
         }
       : {
@@ -818,6 +829,141 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
       autoPlay
       muted={!audioOwner || !primed || monitorMuted}
       loop={loop}
+      playsInline
+    />
+  );
+}
+
+/**
+ * The live media of a "Caméra / Capture" source (getUserMedia device). The audio
+ * owner (Preview) acquires ONE stream, plays it, publishes it for the Program to
+ * share, and meters its audio for real (local stream → not tainted). The fader /
+ * on-air mute scale the VU; local monitoring is off by default (anti-Larsen) and
+ * toggled per source (`listenLocal`), on top of the global monitor mute.
+ */
+function CameraMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+
+  const deviceId = layer.deviceId || "";
+  const audioDeviceId = layer.audioDeviceId;
+  const level = layer.audioLevel ?? 80;
+  const mutedSetting = layer.audioMuted ?? false; // on-air mute (drives the meter)
+  const listenLocal = layer.listenLocal ?? false;
+
+  // Live values for the probe (updated via effect, never read in render).
+  const audioRef = useRef({ level, mutedSetting });
+  useEffect(() => {
+    audioRef.current = { level, mutedSetting };
+  }, [level, mutedSetting]);
+
+  // Program (non-owner) shares the Preview's live stream.
+  const sharedStream = useSyncExternalStore(
+    subscribeCameraStreams,
+    () => getCameraStream(layer.id),
+    () => undefined,
+  );
+
+  // Owner: acquire the device stream once, publish it, meter its audio.
+  useEffect(() => {
+    if (!audioOwner || !deviceId) return;
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+    let meter: StreamMeter | null = null;
+    let unregisterProbe = () => {};
+    acquireCameraStream({ deviceId, audioDeviceId, withAudio: true })
+      .then((s) => {
+        if (cancelled) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        setError(null);
+        stream = s;
+        const el = videoRef.current;
+        if (el) {
+          el.srcObject = s;
+          void el.play().catch(() => {});
+        }
+        setCameraStream(layer.id, s);
+        meter = attachStreamMeter(s);
+        if (meter) {
+          const activeMeter = meter;
+          let peak = 0;
+          const probe: AudioProbe = {
+            getLevel: () => {
+              const { level: lv, mutedSetting: mm } = audioRef.current;
+              const raw = mm ? 0 : activeMeter.getLevel() * (lv / 100);
+              peak = Math.max(0, Math.min(100, peak + (raw - peak) * 0.5));
+              return peak;
+            },
+            isActive: () => {
+              const { level: lv, mutedSetting: mm } = audioRef.current;
+              return !mm && lv > 0 && activeMeter.hasAudio();
+            },
+          };
+          unregisterProbe = registerAudioProbe(layer.id, probe);
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(
+          e instanceof DOMException && e.name === "NotAllowedError"
+            ? "Autorisation caméra refusée."
+            : "Caméra indisponible (débranchée ?).",
+        );
+      });
+    return () => {
+      cancelled = true;
+      unregisterProbe();
+      meter?.dispose();
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      setCameraStream(layer.id, null);
+    };
+  }, [audioOwner, deviceId, audioDeviceId, layer.id]);
+
+  // Program: attach the shared live stream to this element.
+  useEffect(() => {
+    if (audioOwner) return;
+    const el = videoRef.current;
+    if (!el) return;
+    el.srcObject = sharedStream ?? null;
+    if (sharedStream) void el.play().catch(() => {});
+  }, [audioOwner, sharedStream]);
+
+  // Local monitor volume (only audible when listening locally).
+  useEffect(() => {
+    if (!audioOwner) return;
+    const el = videoRef.current;
+    if (el) el.volume = Math.max(0, Math.min(1, level / 100));
+  }, [audioOwner, level]);
+
+  if (!deviceId) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div className={cn("text-[12px] font-semibold tracking-[2px]", MONO)} style={{ color: "rgba(200,154,240,.85)" }}>
+          CAMÉRA
+        </div>
+        <div className="text-[10px] text-white/35">Sélectionnez un périphérique dans l&apos;inspecteur…</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div className={cn("text-[12px] font-semibold tracking-[2px] text-[#ff8a8a]", MONO)}>CAMÉRA</div>
+        <div className="px-3 text-[10px] leading-relaxed text-white/45">{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      className="pointer-events-none absolute inset-0 size-full object-cover"
+      autoPlay
+      muted={!audioOwner || !listenLocal || monitorMuted}
       playsInline
     />
   );

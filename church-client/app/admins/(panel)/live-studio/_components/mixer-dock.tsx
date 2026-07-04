@@ -123,7 +123,12 @@ export function MixerDock({
             const gain = ch.audioGain ?? 0;
             const balance = ch.audioBalance ?? 0;
             const muted = ch.audioMuted ?? false;
-            const hasSrc = ch.type === "audio" ? !!ch.device?.trim() : !!ch.feedUrl?.trim();
+            const hasSrc =
+              ch.type === "audio"
+                ? !!ch.device?.trim()
+                : ch.type === "camera"
+                  ? !!ch.deviceId
+                  : !!ch.feedUrl?.trim();
             const probed = hasAudioProbe(ch.id);
             // "Capturable" = real probe registered, or a hardware audio device.
             const capturable = probed || ch.type === "audio";

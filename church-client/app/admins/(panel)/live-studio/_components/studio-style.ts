@@ -60,7 +60,9 @@ export const getContainerStyle = (s: StudioSettings): React.CSSProperties => {
   let borderRadius = `${s.containerBorderRadius}px`;
   if (s.containerShape === "rectangle") borderRadius = "0px";
   if (s.containerShape === "capsule") borderRadius = "9999px";
-  if (s.containerShape === "asymmetric") borderRadius = "32px 6px 32px 6px";
+  if (s.containerShape === "asymmetric") {
+    borderRadius = `${s.containerBorderRadius}px 6px ${s.containerBorderRadius}px 6px`;
+  }
 
   const isGradient = s.containerBg?.includes("gradient");
 

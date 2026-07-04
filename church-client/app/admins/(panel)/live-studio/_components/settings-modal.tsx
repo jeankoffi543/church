@@ -51,6 +51,10 @@ export type SettingsModalProps = {
   onEmbedUrl: (v: string) => void;
   streamKey: string;
   onStreamKey: (v: string) => void;
+  facebookRtmpsUrl: string;
+  onFacebookRtmpsUrl: (v: string) => void;
+  facebookStreamKey: string;
+  onFacebookStreamKey: (v: string) => void;
   fallbackImage: string;
   getPreviewUrl: (u: string) => string;
   onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -296,6 +300,40 @@ function StreamPanel(p: SettingsModalProps) {
             className={cn(FIELD, MONO, "text-[12px]")}
           />
         </label>
+
+        <div className="mt-1 rounded-[11px] border border-white/8 bg-white/[.02] p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Radio className="size-4 text-studio-purple" />
+            <span className="text-[12px] font-bold tracking-wide text-white">Diffusion Facebook</span>
+          </div>
+          <div className="flex flex-col gap-4">
+            <label className="block">
+              <FieldLabel>URL du serveur (RTMPS)</FieldLabel>
+              <input
+                value={p.facebookRtmpsUrl}
+                onChange={(e) => p.onFacebookRtmpsUrl(e.target.value)}
+                placeholder="rtmps://live-api-s.facebook.com:443/rtmp/"
+                className={cn(FIELD, MONO, "text-[12px]")}
+              />
+              <span className="mt-2 block text-[10.5px] text-white/40">
+                Laissez vide pour l&apos;URL Facebook par défaut.
+              </span>
+            </label>
+            <label className="block">
+              <FieldLabel>Clé de stream Facebook</FieldLabel>
+              <input
+                value={p.facebookStreamKey}
+                onChange={(e) => p.onFacebookStreamKey(e.target.value)}
+                type="password"
+                placeholder="Collez la clé depuis Facebook Live Producer"
+                className={cn(FIELD, MONO, "text-[12px]")}
+              />
+              <span className="mt-2 block text-[10.5px] text-studio-sandbox/80">
+                ⚠️ Reste sur notre serveur, jamais exposée. Ne la partagez pas.
+              </span>
+            </label>
+          </div>
+        </div>
 
         <div>
           <FieldLabel>Image de repli (hors-ligne)</FieldLabel>

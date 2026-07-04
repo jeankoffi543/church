@@ -87,10 +87,14 @@ export function StageMonitor({
           {visible.map((layer, idx) => {
             const z = visible.length - idx;
             const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
+            // Camera/video keep a STABLE key so an animation replay (animNonce bump)
+            // doesn't remount them — a camera remount re-runs getUserMedia (black
+            // flash) and a video would reload. Images DO remount so they replay.
+            const stableKey = layer.type === "camera" || layer.type === "video";
 
             return (
               <CompositeLayer
-                key={`${layer.id}-${animNonce}`}
+                key={stableKey ? layer.id : `${layer.id}-${animNonce}`}
                 layer={effective}
                 verse={layer.type === "bible" ? bibleVerse : undefined}
                 z={z}
