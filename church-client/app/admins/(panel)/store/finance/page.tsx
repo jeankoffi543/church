@@ -1,86 +1,157 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-const FINANCE_KPIS = [
+const KPI_STYLES = [
   {
-    label: "Revenu (6 mois)",
-    value: "3 007k",
     bg: "bg-gradient-to-br from-[#3a2a6e] to-[#160f33]",
     textColor: "text-white",
     labelColor: "text-white/70",
-    trend: "+22%",
     trendColor: "text-[#e2b85f]",
     trendBg: "bg-[rgba(226,184,95,0.18)]",
   },
   {
-    label: "Commandes",
-    value: "318",
     bg: "bg-white",
     textColor: "text-[#211648]",
     labelColor: "text-[#9a93ad]",
-    trend: "+14%",
     trendColor: "text-[#1f8a5b]",
     trendBg: "bg-[rgba(31,138,91,0.12)]",
   },
   {
-    label: "Panier moyen",
-    value: "18 500",
     bg: "bg-white",
     textColor: "text-[#211648]",
     labelColor: "text-[#9a93ad]",
-    trend: "+6%",
     trendColor: "text-[#1f8a5b]",
     trendBg: "bg-[rgba(31,138,91,0.12)]",
   },
   {
-    label: "Taux de conversion",
-    value: "4,8%",
     bg: "bg-white",
     textColor: "text-[#211648]",
     labelColor: "text-[#9a93ad]",
-    trend: "+0,7pt",
     trendColor: "text-[#1f8a5b]",
     trendBg: "bg-[rgba(31,138,91,0.12)]",
   },
-];
-
-const REVENUE_DATA = [
-  { month: "Jan", value: 340000, label: "340k" },
-  { month: "Fév", value: 410000, label: "410k" },
-  { month: "Mar", value: 385000, label: "385k" },
-  { month: "Avr", value: 520000, label: "520k" },
-  { month: "Mai", value: 610000, label: "610k" },
-  { month: "Juin", value: 742000, label: "742k" },
-];
-
-const CATEGORY_BREAKDOWN = [
-  { name: "Livres", pct: 42, fill: "from-[#e2b85f] to-[#c8902e]" },
-  { name: "Vêtements", pct: 28, fill: "from-[#5a4a92] to-[#3a2a6e]" },
-  { name: "Musique", pct: 16, fill: "from-[#7a4fd6] to-[#5a2fb0]" },
-  { name: "Accessoires", pct: 10, fill: "from-[#2a9d8f] to-[#1f8a5b]" },
-  { name: "Onction", pct: 4, fill: "from-[#d98a5b] to-[#c86a3e]" },
-];
-
-const TRANSACTIONS = [
-  { id: "MFM-2041", method: "Orange Money", date: "28 juin 2026", amount: "34 000 FCFA", short: "OM", iconBg: "bg-[#f57c00]" },
-  { id: "MFM-2040", method: "Wave", date: "28 juin 2026", amount: "18 000 FCFA", short: "W", iconBg: "bg-[#1dc4ff]" },
-  { id: "MFM-2039", method: "Carte bancaire", date: "27 juin 2026", amount: "13 000 FCFA", short: "💳", iconBg: "bg-[#3a2a6e]" },
-  { id: "MFM-2038", method: "MTN Money", date: "26 juin 2026", amount: "13 500 FCFA", short: "MTN", iconBg: "bg-[#f5b400]" },
-  { id: "MFM-2037", method: "Orange Money", date: "25 juin 2026", amount: "36 000 FCFA", short: "OM", iconBg: "bg-[#f57c00]" },
-];
-
-const TOP_PRODUCTS = [
-  { rank: 1, name: "Bible d'étude « Maison du Feu »", image: "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=200&q=80&auto=format&fit=crop", sales: 155, revenue: "3 875k" },
-  { rank: 2, name: "Album Louange « Feu du Ciel »", image: "https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?w=200&q=80&auto=format&fit=crop", sales: 155, revenue: "1 240k" },
-  { rank: 3, name: "T-shirt « Génération Feu »", image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=200&q=80&auto=format&fit=crop", sales: 108, revenue: "972k" },
-  { rank: 4, name: "Mug « Grâce chaque matin »", image: "https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=200&q=80&auto=format&fit=crop", sales: 83, revenue: "415k" },
 ];
 
 export default function AdminStoreFinancePage() {
-  const maxRevenue = Math.max(...REVENUE_DATA.map((d) => d.value));
+  const [kpis, setKpis] = useState<any[]>([]);
+  const [revenueData, setRevenueData] = useState<any[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [topProducts, setTopProducts] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      try {
+        const { getAdminStoreAnalytics } = await import("@/lib/admin-api");
+        const data = await getAdminStoreAnalytics();
+        if (data) {
+          if (data.kpis && data.kpis.length > 0) {
+            const mappedKpis = data.kpis.map((k: any, idx: number) => {
+              const style = KPI_STYLES[idx] || KPI_STYLES[0];
+              return {
+                label: k.label,
+                value: k.value,
+                bg: style.bg,
+                textColor: style.textColor,
+                labelColor: style.labelColor,
+                trend: k.trend,
+                trendColor: style.trendColor,
+                trendBg: style.trendBg,
+              };
+            });
+            setKpis(mappedKpis);
+          }
+          if (data.revenue_by_month && data.revenue_by_month.length > 0) {
+            const mappedRevenue = data.revenue_by_month.map((r: any) => {
+              const valInK = Math.round(r.value / 1000);
+              return {
+                month: r.month,
+                value: r.value,
+                label: `${valInK}k`
+              };
+            });
+            setRevenueData(mappedRevenue);
+          }
+          if (data.category_breakdown && data.category_breakdown.length > 0) {
+            const fills = [
+              "from-[#e2b85f] to-[#c8902e]",
+              "from-[#5a4a92] to-[#3a2a6e]",
+              "from-[#7a4fd6] to-[#5a2fb0]",
+              "from-[#2a9d8f] to-[#1f8a5b]",
+              "from-[#d98a5b] to-[#c86a3e]"
+            ];
+            const mappedCategories = data.category_breakdown.map((c: any, idx: number) => {
+              return {
+                name: c.name,
+                pct: c.pct,
+                fill: fills[idx % fills.length]
+              };
+            });
+            setCategoryBreakdown(mappedCategories);
+          }
+          if (data.recent_transactions && data.recent_transactions.length > 0) {
+            const mappedTransactions = data.recent_transactions.map((t: any) => {
+              const bgMap: Record<string, string> = {
+                "OM": "bg-[#f57c00]",
+                "W": "bg-[#1dc4ff]",
+                "MTN": "bg-[#f5b400]",
+                "💳": "bg-[#3a2a6e]"
+              };
+              return {
+                id: t.id,
+                method: t.method,
+                date: t.date,
+                amount: t.amount,
+                short: t.short,
+                iconBg: bgMap[t.short] || "bg-[#3a2a6e]"
+              };
+            });
+            setTransactions(mappedTransactions);
+          }
+          if (data.top_products && data.top_products.length > 0) {
+            const mappedTop = data.top_products.map((p: any) => {
+              return {
+                rank: p.rank,
+                name: p.name,
+                image: p.image,
+                sales: p.sales,
+                revenue: p.revenue
+              };
+            });
+            setTopProducts(mappedTop);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading analytics:", err);
+      }
+    };
+    loadAnalytics();
+  }, []);
+
+  const handleExport = async () => {
+    try {
+      const { exportAdminStoreAnalyticsCsv } = await import("@/lib/admin-api");
+      const csv = await exportAdminStoreAnalyticsCsv();
+      if (csv) {
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `rapport_finance_boutique_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err: any) {
+      alert(err.message || "Erreur lors de l'exportation");
+    }
+  };
+
+  const maxRevenue = Math.max(...revenueData.map((d) => d.value), 1);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -95,7 +166,7 @@ export default function AdminStoreFinancePage() {
           </h1>
         </div>
         <button
-          onClick={() => alert("Rapport exporté (simulé)")}
+          onClick={handleExport}
           className="rounded-xl border border-[rgba(40,25,80,0.14)] bg-white px-5 py-3 text-sm font-bold text-[#3a2a6e] hover:border-[#c8902e] transition select-none cursor-pointer"
         >
           ⬇ Exporter le rapport
@@ -104,7 +175,7 @@ export default function AdminStoreFinancePage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {FINANCE_KPIS.map((k, i) => (
+        {kpis.map((k, i) => (
           <div
             key={i}
             className={cn(
@@ -145,9 +216,9 @@ export default function AdminStoreFinancePage() {
             </span>
           </div>
           <div className="flex items-end justify-between gap-3 h-[220px] pt-2.5">
-            {REVENUE_DATA.map((d, i) => {
+            {revenueData.map((d, i) => {
               const pct = (d.value / maxRevenue) * 100;
-              const isLast = i === REVENUE_DATA.length - 1;
+              const isLast = i === revenueData.length - 1;
               return (
                 <div
                   key={d.month}
@@ -180,7 +251,7 @@ export default function AdminStoreFinancePage() {
             Par catégorie
           </h2>
           <div className="flex flex-col gap-4">
-            {CATEGORY_BREAKDOWN.map((c) => (
+            {categoryBreakdown.map((c) => (
               <div key={c.name} className="space-y-1.5">
                 <div className="flex justify-between text-xs font-semibold">
                   <span className="text-[#211648] font-bold">{c.name}</span>
@@ -206,7 +277,7 @@ export default function AdminStoreFinancePage() {
             Dernières transactions
           </h2>
           <div className="flex flex-col divide-y divide-[rgba(40,25,80,0.06)]">
-            {TRANSACTIONS.map((t) => (
+            {transactions.map((t) => (
               <div
                 key={t.id}
                 className="flex items-center gap-[14px] py-3.5 first:pt-0 last:pb-0"
@@ -241,7 +312,7 @@ export default function AdminStoreFinancePage() {
             Meilleures ventes
           </h2>
           <div className="flex flex-col gap-[14px]">
-            {TOP_PRODUCTS.map((p) => (
+            {topProducts.map((p) => (
               <div key={p.rank} className="flex items-center gap-3">
                 <span className="font-display text-[22px] font-bold italic text-[#c8902e] w-[26px]">
                   {p.rank}

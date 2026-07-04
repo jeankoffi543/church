@@ -51,6 +51,7 @@ final class AccessControl
                 ['name' => 'manage_sermons', 'label' => 'Gérer les messages et la médiathèque'],
                 ['name' => 'manage_access', 'label' => 'Gérer les accès, groupes et permissions'],
                 ['name' => 'manage_ministries', 'label' => 'Créer et configurer les ministères et assigner les chefs'],
+                ['name' => 'manage_store', 'label' => 'Gérer la boutique (produits, commandes, clients, finances)'],
             ],
             'Tableau de bord' => [
                 ['name' => 'view_dashboard', 'label' => 'Accéder au tableau de bord'],
@@ -170,6 +171,7 @@ final class AccessControl
                 'manage_church_vision',
                 'view_branches',
                 'manage_branches',
+                'manage_store',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

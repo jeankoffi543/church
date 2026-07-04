@@ -14,6 +14,8 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { assetUrl } from "@/lib/asset-url";
+import { getStoreProducts } from "@/lib/public-api";
 
 interface VariantOption {
   value: string;
@@ -43,6 +45,7 @@ interface Product {
   variants: VariantGroup[];
   category: string;
   badge?: string;
+  featured?: boolean;
 }
 
 interface OrderItem {
@@ -56,136 +59,7 @@ interface OrderItem {
   image?: string;
 }
 
-const MOCK_PRODUCTS: Product[] = [
-  {
-    id: "1",
-    title: "Bible d'étude « Maison du Feu »",
-    description: "L'édition annotée pensée pour les combattants de la prière.",
-    base_price: 25000,
-    oldPrice: 32000,
-    images: [
-      "https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=600&q=80&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600&q=80&auto=format&fit=crop"
-    ],
-    is_digital: false,
-    status: "active",
-    category: "Livres",
-    badge: "Vedette",
-    variants: [
-      {
-        name: "Couleur",
-        type: "color",
-        options: [
-          { value: "Bordeaux", color: "#800020" },
-          { value: "Noir", color: "#000000" },
-          { value: "Marine", color: "#000080" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "2",
-    title: "Recueil « Vivre par la Foi »",
-    description: "40 méditations pour ancrer chaque journée dans la Parole de Dieu.",
-    base_price: 12000,
-    images: ["https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Livres",
-    badge: "Nouveau",
-    variants: []
-  },
-  {
-    id: "3",
-    title: "T-shirt « Génération Feu »",
-    description: "Coton bio épais, sérigraphie dorée.",
-    base_price: 9000,
-    images: ["https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Vêtements",
-    variants: [
-      { name: "Taille", type: "text", options: [{ value: "S" }, { value: "M" }, { value: "L" }, { value: "XL" }] },
-      {
-        name: "Couleur",
-        type: "color",
-        options: [
-          { value: "Blanc", color: "#ffffff" },
-          { value: "Noir", color: "#000000" },
-          { value: "Violet", color: "#7f00ff" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "4",
-    title: "Casquette brodée MFM",
-    description: "Casquette structurée, logo brodé fil or.",
-    base_price: 7500,
-    oldPrice: 9000,
-    images: ["https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Vêtements",
-    badge: "Promo",
-    variants: [
-      {
-        name: "Couleur",
-        type: "color",
-        options: [
-          { value: "Noir", color: "#000000" },
-          { value: "Beige", color: "#f5f5dc" },
-          { value: "Marine", color: "#000080" }
-        ]
-      }
-    ]
-  },
-  {
-    id: "5",
-    title: "Mug « Grâce chaque matin »",
-    description: "Céramique 350ml, verset inspirant.",
-    base_price: 5000,
-    images: ["https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Accessoires",
-    variants: []
-  },
-  {
-    id: "6",
-    title: "Tote bag « Maison du Feu »",
-    description: "Tote bag en toile robuste pour le quotidien.",
-    base_price: 6000,
-    images: ["https://images.unsplash.com/photo-1591561954557-26941169b49e?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Accessoires",
-    badge: "Nouveau",
-    variants: []
-  },
-  {
-    id: "7",
-    title: "Album Louange « Feu du Ciel »",
-    description: "Le nouvel album de louange du groupe MFM Worship.",
-    base_price: 8000,
-    images: ["https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?w=600&auto=format&fit=crop"],
-    is_digital: true,
-    status: "active",
-    category: "Musique",
-    variants: []
-  },
-  {
-    id: "8",
-    title: "Bougie de prière parfumée",
-    description: "Cire de soja naturelle parfumée, idéale pour vos temps de prière.",
-    base_price: 4500,
-    images: ["https://images.unsplash.com/photo-1602523961358-f9f03dd557db?w=600&auto=format&fit=crop"],
-    is_digital: false,
-    status: "active",
-    category: "Onction",
-    variants: []
-  }
-];
+const MOCK_PRODUCTS: Product[] = [];
 
 const CATEGORIES = ["Tous", "Livres", "Vêtements", "Musique", "Accessoires", "Onction"];
 
@@ -202,6 +76,10 @@ export default function ClientStoreCatalogPage() {
   const [onlyPhysical, setOnlyPhysical] = useState(false);
   const [onlyDigital, setOnlyDigital] = useState(false);
   const [sortBy, setSortBy] = useState("featured");
+
+  // Products from API (falls back to MOCK_PRODUCTS if empty)
+  const [products, setProducts] = useState<Product[]>([]);
+  const [visibleCount, setVisibleCount] = useState(8);
 
   // Cart state persisted via localStorage
   const [cartItems, setCartItems] = useState<OrderItem[]>([]);
@@ -237,7 +115,71 @@ export default function ClientStoreCatalogPage() {
         // Fallback
       }
     };
+
+    // Load products from API
+    const loadProducts = async () => {
+      try {
+        const data = await getStoreProducts();
+        if (data && data.length > 0) {
+          const formatted: Product[] = data.map((p: any) => {
+            const variantsGroup: VariantGroup[] = (p.attributes || []).map((attr: any) => {
+              return {
+                name: attr.name,
+                type: attr.type === "color" ? "color" : "text",
+                options: (attr.values || []).map((val: any) => {
+                  if (typeof val === "object" && val !== null) {
+                    return {
+                      value: val.value,
+                      color: val.color || undefined,
+                      image: val.image || undefined,
+                      price: val.price || undefined,
+                      oldPrice: val.oldPrice || undefined,
+                      stock: val.stock !== undefined ? val.stock : undefined,
+                      description: val.description || undefined,
+                    };
+                  }
+                  const isColor = attr.type === "color";
+                  return {
+                    value: String(val),
+                    color: isColor ? String(val) : undefined,
+                  };
+                }),
+              };
+            });
+
+            return {
+              id: String(p.id),
+              title: p.title,
+              description: p.description || "",
+              base_price: Number(p.base_price) || 0,
+              oldPrice: p.old_price ? Number(p.old_price) : undefined,
+              images: (() => {
+                const arr = p.images && p.images.length > 0 
+                  ? p.images.map((img: any) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean)
+                  : [];
+                return arr.length > 0 ? arr : ["https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80"];
+              })(),
+              is_digital: Boolean(p.is_digital),
+              featured: Boolean(p.is_featured),
+              unlimited_stock: Boolean(p.unlimited_stock),
+              low_stock_threshold: p.low_stock_threshold !== null && p.low_stock_threshold !== undefined ? Number(p.low_stock_threshold) : undefined,
+              status: p.status || "active",
+              variants: variantsGroup,
+              category: p.category || "Autre",
+              badge: p.badge || undefined,
+            };
+          });
+          setProducts(formatted);
+        } else {
+          setProducts([]);
+        }
+      } catch {
+        setProducts([]);
+      }
+    };
+
     loadBoutiqueSettings();
+    loadProducts();
   }, []);
 
   const saveCart = (items: OrderItem[]) => {
@@ -259,7 +201,7 @@ export default function ClientStoreCatalogPage() {
   };
 
   const filteredProducts = useMemo(() => {
-    let result = MOCK_PRODUCTS.filter((p) => {
+    let result = products.filter((p) => {
       // 1. Category filter
       const matchesCategory = selectedCategory === "Tous" || p.category === selectedCategory;
 
@@ -304,7 +246,50 @@ export default function ClientStoreCatalogPage() {
     }
 
     return result;
+  }, [products, selectedCategory, searchQuery, minPrice, maxPrice, onlyPromo, onlyInStock, onlyPhysical, onlyDigital, sortBy]);
+
+  const displayedProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
+
+  useEffect(() => {
+    setVisibleCount(8);
   }, [selectedCategory, searchQuery, minPrice, maxPrice, onlyPromo, onlyInStock, onlyPhysical, onlyDigital, sortBy]);
+
+  useEffect(() => {
+    const sentinel = document.getElementById("infinite-scroll-sentinel");
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setVisibleCount((prev) => prev + 8);
+      }
+    }, { threshold: 0.1 });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [displayedProducts, filteredProducts.length]);
+
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  const featuredProducts = useMemo(() => {
+    const list = products.filter((p) => p.featured);
+    return list.length > 0 ? list.slice(0, 5) : (products.length > 0 ? [products[0]] : []);
+  }, [products]);
+
+  const featuredProduct = featuredProducts[currentSlide];
+
+  const handlePrevSlide = () => {
+    setCurrentSlide((prev) => (prev === 0 ? featuredProducts.length - 1 : prev - 1));
+  };
+
+  const handleNextSlide = () => {
+    setCurrentSlide((prev) => (prev === featuredProducts.length - 1 ? 0 : prev + 1));
+  };
+
+  useEffect(() => {
+    setCurrentSlide(0);
+  }, [products]);
 
   const handleQuickAdd = (p: Product) => {
     const selectedAttrs: Record<string, string> = {};
@@ -428,37 +413,37 @@ export default function ClientStoreCatalogPage() {
         </div>
 
         {/* Featured Product Hero Section */}
-        {selectedCategory === "Tous" && searchQuery === "" && minPrice === "" && maxPrice === "" && !onlyPromo && !onlyInStock && !onlyPhysical && !onlyDigital && (
-          <div className="rounded-[26px] overflow-hidden bg-gradient-to-br from-[#3a2a6e] to-[#160f33] shadow-xl p-8 md:p-12 flex flex-col md:flex-row gap-8 items-center text-white relative">
+        {selectedCategory === "Tous" && searchQuery === "" && minPrice === "" && maxPrice === "" && !onlyPromo && !onlyInStock && !onlyPhysical && !onlyDigital && featuredProduct && (
+          <div className="rounded-[26px] overflow-hidden bg-gradient-to-br from-[#3a2a6e] to-[#160f33] shadow-xl p-8 md:p-12 flex flex-col md:flex-row gap-8 items-center text-white relative group">
             <div className="absolute top-0 right-0 w-48 h-48 bg-radial-gradient(circle,rgba(226,184,95,.28),transparent 70%) pointer-events-none" />
             <div className="flex-1 space-y-4">
               <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-[#e2b85f] to-[#c8902e] text-[#211648] px-3 py-1.5 rounded-lg shadow-sm">
                 ✦ Produit en vedette
               </span>
               <h2 className="font-display text-3xl md:text-5xl font-bold italic leading-tight text-white">
-                {MOCK_PRODUCTS[0].title}
+                {featuredProduct.title}
               </h2>
               <p className="text-sm text-white/80 max-w-md font-normal leading-relaxed">
-                {MOCK_PRODUCTS[0].description}
+                {featuredProduct.description}
               </p>
               <div className="flex items-baseline gap-2 pt-2">
                 <span className="font-display text-3xl font-bold text-[#e2b85f]">
-                  {MOCK_PRODUCTS[0].base_price.toLocaleString("fr-FR")} FCFA
+                  {featuredProduct.base_price.toLocaleString("fr-FR")} FCFA
                 </span>
-                {MOCK_PRODUCTS[0].oldPrice && (
+                {featuredProduct.oldPrice && (
                   <span className="text-sm line-through text-white/40">
-                    {MOCK_PRODUCTS[0].oldPrice.toLocaleString("fr-FR")} FCFA
+                    {featuredProduct.oldPrice.toLocaleString("fr-FR")} FCFA
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap gap-3 pt-4">
-                <Link href={`/store/products/${MOCK_PRODUCTS[0].id}`}>
+                <Link href={`/store/products/${featuredProduct.id}`}>
                   <Button className="bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#211648] font-bold text-xs h-12 px-6 rounded-xl shadow-lg shadow-[#c8902e]/20 transition-all hover:scale-102 cursor-pointer border-none">
                     Découvrir le produit
                   </Button>
                 </Link>
                 <Button
-                  onClick={() => handleQuickAdd(MOCK_PRODUCTS[0])}
+                  onClick={() => handleQuickAdd(featuredProduct)}
                   className="bg-white/10 text-white border border-white/20 hover:bg-white/20 transition text-xs h-12 px-5 rounded-xl cursor-pointer"
                 >
                   Ajouter au panier
@@ -466,14 +451,50 @@ export default function ClientStoreCatalogPage() {
               </div>
             </div>
             <div className="relative size-60 md:size-80 rounded-2xl overflow-hidden shadow-2xl border border-white/10 shrink-0 bg-[#211648]">
-              <Image
-                src={MOCK_PRODUCTS[0].images[0]}
-                alt=""
-                fill
-                unoptimized
-                className="object-cover"
-              />
+              {featuredProduct.images?.[0] && typeof featuredProduct.images[0] === "string" && featuredProduct.images[0].trim() !== "" && (
+                <Image
+                  src={featuredProduct.images[0]}
+                  alt=""
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              )}
             </div>
+
+            {/* Slider Navigation Controls */}
+            {featuredProducts.length > 1 && (
+              <>
+                <button
+                  onClick={handlePrevSlide}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-9 rounded-full bg-white/10 border border-white/15 hover:bg-white/25 text-white flex items-center justify-center transition cursor-pointer z-10 opacity-0 group-hover:opacity-100"
+                  aria-label="Slide précédent"
+                >
+                  ←
+                </button>
+                <button
+                  onClick={handleNextSlide}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 size-9 rounded-full bg-white/10 border border-white/15 hover:bg-white/25 text-white flex items-center justify-center transition cursor-pointer z-10 opacity-0 group-hover:opacity-100"
+                  aria-label="Slide suivant"
+                >
+                  →
+                </button>
+
+                {/* Slider Indicator Dots */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+                  {featuredProducts.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentSlide(idx)}
+                      className={cn(
+                        "size-1.5 rounded-full transition-all cursor-pointer",
+                        currentSlide === idx ? "bg-[#e2b85f] w-3" : "bg-white/30 hover:bg-white/60"
+                      )}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -594,7 +615,7 @@ export default function ClientStoreCatalogPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-              {filteredProducts.map((p) => {
+              {displayedProducts.map((p) => {
                 const hasDiscount = p.oldPrice !== undefined;
                 return (
                   <div
@@ -621,7 +642,7 @@ export default function ClientStoreCatalogPage() {
                     <Link href={`/store/products/${p.id}`} className="flex-1 flex flex-col cursor-pointer">
                       {/* Product Image */}
                       <div className="relative aspect-square w-full bg-[#f0eaf6] overflow-hidden">
-                        {p.images[0] ? (
+                        {p.images[0] && typeof p.images[0] === "string" && p.images[0].trim() !== "" ? (
                           <Image
                             src={p.images[0]}
                             alt={p.title}
@@ -703,6 +724,13 @@ export default function ClientStoreCatalogPage() {
                 </div>
               )}
             </div>
+
+            {/* Infinite scroll sentinel */}
+            {visibleCount < filteredProducts.length && (
+              <div id="infinite-scroll-sentinel" className="h-16 flex items-center justify-center text-xs font-bold text-[#9a93ad]">
+                Chargement de la suite...
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -744,7 +772,7 @@ export default function ClientStoreCatalogPage() {
                     className="p-4 rounded-xl bg-white border border-[#281950]/8 flex gap-4 items-center shadow-xs relative"
                   >
                     <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-[#f0eaf6]">
-                      {item.image ? (
+                      {item.image && typeof item.image === "string" && item.image.trim() !== "" ? (
                         <Image
                           src={item.image}
                           alt=""
@@ -766,7 +794,7 @@ export default function ClientStoreCatalogPage() {
                       {item.selected_attributes && Object.keys(item.selected_attributes).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {Object.entries(item.selected_attributes).map(([k, v]) => {
-                            const isColor = v.startsWith("#") && v.length <= 7;
+                            const isColor = typeof v === "string" && v.startsWith("#") && v.length <= 7;
                             return (
                               <span
                                 key={`${item.id}-${k}`}

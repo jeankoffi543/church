@@ -7,6 +7,7 @@ import { Check, ShieldCheck, ArrowRight, ArrowLeft, ShoppingBag } from "lucide-r
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { placeStoreOrder } from "@/lib/public-api";
 
 interface OrderItem {
   id: string;
@@ -73,6 +74,8 @@ export default function CheckoutPage() {
   // Order success details
   const [orderId, setOrderId] = useState("");
   const [orderTotal, setOrderTotal] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -155,21 +158,60 @@ export default function CheckoutPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (cartItems.length === 0) return;
+    setIsSubmitting(true);
+    setSubmitError("");
 
-    // Generate simulated order reference ID
-    const generatedId = `MFM-${Math.floor(1000 + Math.random() * 9000)}`;
-    setOrderId(generatedId);
-    setOrderTotal(total);
+    const paymentMethodMap: Record<string, string> = {
+      wave: "Wave",
+      orange: "Orange Money",
+      mtn: "MTN Money",
+      card: "Carte bancaire",
+      cash: "Espèces",
+    };
+    const paymentMethod = paymentMethodMap[payKey] || payKey;
 
-    // Clear cart
-    setCartItems([]);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("mfm_cart");
+    const payload = {
+      customer: {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+      },
+      items: cartItems.map((item) => ({
+        product_id: item.product_id,
+        product_title: item.product_title,
+        variant_id: item.variant_id || null,
+        quantity: item.quantity,
+        price: item.price,
+        selected_attributes: item.selected_attributes || null,
+      })),
+      delivery_key: deliveryKey,
+      payment_method: paymentMethod,
+    };
+
+    try {
+      const response = await placeStoreOrder(payload);
+      if (response && response.data) {
+        setOrderId(response.data.reference || `MFM-${response.data.id}`);
+        setOrderTotal(response.data.total_amount || total);
+
+        // Clear cart
+        setCartItems([]);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("mfm_cart");
+        }
+
+        setStep(3);
+      } else {
+        setSubmitError("Une erreur inattendue est survenue.");
+      }
+    } catch (err: any) {
+      setSubmitError(err.message || "Une erreur est survenue lors de l'enregistrement de votre commande.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setStep(3);
   };
 
   return (
@@ -406,20 +448,29 @@ export default function CheckoutPage() {
                   )}
 
                   {/* Navigation Actions */}
-                  <div className="flex gap-3 pt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => setStep(1)}
-                      className="h-12 rounded-xl border-[#281950]/16 px-6 font-bold text-[#3a2a6e] hover:bg-[#3a2a6e]/5 cursor-pointer"
-                    >
-                      ← Retour
-                    </Button>
-                    <Button
-                      onClick={handlePlaceOrder}
-                      className="flex-1 bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#211648] font-extrabold h-12 rounded-xl shadow-lg shadow-[#c8902e]/20 transition-all hover:brightness-105 active:scale-98 cursor-pointer border-none"
-                    >
-                      Payer {total.toLocaleString("fr-FR")} FCFA
-                    </Button>
+                  <div className="space-y-3 pt-4">
+                    {submitError && (
+                      <div className="bg-[#c9536b]/10 border border-[#c9536b]/20 text-[#c9536b] rounded-xl p-3.5 text-xs font-semibold">
+                        {submitError}
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => setStep(1)}
+                        disabled={isSubmitting}
+                        className="h-12 rounded-xl border-[#281950]/16 px-6 font-bold text-[#3a2a6e] hover:bg-[#3a2a6e]/5 cursor-pointer"
+                      >
+                        ← Retour
+                      </Button>
+                      <Button
+                        onClick={handlePlaceOrder}
+                        disabled={isSubmitting || cartItems.length === 0}
+                        className="flex-1 bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#211648] font-extrabold h-12 rounded-xl shadow-lg shadow-[#c8902e]/20 transition-all hover:brightness-105 active:scale-98 cursor-pointer border-none"
+                      >
+                        {isSubmitting ? "Traitement en cours..." : `Payer ${total.toLocaleString("fr-FR")} FCFA`}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -433,7 +484,7 @@ export default function CheckoutPage() {
                 {cartItems.map((item) => (
                   <div key={item.id} className="flex gap-3 items-start">
                     <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-[#f0eaf6] border border-[#281950]/6">
-                      {item.image ? (
+                      {item.image && item.image.trim() !== "" ? (
                         <Image
                           src={item.image}
                           alt=""

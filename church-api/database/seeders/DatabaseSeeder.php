@@ -35,6 +35,7 @@ class DatabaseSeeder extends Seeder
             BranchSeeder::class,
             PrayerAndContactSeeder::class,
             LargeScaleSeeder::class,
+            ProductSeeder::class,
         ]);
     }
 }

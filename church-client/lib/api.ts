@@ -1141,3 +1141,8 @@ export async function getLatestPastLive(): Promise<PastLive | null> {
   const json = await apiGet<{ data: ApiPastLive }>("/public/past-lives/latest", ["past-lives"], { noStore: true });
   return json?.data ? mapPastLive(json.data) : null;
 }
+
+export async function getStoreProduct(id: string): Promise<any | null> {
+  const json = await apiGet<{ data: any }>(`/public/store/products/${id}`, ["products"]);
+  return json?.data ?? null;
+}

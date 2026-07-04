@@ -5,6 +5,8 @@ export interface Product {
   base_price: number;
   images: string[];
   is_digital: boolean;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
   status: 'active' | 'draft';
   attributes?: ProductAttribute[];
   variants?: ProductVariant[];
@@ -24,6 +26,8 @@ export interface ProductVariant {
   stock_count: number;
   image_override?: string; // Specific image URL for this variant
   description_override?: string; // Specific description for this variant
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
   attributes: Record<string, string>; // e.g., {"Couleur": "#b270ff", "Format": "Couverture rigide"}
 }
 

@@ -7,6 +7,37 @@ import { ShoppingBag, X, Plus, Minus, Check, AlertTriangle, ArrowRight } from "l
 import { Product, ProductVariant } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { assetUrl } from "@/lib/asset-url";
+
+const FRENCH_COLORS_MAP: Record<string, string> = {
+  "blanc": "#ffffff",
+  "noir": "#000000",
+  "bordeaux": "#800020",
+  "marine": "#000080",
+  "violet": "#7a4fd6",
+  "or": "#c8902e",
+  "bleu nuit": "#160f33",
+  "beige": "#f5f5dc",
+  "gris": "#808080",
+  "rouge": "#ff0000",
+  "bleu": "#0000ff",
+  "vert": "#008000",
+  "jaune": "#ffff00",
+  "rose": "#ffc0cb",
+  "marron": "#800000"
+};
+
+const HEX_TO_NAMES_MAP: Record<string, string> = {
+  "#160f33": "Bleu Nuit",
+  "#c8902e": "Or",
+  "#c9536b": "Bordeaux",
+  "#ffffff": "Blanc",
+  "#000000": "Noir",
+  "#7a4fd6": "Violet",
+  "#800020": "Bordeaux",
+  "#000080": "Marine",
+  "#f5f5dc": "Beige"
+};
 
 export interface ProductAttributeRich {
   name: string;
@@ -83,16 +114,20 @@ export function ProductView({ product }: ProductViewProps) {
   // Find matching variant based on selections
   const selectedVariant = useMemo<ProductVariant | undefined>(() => {
     if (!product.variants || product.variants.length === 0) return undefined;
-    return product.variants.find((variant) => {
-      return Object.entries(selectedAttrs).every(
-        ([attrName, selectedVal]) => variant.attributes[attrName] === selectedVal
+    const matches = product.variants.filter((variant) => {
+      const variantAttrKeys = Object.keys(variant.attributes || {});
+      if (variantAttrKeys.length === 0) return false;
+      return variantAttrKeys.every(
+        (key) => variant.attributes[key] === selectedAttrs[key]
       );
     });
+    if (matches.length > 0) return matches[0];
+    return product.variants.find((v) => v.id === "default");
   }, [product.variants, selectedAttrs]);
 
   // Aggregate selected option objects to extract overrides
   const selectedOptionObjects = useMemo(() => {
-    const list: { price?: number; oldPrice?: number; stock?: number; description?: string; image?: string; value: string }[] = [];
+    const list: { price?: number; oldPrice?: number; stock?: number; description?: string; image?: string; value: string; unlimited_stock?: boolean; low_stock_threshold?: number }[] = [];
     if (!product.attributes) return list;
     product.attributes.forEach((attr) => {
       const selectedVal = selectedAttrs[attr.name];
@@ -150,8 +185,44 @@ export function ProductView({ product }: ProductViewProps) {
     if (override && override.stock !== undefined) {
       return override.stock;
     }
-    return undefined;
-  }, [selectedVariant, selectedOptionObjects]);
+    if (product.variants && product.variants.length > 0) {
+      return product.variants.reduce((acc, v) => acc + (v.stock_count || 0), 0);
+    }
+    return 99;
+  }, [product.variants, selectedVariant, selectedOptionObjects]);
+
+  // Determine if stock is unlimited
+  const isStockUnlimited = useMemo<boolean>(() => {
+    if (selectedVariant && selectedVariant.unlimited_stock !== undefined) {
+      return !!selectedVariant.unlimited_stock;
+    }
+    const override = selectedOptionObjects.find((o: any) => o.unlimited_stock !== undefined);
+    if (override && override.unlimited_stock !== undefined) {
+      return !!override.unlimited_stock;
+    }
+    return !!product.unlimited_stock;
+  }, [product.unlimited_stock, selectedVariant, selectedOptionObjects]);
+
+  // Determine if stock is under custom alert threshold
+  const isStockAlert = useMemo<boolean>(() => {
+    if (isStockUnlimited) return false;
+
+    const currentQty = currentStock ?? 0;
+    
+    if (selectedVariant && selectedVariant.low_stock_threshold !== undefined && selectedVariant.low_stock_threshold !== null) {
+      return currentQty <= selectedVariant.low_stock_threshold;
+    }
+    const override = selectedOptionObjects.find((o: any) => o.low_stock_threshold !== undefined && o.low_stock_threshold !== null);
+    if (override && override.low_stock_threshold !== undefined && override.low_stock_threshold !== null) {
+      return currentQty <= override.low_stock_threshold;
+    }
+    const threshold = product.low_stock_threshold !== undefined && product.low_stock_threshold !== null 
+      ? product.low_stock_threshold 
+      : 10;
+    return currentQty <= threshold;
+  }, [isStockUnlimited, currentStock, selectedVariant, selectedOptionObjects, product.low_stock_threshold]);
+
+
 
   // Image zoom handler
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -210,10 +281,28 @@ export function ProductView({ product }: ProductViewProps) {
 
   // Select attribute option and auto switch main image if linked
   const handleSelectAttribute = (attrName: string, value: string, linkedImageUrl?: string) => {
-    setSelectedAttrs((prev) => ({ ...prev, [attrName]: value }));
+    const nextAttrs = { ...selectedAttrs, [attrName]: value };
+    setSelectedAttrs(nextAttrs);
 
-    if (linkedImageUrl && product.images) {
-      const idx = product.images.indexOf(linkedImageUrl);
+    let nextImage: string | undefined = undefined;
+    if (product.variants && product.variants.length > 0) {
+      const matchingVariant = product.variants.find((variant) => {
+        return Object.entries(nextAttrs).every(
+          ([name, val]) => variant.attributes[name] === val
+        );
+      });
+      if (matchingVariant && matchingVariant.image_override) {
+        nextImage = matchingVariant.image_override;
+      }
+    }
+
+    if (!nextImage) {
+      nextImage = linkedImageUrl;
+    }
+
+    if (nextImage && product.images) {
+      const absoluteUrl = assetUrl(nextImage) || nextImage;
+      const idx = product.images.findIndex((img) => img === absoluteUrl || img.endsWith(nextImage!));
       if (idx > -1) {
         setActiveImageIdx(idx);
       }
@@ -327,10 +416,24 @@ export function ProductView({ product }: ProductViewProps) {
                 )}>
                   {product.is_digital ? "Numérique" : "Physique"}
                 </span>
-                {((selectedVariant && selectedVariant.stock_count === 0) || (currentStock === 0)) && (
-                  <span className="bg-red-500/10 text-red-600 border border-red-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50">
-                    Rupture de Stock
+                {isStockUnlimited ? (
+                  <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50">
+                    Stock Illimité
                   </span>
+                ) : (
+                  <>
+                    {((selectedVariant && selectedVariant.stock_count === 0) || (currentStock === 0)) ? (
+                      <span className="bg-red-500/10 text-red-600 border border-red-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50">
+                        Rupture de Stock
+                      </span>
+                    ) : (
+                      isStockAlert && (
+                        <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 animate-pulse">
+                          Alerte de Stock
+                        </span>
+                      )
+                    )}
+                  </>
                 )}
               </div>
 
@@ -358,14 +461,27 @@ export function ProductView({ product }: ProductViewProps) {
                 {product.attributes.map((attr, attrIdx) => (
                   <div key={`chooser-${attr.name}-${attrIdx}`} className="space-y-2.5">
                     <span className="block text-xs font-bold text-[#9a93ad] uppercase tracking-wider">
-                      {attr.name} : <span className="text-[#211648] font-bold">{selectedAttrs[attr.name]}</span>
+                      {attr.name} : <span className="text-[#211648] font-bold">{
+                        HEX_TO_NAMES_MAP[selectedAttrs[attr.name].toLowerCase()] || selectedAttrs[attr.name]
+                      }</span>
                     </span>
 
                     <div className="flex flex-wrap gap-2.5">
                       {attr.values.map((optionItem) => {
                         const val = typeof optionItem === "object" ? optionItem.value : optionItem;
-                        const label = typeof optionItem === "object" ? optionItem.value : optionItem;
-                        const colorHex = typeof optionItem === "object" ? optionItem.color : (val.startsWith("#") && val.length <= 7 ? val : undefined);
+                        const label = HEX_TO_NAMES_MAP[val.toLowerCase()] || val;
+                        
+                        let colorHex = typeof optionItem === "object" ? optionItem.color : undefined;
+                        if (!colorHex) {
+                          if (typeof val === "string" && val.startsWith("#")) {
+                            colorHex = val;
+                          } else if (attr.type === "color") {
+                            colorHex = FRENCH_COLORS_MAP[val.toLowerCase()] || "#ffffff";
+                          }
+                        } else if (typeof colorHex === "string" && !colorHex.startsWith("#")) {
+                          colorHex = FRENCH_COLORS_MAP[colorHex.toLowerCase()] || colorHex;
+                        }
+
                         const isSelected = selectedAttrs[attr.name] === val;
 
                         if (colorHex) {
@@ -414,26 +530,53 @@ export function ProductView({ product }: ProductViewProps) {
 
             {/* Buy / Add to Cart CTA */}
             <div className="space-y-3">
-              {selectedVariant ? (
+              {isStockUnlimited ? (
+                <div className="text-xs font-medium text-[#9a93ad] flex items-center gap-1.5 mb-1.5">
+                  {selectedVariant && selectedVariant.id !== "default" && (
+                    <>
+                      <span className="text-[#9a93ad]/70">SKU associé:</span>
+                      <span className="font-mono text-[#211648]/80">{selectedVariant.sku}</span>
+                      <span className="mx-2 text-[#281950]/10">|</span>
+                    </>
+                  )}
+                  <span className="text-[#9a93ad]/70">Stock dispo:</span>
+                  <span className="font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-500/10">
+                    Illimité
+                  </span>
+                </div>
+              ) : selectedVariant && selectedVariant.id !== "default" ? (
                 <div className="text-xs font-medium text-[#9a93ad] flex items-center gap-1.5 mb-1.5">
                   <span className="text-[#9a93ad]/70">SKU associé:</span>
                   <span className="font-mono text-[#211648]/80">{selectedVariant.sku}</span>
                   <span className="mx-2 text-[#281950]/10">|</span>
                   <span className="text-[#9a93ad]/70">Stock dispo:</span>
-                  <span className={cn("font-bold", selectedVariant.stock_count > 0 ? "text-emerald-600" : "text-red-600")}>
-                    {selectedVariant.stock_count}
+                  <span className={cn(
+                    "font-bold", 
+                    selectedVariant.stock_count === 0 ? "text-red-600" : (isStockAlert ? "text-amber-500 font-extrabold animate-pulse" : "text-emerald-600")
+                  )}>
+                    {selectedVariant.stock_count} {isStockAlert && selectedVariant.stock_count > 0 && "⚠️ (Seuil critique)"}
                   </span>
                 </div>
               ) : (
                 currentStock !== undefined ? (
                   <div className="text-xs font-medium text-[#9a93ad] flex items-center gap-1.5 mb-1.5">
                     <span className="text-[#9a93ad]/70">Stock dispo:</span>
-                    <span className={cn("font-bold", currentStock > 0 ? "text-emerald-600" : "text-red-600")}>
-                      {currentStock}
+                    <span className={cn(
+                      "font-bold", 
+                      currentStock === 0 ? "text-red-600" : (isStockAlert ? "text-amber-500 font-extrabold animate-pulse" : "text-emerald-600")
+                    )}>
+                      {currentStock} {isStockAlert && currentStock > 0 && "⚠️ (Seuil critique)"}
                     </span>
+                    {selectedVariant && selectedVariant.id === "default" && (
+                      <>
+                        <span className="mx-2 text-[#281950]/10">|</span>
+                        <span className="text-[#9a93ad]/70">SKU:</span>
+                        <span className="font-mono text-[#211648]/80">{selectedVariant.sku}</span>
+                      </>
+                    )}
                   </div>
                 ) : (
-                  product.variants && product.variants.length > 0 && (
+                  product.attributes && product.attributes.length > 0 && (
                     <div className="text-xs text-amber-600 flex items-center gap-1.5 mb-1.5">
                       <AlertTriangle className="size-3.5" />
                       Veuillez sélectionner vos options pour commander.
@@ -446,9 +589,9 @@ export function ProductView({ product }: ProductViewProps) {
                 type="button"
                 onClick={handleAddToCart}
                 disabled={
-                  (product.variants && product.variants.length > 0 && !selectedVariant) ||
-                  (selectedVariant && selectedVariant.stock_count === 0) ||
-                  (currentStock === 0)
+                  (product.attributes && product.attributes.length > 0 && !selectedVariant) ||
+                  (!isStockUnlimited && selectedVariant && selectedVariant.stock_count === 0) ||
+                  (!isStockUnlimited && currentStock === 0)
                 }
                 className="w-full bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#211648] font-extrabold h-12 rounded-xl tracking-wide transition shadow-lg shadow-[#c8902e]/25 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer border-none"
               >
@@ -496,7 +639,7 @@ export function ProductView({ product }: ProductViewProps) {
                     className="p-4 rounded-xl bg-white border border-[#281950]/8 flex gap-4 items-center shadow-xs relative"
                   >
                     <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-[#f0eaf6]">
-                      {item.image ? (
+                      {item.image && item.image.trim() !== "" ? (
                         <Image
                           src={item.image}
                           alt=""
@@ -518,7 +661,7 @@ export function ProductView({ product }: ProductViewProps) {
                       {item.selected_attributes && Object.keys(item.selected_attributes).length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {Object.entries(item.selected_attributes).map(([k, v]) => {
-                            const isColor = v.startsWith("#") && v.length <= 7;
+                            const isColor = typeof v === "string" && v.startsWith("#") && v.length <= 7;
                             return (
                               <span
                                 key={`${item.id}-${k}`}

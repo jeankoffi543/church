@@ -4,8 +4,8 @@
 
 const ASSET_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/v1\/?$/, "");
 
-export function assetUrl(path?: string | null): string | null {
-  if (!path) return null;
+export function assetUrl(path?: any): string | null {
+  if (!path || typeof path !== "string") return null;
   if (/^https?:\/\//i.test(path)) return path; // already absolute
   return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 }

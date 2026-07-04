@@ -114,3 +114,32 @@ export async function submitContactMessage(
   const body = (await res.json()) as { message: string };
   return body;
 }
+
+export async function getStoreProducts(): Promise<any[]> {
+  const res = await fetch(`${API_URL}/public/store/products`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return [];
+  const body = await res.json();
+  return body.data || [];
+}
+
+export async function getStoreProduct(id: string): Promise<any | null> {
+  const res = await fetch(`${API_URL}/public/store/products/${id}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body.data || null;
+}
+
+export async function placeStoreOrder(payload: any): Promise<any> {
+  const res = await fetch(`${API_URL}/public/store/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return readError(res);
+  const body = await res.json();
+  return body;
+}
