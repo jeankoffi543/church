@@ -28,7 +28,8 @@ import {
   Headphones,
 } from "lucide-react";
 
-import { uploadStudioMedia } from "@/lib/admin-api";
+import { importStudioMediaFromUrl } from "@/lib/admin-api";
+import { uploadStudioMediaWithProgress } from "@/lib/studio-upload";
 
 import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
@@ -118,7 +119,6 @@ export function InspectorDock({
   setSelectedStyle,
   onRename,
   patchLayerData,
-  onImageFile,
   onImageUrl,
   onAudioFile,
   bible,
@@ -136,7 +136,6 @@ export function InspectorDock({
   setSelectedStyle: (s: StudioSettings) => void;
   onRename: (name: string) => void;
   patchLayerData: Patch;
-  onImageFile: (file: File) => void;
   onImageUrl: (url: string) => void;
   onAudioFile: (file: File) => void;
   bible: InspectorBible;
@@ -207,7 +206,6 @@ export function InspectorDock({
                <ContentPanel
                  layer={selectedLayer}
                  patchLayerData={patchLayerData}
-                 onImageFile={onImageFile}
                  onImageUrl={onImageUrl}
                  onAudioFile={onAudioFile}
                  onRestoreDefaults={onRestoreDefaults}
@@ -1151,10 +1149,71 @@ function ImageUrlImport({ current, onImport }: { current: string; onImport: (url
   );
 }
 
+/** Image file upload with a real progress bar (drag-drop or click). */
+function ImageUpload({ onUploaded }: { onUploaded: (url: string) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const upload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError("Choisissez un fichier image.");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    setProgress(0);
+    try {
+      const { url } = await uploadStudioMediaWithProgress(file, setProgress);
+      onUploaded(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'envoi de l'image.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          const f = e.dataTransfer.files?.[0];
+          if (f) void upload(f);
+        }}
+        className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/14 bg-white/[0.03] py-3 text-[11px] font-bold text-white/55 transition-colors hover:border-gold/40 hover:text-gold"
+      >
+        <Upload className="size-3.5" />
+        {uploading ? `Envoi… ${Math.round(progress * 100)}%` : "Importer ou glisser-déposer…"}
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={uploading}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void upload(f);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {uploading && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gold transition-[width] duration-150"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+        </div>
+      )}
+      {error && <span className="text-[10px] text-[#ff8a8a]">{error}</span>}
+    </div>
+  );
+}
+
 function ContentPanel({
   layer,
   patchLayerData,
-  onImageFile,
   onImageUrl,
   onAudioFile,
   onRestoreDefaults,
@@ -1163,7 +1222,6 @@ function ContentPanel({
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
-  onImageFile: (file: File) => void;
   onImageUrl: (url: string) => void;
   onAudioFile: (file: File) => void;
   onRestoreDefaults?: () => void;
@@ -1266,29 +1324,7 @@ function ContentPanel({
             l&apos;URL).
           </span>
         </div>
-        <label
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const f = e.dataTransfer.files?.[0];
-            if (f && f.type.startsWith("image/")) void onImageFile(f);
-          }}
-          className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/14 bg-white/[0.03] py-3 text-[11px] font-bold text-white/55 transition-colors hover:border-gold/40 hover:text-gold"
-        >
-          <Upload className="size-3.5" /> Importer ou glisser-déposer…
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) {
-                void onImageFile(f);
-              }
-              e.target.value = ""; // Clear file path value
-            }}
-          />
-        </label>
+        <ImageUpload onUploaded={(url) => patchLayerData({ imageUrl: url })} />
         <div>
           <Label className="mb-1.5">Cadrage</Label>
           <div className="flex rounded-[9px] bg-black/25 p-[3px]">
@@ -1332,7 +1368,7 @@ function ContentPanel({
   }
 
   if (layer.type === "video") {
-    return <VideoContent layer={layer} patchLayerData={patchLayerData} />;
+    return <VideoContent key={layer.id} layer={layer} patchLayerData={patchLayerData} />;
   }
 
   // camera / capture
@@ -1485,9 +1521,11 @@ function CameraContent({ layer, patchLayerData }: { layer: StudioLayer; patchLay
  */
 function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transport, setTransport] = useState<VideoTransportState | null>(null);
+  const [urlDraft, setUrlDraft] = useState(layer.feedUrl ?? "");
 
   const hasSource = !!layer.feedUrl?.trim();
   const loop = layer.loop ?? true;
@@ -1515,10 +1553,9 @@ function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLaye
     }
     setError(null);
     setUploading(true);
+    setProgress(0);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const { url } = await uploadStudioMedia(fd);
+      const { url } = await uploadStudioMediaWithProgress(file, setProgress);
       patchLayerData({ feedUrl: url });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Échec de l'envoi de la vidéo.");
@@ -1527,16 +1564,57 @@ function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLaye
     }
   };
 
+  // Import an external URL server-side (CORS-safe, drawable on the canvas). Our
+  // own /studio/media urls are used directly; nothing is played straight from an
+  // external URL.
+  const importUrl = async () => {
+    const url = urlDraft.trim();
+    if (!url) {
+      patchLayerData({ feedUrl: "" });
+      return;
+    }
+    if (url.includes("/studio/media/") || url.startsWith("/storage")) {
+      patchLayerData({ feedUrl: url });
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const { url: hosted } = await importStudioMediaFromUrl(url);
+      patchLayerData({ feedUrl: hosted });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible d'importer la vidéo depuis cette URL.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <>
       <div>
-        <Label className="mb-1.5">URL du flux vidéo (.m3u8 / .mp4 / réseau VLC)</Label>
-        <input
-          value={layer.feedUrl ?? ""}
-          onChange={(e) => patchLayerData({ feedUrl: e.target.value })}
-          placeholder="https://…/live.m3u8  ·  https://…/clip.mp4"
-          className={MONO_FIELD}
-        />
+        <Label className="mb-1.5">URL du flux vidéo (.mp4 / .webm)</Label>
+        <div className="flex gap-1.5">
+          <input
+            value={urlDraft}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void importUrl();
+            }}
+            placeholder="https://…/clip.mp4"
+            className={MONO_FIELD}
+          />
+          <button
+            type="button"
+            onClick={() => void importUrl()}
+            disabled={uploading}
+            className="shrink-0 rounded-lg border border-gold/30 bg-gold/15 px-3 text-[11px] font-bold text-gold transition hover:bg-gold/25 disabled:opacity-50"
+          >
+            Importer
+          </button>
+        </div>
+        <span className="mt-1 block text-[10px] text-white/35">
+          Le lien est téléchargé sur le serveur puis diffusé (requis pour Facebook).
+        </span>
       </div>
 
       <div
@@ -1558,7 +1636,9 @@ function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLaye
       >
         <Upload className={cn("size-4", uploading ? "animate-pulse text-gold" : "text-white/45")} />
         <label className="cursor-pointer px-2 text-[11px] font-bold text-white/60 transition-colors hover:text-gold">
-          {uploading ? "Envoi de la vidéo…" : "Glissez une vidéo ici ou cliquez pour l'importer"}
+          {uploading
+            ? `Envoi de la vidéo… ${Math.round(progress * 100)}%`
+            : "Glissez une vidéo ici ou cliquez pour l'importer"}
           <input
             type="file"
             accept="video/*"
@@ -1573,6 +1653,15 @@ function VideoContent({ layer, patchLayerData }: { layer: StudioLayer; patchLaye
         </label>
         <span className="text-[9px] text-white/30">MP4 / WebM / MOV — importé et persisté sur le serveur</span>
       </div>
+
+      {uploading && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gold transition-[width] duration-150"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+        </div>
+      )}
 
       {error && <div className="text-[10px] leading-relaxed text-[#ff8a8a]">{error}</div>}
 

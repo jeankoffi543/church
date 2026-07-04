@@ -20,7 +20,6 @@ import {
   importStudioMediaFromUrl,
   setPreparedVerses,
   updateAdminSettings,
-  uploadStudioMedia,
 } from "@/lib/admin-api";
 import {
   getContainerStyle,
@@ -1522,29 +1521,6 @@ export function LiveStudioConsole({
       setStatus({ type: "success", message: "Paramètres audio réinitialisés !" });
     }
   }, [selectedLayerId, selectedLayer, setLayers]);
-  const onImageFile = useCallback(
-    async (file: File) => {
-      if (!selectedLayerId) return;
-      setBusy(true);
-      setStatus(null);
-      try {
-        // Upload via the CORS-enabled /studio/media route (like videos) so the
-        // program-out canvas can draw the image without tainting it — the
-        // /storage symlink used by the settings upload carries no CORS headers.
-        const form = new FormData();
-        form.append("file", file);
-        const { url } = await uploadStudioMedia(form);
-        patchSelectedData({ imageUrl: url });
-        setStatus({ type: "success", message: "Image importée avec succès !" });
-      } catch (err) {
-        console.error("Failed to upload image layer", err);
-        setStatus({ type: "error", message: "Erreur lors de l'importation de l'image." });
-      } finally {
-        setBusy(false);
-      }
-    },
-    [selectedLayerId, patchSelectedData]
-  );
   const onImageUrl = useCallback(
     async (rawUrl: string) => {
       if (!selectedLayerId) return;
@@ -2065,7 +2041,6 @@ export function LiveStudioConsole({
           setSelectedStyle={setSelectedStyle}
           onRename={(name) => patchSelectedData({ name })}
           patchLayerData={patchSelectedData}
-          onImageFile={onImageFile}
           onImageUrl={onImageUrl}
           onAudioFile={onAudioFile}
           onRestoreDefaults={restoreLayerDefaults}

@@ -21,8 +21,15 @@
 
 import { getAudioContext } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
-import { drawBibleLayer, drawContentLayer, drawImageLayer, drawScrollLayer } from "./program-out-text";
+import {
+  drawBibleLayer,
+  drawContentLayer,
+  drawImageLayer,
+  drawScrollLayer,
+  drawVideoFrame,
+} from "./program-out-text";
 import { computeEntrance } from "./program-out-anim";
+import { getVideoController } from "./studio-video";
 import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
 
@@ -112,6 +119,29 @@ function drawCover(
 }
 
 const dbToLinear = (db: number): number => Math.pow(10, db / 20);
+
+/** Apply an entrance animation's transform to the context (caller wraps in
+ *  save/restore). Shared by the image + video overlay draws. */
+function applyEntranceTransform(
+  ctx: CanvasRenderingContext2D,
+  a: { alpha: number; tx: number; ty: number; scale: number; clipRevealX?: number },
+  box: { x: number; y: number; w: number; h: number },
+): void {
+  ctx.globalAlpha = a.alpha;
+  if (a.tx || a.ty) ctx.translate(a.tx, a.ty);
+  if (a.scale !== 1) {
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(a.scale, a.scale);
+    ctx.translate(-cx, -cy);
+  }
+  if (a.clipRevealX !== undefined) {
+    ctx.beginPath();
+    ctx.rect(box.x, box.y, box.w * a.clipRevealX, box.h);
+    ctx.clip();
+  }
+}
 
 /* ── Per-layer render sources ────────────────────────────────────────────── */
 
@@ -356,7 +386,10 @@ export function startProgramOut(opts?: {
     if (animNonce !== lastAnimNonce) {
       lastAnimNonce = animNonce;
       for (const id of present) {
-        if (layers.find((x) => x.id === id)?.type === "bible") continue;
+        // Bible replays on verse change; media (camera/video) only on appearance
+        // (a re-CUT must not restart the video) — like the DOM's stable key.
+        const t = layers.find((x) => x.id === id)?.type;
+        if (t === "bible" || t === "video" || t === "camera") continue;
         animStart.set(id, now);
       }
     }
@@ -389,11 +422,16 @@ export function startProgramOut(opts?: {
 
       const src = sources.get(layer.id);
       if (src) {
-        if (layer.type === "image") {
-          // Images are overlays: they get the container frame + entrance animation.
-          if (!(src.el instanceof HTMLImageElement) || !src.el.complete || src.el.naturalWidth === 0) {
+        // Images + videos are overlays: entrance animation + their frame/style.
+        if (layer.type === "image" || layer.type === "video") {
+          if (!(src.el instanceof (layer.type === "image" ? HTMLImageElement : HTMLVideoElement))) {
             continue;
           }
+          const ready =
+            src.el instanceof HTMLImageElement
+              ? src.el.complete && src.el.naturalWidth > 0
+              : src.el.readyState >= 2 && src.el.videoWidth > 0;
+          if (!ready) continue;
           const a = computeEntrance(
             layer.style.animation,
             now - (animStart.get(layer.id) ?? now),
@@ -402,35 +440,26 @@ export function startProgramOut(opts?: {
             textScale,
           );
           ctx.save();
-          ctx.globalAlpha = a.alpha;
-          if (a.tx || a.ty) ctx.translate(a.tx, a.ty);
-          if (a.scale !== 1) {
-            const cx = box.x + box.w / 2;
-            const cy = box.y + box.h / 2;
-            ctx.translate(cx, cy);
-            ctx.scale(a.scale, a.scale);
-            ctx.translate(-cx, -cy);
+          applyEntranceTransform(ctx, a, box);
+          if (src.el instanceof HTMLImageElement) {
+            drawImageLayer(
+              ctx,
+              src.el,
+              src.el.naturalWidth,
+              src.el.naturalHeight,
+              box,
+              layer.style,
+              textScale,
+              !isBackgroundLayer(layer),
+            );
+          } else {
+            drawVideoFrame(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box, textScale);
           }
-          if (a.clipRevealX !== undefined) {
-            ctx.beginPath();
-            ctx.rect(box.x, box.y, box.w * a.clipRevealX, box.h);
-            ctx.clip();
-          }
-          drawImageLayer(
-            ctx,
-            src.el,
-            src.el.naturalWidth,
-            src.el.naturalHeight,
-            box,
-            layer.style,
-            textScale,
-            !isBackgroundLayer(layer),
-          );
           ctx.restore();
           continue;
         }
-        // Camera / video: drawn straight, WITHOUT an entrance transform — the
-        // default fade_slide made the camera vanish on every CUT.
+        // Camera: drawn straight, WITHOUT an entrance transform — the default
+        // fade_slide made the camera vanish on every CUT.
         if (src.el instanceof HTMLVideoElement && src.el.readyState >= 2 && src.el.videoWidth > 0) {
           drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
         }
@@ -534,6 +563,22 @@ export function startProgramOut(opts?: {
   // the snapshot array reference doesn't change, so we refresh here instead.
   const unsubCameras = subscribeCameraStreams(() => setScene(scene, bibleContext));
 
+  // Keep each video source in step with the operator's transport (play/pause/
+  // seek drive the Preview's master controller) so what airs on Facebook mirrors
+  // the studio. Falls back to independent playback when no master is registered.
+  const videoSync = setInterval(() => {
+    for (const [id, src] of sources) {
+      if (src.kind !== "video" || !(src.el instanceof HTMLVideoElement)) continue;
+      const master = getVideoController(id);
+      if (!master) continue;
+      const st = master.getState();
+      if (!st.ready) continue;
+      if (Math.abs(src.el.currentTime - st.currentTime) > 0.4) src.el.currentTime = st.currentTime;
+      if (st.paused && !src.el.paused) src.el.pause();
+      else if (!st.paused && src.el.paused) void src.el.play().catch(() => {});
+    }
+  }, 250);
+
   // Combine the canvas video track with the mixed audio track (silence when no
   // audio layer is connected — the destination always exposes one track).
   const stream = captured;
@@ -547,6 +592,7 @@ export function startProgramOut(opts?: {
     setScene,
     stop() {
       cancelAnimationFrame(raf);
+      clearInterval(videoSync);
       if (clock) {
         clock.onaudioprocess = null;
         try {
