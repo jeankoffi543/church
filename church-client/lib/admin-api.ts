@@ -1466,3 +1466,120 @@ export async function setPreparedVerses(verses: ScriptureVerse[]): Promise<Scrip
   });
   return res.data;
 }
+
+// ── Store Admin APIs ───────────────────────────────────────
+
+export async function getAdminProducts(): Promise<any[]> {
+  const res = await adminFetch<{ data: any[] }>("/store/products");
+  return res.data;
+}
+
+export async function getAdminProductsPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<any>> {
+  return adminFetch<AdminListResult<any>>(buildAdminListPath("/store/products", params));
+}
+
+export async function getAdminProductCategories(): Promise<string[]> {
+  const res = await adminFetch<{ data: string[] }>("/store/products/categories");
+  return res.data;
+}
+
+export async function createAdminProduct(payload: any, imageFiles?: File[]): Promise<any> {
+  const formData = new FormData();
+  Object.entries(payload).forEach(([key, val]) => {
+    if (val !== undefined && val !== null) {
+      if (typeof val === "object") {
+        formData.append(key, JSON.stringify(val));
+      } else {
+        formData.append(key, String(val));
+      }
+    }
+  });
+
+  if (imageFiles && imageFiles.length > 0) {
+    imageFiles.forEach((file) => {
+      formData.append("images[]", file);
+    });
+  }
+
+  const res = await adminFetch<any>("/store/products", {
+    method: "POST",
+    body: formData,
+  });
+  return res.data;
+}
+
+export async function updateAdminProduct(id: number, payload: any, imageFiles?: File[]): Promise<any> {
+  const formData = new FormData();
+  formData.append("_method", "PUT");
+  Object.entries(payload).forEach(([key, val]) => {
+    if (val !== undefined && val !== null) {
+      if (typeof val === "object") {
+        formData.append(key, JSON.stringify(val));
+      } else {
+        formData.append(key, String(val));
+      }
+    }
+  });
+
+  if (imageFiles && imageFiles.length > 0) {
+    imageFiles.forEach((file) => {
+      formData.append("images[]", file);
+    });
+  }
+
+  const res = await adminFetch<any>(`/store/products/${id}`, {
+    method: "POST",
+    body: formData,
+  });
+  return res.data;
+}
+
+export async function deleteAdminProduct(id: number): Promise<void> {
+  await adminFetch<void>(`/store/products/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function getAdminOrders(): Promise<any[]> {
+  const res = await adminFetch<{ data: any[] }>("/store/orders");
+  return res.data;
+}
+
+export async function getAdminOrdersPaginated(
+  params?: AdminListParams
+): Promise<AdminListResult<any>> {
+  return adminFetch<AdminListResult<any>>(buildAdminListPath("/store/orders", params));
+}
+
+export async function updateAdminOrderStatus(id: number, status: string): Promise<any> {
+  const res = await adminFetch<any>(`/store/orders/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  return res.data;
+}
+
+export async function getAdminClients(search?: string, segment?: string): Promise<any[]> {
+  let url = "/store/clients";
+  const params: string[] = [];
+  if (search) params.push(`search=${encodeURIComponent(search)}`);
+  if (segment) params.push(`segment=${encodeURIComponent(segment)}`);
+  if (params.length > 0) {
+    url += "?" + params.join("&");
+  }
+  const res = await adminFetch<{ data: any[] }>(url);
+  return res.data;
+}
+
+export async function getAdminStoreAnalytics(): Promise<any> {
+  const res = await adminFetch<any>("/store/analytics");
+  return res;
+}
+
+export async function exportAdminStoreAnalyticsCsv(): Promise<string> {
+  const res = await adminFetch<{ csv: string }>("/store/analytics/export");
+  return res.csv;
+}
+

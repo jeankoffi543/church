@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Quote } from "lucide-react";
+import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Quote, ShoppingBag } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Logo } from "./logo";
@@ -207,6 +207,16 @@ export function Navbar() {
                   </Link>
                 </NavigationMenuLink>
               </NavigationMenuItem>
+
+              {/* Lien Direct Boutique */}
+              <NavigationMenuItem>
+                <NavigationMenuLink asChild>
+                  <Link href="/store" className={cn(navigationMenuTriggerStyle(), pathname.startsWith("/store") ? "text-indigo border-b-2 border-gold-dark rounded-b-none" : "")}>
+                    <ShoppingBag className="size-4 mr-1.5 inline text-gold-dark" />
+                    Boutique
+                  </Link>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
             </NavigationMenuList>
           </NavigationMenu>
         </nav>
@@ -319,6 +329,12 @@ export function Navbar() {
                     <Link href="/contact" className={cn("text-lg font-bold italic flex items-center gap-1.5", pathname === "/contact" ? "text-gold-dark underline decoration-2 underline-offset-4" : "text-indigo")}>
                       <Phone className="size-4.5 text-gold-dark" />
                       Nous contacter
+                    </Link>
+                  </SheetClose>
+                  <SheetClose asChild>
+                    <Link href="/store" className={cn("text-lg font-bold italic flex items-center gap-1.5", pathname.startsWith("/store") ? "text-gold-dark underline decoration-2 underline-offset-4" : "text-indigo")}>
+                      <ShoppingBag className="size-4.5 text-gold-dark" />
+                      Boutique
                     </Link>
                   </SheetClose>
                 </div>

@@ -36,7 +36,7 @@ import { getVideoController, type VideoTransportState } from "./studio-video";
 import { listInputs, requestCameraPermission, type MediaDeviceLite } from "./studio-camera";
 import { getAudioController, type AudioTransportState, getMonitorMuted, setMonitorMuted, subscribeMonitorMuted } from "./studio-audio";
 import { Slider } from "@/components/ui/slider";
-import { Select } from "@/components/ui/select";
+import { NativeSelect as Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {

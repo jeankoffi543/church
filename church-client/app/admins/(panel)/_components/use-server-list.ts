@@ -31,12 +31,14 @@ export function useServerList<T>({
   initialData,
   initialMeta,
   debounceMs = 300,
+  loadOnMount = false,
 }: {
   fetcher: (params: AdminListParams) => Promise<AdminListResult<T>>;
   params: AdminListParams;
   initialData: T[];
   initialMeta: AdminListMeta;
   debounceMs?: number;
+  loadOnMount?: boolean;
 }) {
   const [items, setItems] = useState<T[]>(initialData);
   const [meta, setMeta] = useState<AdminListMeta>(initialMeta);
@@ -81,7 +83,9 @@ export function useServerList<T>({
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
-      return;
+      if (!loadOnMount) {
+        return;
+      }
     }
     const timer = setTimeout(load, debounceMs);
     return () => clearTimeout(timer);

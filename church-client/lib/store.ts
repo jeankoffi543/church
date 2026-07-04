@@ -5,6 +5,8 @@ export interface Product {
   base_price: number;
   images: string[];
   is_digital: boolean;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
   status: 'active' | 'draft';
   attributes?: ProductAttribute[];
   variants?: ProductVariant[];
@@ -20,7 +22,12 @@ export interface ProductVariant {
   id: string;
   sku: string;
   price_override?: number; // Null or undefined means use base_price
+  old_price_override?: number; // Specific old price for discount/promo comparison
   stock_count: number;
+  image_override?: string; // Specific image URL for this variant
+  description_override?: string; // Specific description for this variant
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
   attributes: Record<string, string>; // e.g., {"Couleur": "#b270ff", "Format": "Couverture rigide"}
 }
 

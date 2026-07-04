@@ -13,17 +13,24 @@ import {
   CheckCircle,
   AlertCircle,
   ImagePlus,
+  ShoppingBag,
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import { LocationPicker } from "../_components/location-picker";
 
+const EMOJI_LIST = [
+  "⛪", "🛵", "📦", "🚗", "🚚", "✈️", "🏃", "🚶", "🏢", "🏠", "🌍", "🚲", 
+  "🛴", "✉️", "🎁", "🛒", "🚢", "🚉", "📍", "💼", "🤝", "🏷️", "🔑", "🛎️",
+  "⭐", "🔥", "❤️", "🙌", "✨", "✝️", "📖", "🕊️", "🎺", "🕯️", "🎙️", "💿"
+];
+
 const SETTING_INPUT =
   "rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold w-full";
 
 
-type TabType = "general" | "schedule" | "offerings" | "contact";
+type TabType = "general" | "schedule" | "offerings" | "contact" | "boutique";
 
 export function SettingsForm({
   initialSettings,
@@ -33,6 +40,50 @@ export function SettingsForm({
   const [activeTab, setActiveTab] = useState<TabType>("general");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Boutique state
+  const [storeCatalogTitle, setStoreCatalogTitle] = useState(
+    (initialSettings.boutique?.store_catalog_title as string) ?? "Espace Catalogue Fidèles"
+  );
+  const [storeCatalogDescription, setStoreCatalogDescription] = useState(
+    (initialSettings.boutique?.store_catalog_description as string) ?? "Retrouvez nos livres d'étude, vêtements « Génération Feu » et articles d'onction pour édifier votre marche spirituelle."
+  );
+  const [storeDeliveryOptions, setStoreDeliveryOptions] = useState<Array<{ key: string; label: string; desc: string; price: number; icon: string }>>(
+    (initialSettings.boutique?.delivery_options as Array<{ key: string; label: string; desc: string; price: number; icon: string }>) ?? [
+      { key: "retrait", label: "Retrait à l'église", desc: "Retrait gratuit à MFM Ficgayo", price: 0, icon: "⛪" },
+      { key: "abidjan", label: "Livraison Abidjan", desc: "Livraison à domicile à Abidjan", price: 3000, icon: "🛵" },
+      { key: "interieur", label: "Livraison intérieur", desc: "Expédition dans les villes de l'intérieur", price: 5000, icon: "📦" }
+    ]
+  );
+
+  const [activeEmojiPickerIdx, setActiveEmojiPickerIdx] = useState<number | null>(null);
+
+  const handleAddDeliveryOption = () => {
+    setStoreDeliveryOptions((prev) => [
+      ...prev,
+      {
+        key: `del-${Date.now()}`,
+        label: "Nouveau mode",
+        desc: "Description du mode",
+        price: 1000,
+        icon: "📦",
+      },
+    ]);
+  };
+
+  const handleUpdateDeliveryOption = (
+    index: number,
+    field: "label" | "desc" | "price" | "icon" | "key",
+    val: any
+  ) => {
+    setStoreDeliveryOptions((prev) =>
+      prev.map((opt, i) => (i === index ? { ...opt, [field]: val } : opt))
+    );
+  };
+
+  const handleRemoveDeliveryOption = (index: number) => {
+    setStoreDeliveryOptions((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // General state
   const [churchName, setChurchName] = useState((initialSettings.general?.church_name as string) ?? "");
@@ -260,6 +311,11 @@ export function SettingsForm({
           { key: "latitude", value: latitude, group: "contact" },
           { key: "longitude", value: longitude, group: "contact" },
           
+          // Boutique / Catalogue settings
+          { key: "store_catalog_title", value: storeCatalogTitle, group: "boutique" },
+          { key: "store_catalog_description", value: storeCatalogDescription, group: "boutique" },
+          { key: "delivery_options", value: storeDeliveryOptions, group: "boutique" },
+          
         ];
 
         const files: Record<string, File | null> = {};
@@ -290,6 +346,7 @@ export function SettingsForm({
     { id: "schedule", label: "Horaires", icon: Clock },
     { id: "offerings", label: "Dons & Offrandes", icon: HeartHandshake },
     { id: "contact", label: "Contact & Réseaux", icon: PhoneCall },
+    { id: "boutique", label: "Boutique & Catalogue", icon: ShoppingBag },
   ];
 
   return (
@@ -870,6 +927,146 @@ export function SettingsForm({
                 placeholder="© 2026 Église MFM Ficgayo. Tous droits réservés."
               />
             </label>
+          </div>
+        )}
+
+        {activeTab === "boutique" && (
+          <div className="flex flex-col gap-6 rounded-2xl border border-[rgba(40,25,80,0.06)] bg-white p-6 shadow-sm">
+            {/* Title / Description Catalog settings */}
+            <div className="border-b border-[rgba(40,25,80,0.06)] pb-5 space-y-4">
+              <h3 className="font-display font-bold italic text-[#211648] text-xl">Présentation du Catalogue Boutique</h3>
+              
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold tracking-wide text-body-strong uppercase">Titre de l&apos;espace catalogue</span>
+                <input
+                  type="text"
+                  value={storeCatalogTitle}
+                  onChange={(e) => setStoreCatalogTitle(e.target.value)}
+                  className={SETTING_INPUT}
+                  placeholder="Espace Catalogue Fidèles"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-bold tracking-wide text-[#211648] uppercase font-bold">Description / Sous-titre</span>
+                <textarea
+                  value={storeCatalogDescription}
+                  onChange={(e) => setStoreCatalogDescription(e.target.value)}
+                  className="rounded-xl border border-[rgba(40,25,80,0.12)] bg-[#faf8f4] px-3.5 py-3 text-[15px] text-indigo outline-none focus:border-gold min-h-[90px] w-full"
+                  placeholder="Retrouvez nos livres d'étude..."
+                />
+              </label>
+            </div>
+
+            {/* Delivery Modes settings */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-[rgba(40,25,80,0.06)] pb-3">
+                <h3 className="font-display font-bold italic text-[#211648] text-xl">Modes de livraison</h3>
+                <button
+                  type="button"
+                  onClick={handleAddDeliveryOption}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo/5 px-2.5 py-1 text-xs font-bold text-indigo hover:bg-indigo/10 transition cursor-pointer animate-fade-in"
+                >
+                  <Plus className="size-3" /> Ajouter un mode
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {storeDeliveryOptions.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex flex-wrap md:flex-nowrap gap-3 items-center rounded-xl border border-[rgba(40,25,80,0.08)] bg-[#faf8f4] p-3 shadow-xs animate-fade-in relative transition-all",
+                      activeEmojiPickerIdx === idx ? "z-50" : "z-10"
+                    )}
+                  >
+                    {/* Icon picker */}
+                    <div className="relative shrink-0 w-[50px]">
+                      <span className="text-[9px] font-bold text-indigo/60 uppercase block mb-1">Emoji</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveEmojiPickerIdx(activeEmojiPickerIdx === idx ? null : idx)}
+                        className="size-9 rounded-lg border border-[rgba(40,25,80,0.1)] bg-white flex items-center justify-center text-lg hover:border-gold transition cursor-pointer w-full"
+                        title="Choisir un Emoji"
+                      >
+                        {item.icon || "📦"}
+                      </button>
+
+                      {activeEmojiPickerIdx === idx && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setActiveEmojiPickerIdx(null)}
+                          />
+                          <div className="absolute top-11 left-0 w-48 p-2 bg-white border border-[rgba(40,25,80,0.15)] rounded-xl grid grid-cols-6 gap-1 shadow-xl z-50 animate-fade-in max-h-48 overflow-y-auto scrollbar-none">
+                            {EMOJI_LIST.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => {
+                                  handleUpdateDeliveryOption(idx, "icon", emoji);
+                                  setActiveEmojiPickerIdx(null);
+                                }}
+                                className="size-6 hover:bg-[#faf8f4] rounded flex items-center justify-center text-sm transition cursor-pointer"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Label */}
+                    <div className="flex-1 min-w-[120px]">
+                      <span className="text-[9px] font-bold text-indigo/60 uppercase block mb-1">Libellé</span>
+                      <input
+                        type="text"
+                        value={item.label}
+                        onChange={(e) => handleUpdateDeliveryOption(idx, "label", e.target.value)}
+                        className="w-full rounded border border-[rgba(40,25,80,0.1)] bg-white px-2 py-1 text-xs text-indigo outline-none font-bold"
+                        placeholder="Retrait, Livraison..."
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div className="flex-2 min-w-[200px]">
+                      <span className="text-[9px] font-bold text-indigo/60 uppercase block mb-1">Description</span>
+                      <input
+                        type="text"
+                        value={item.desc}
+                        onChange={(e) => handleUpdateDeliveryOption(idx, "desc", e.target.value)}
+                        className="w-full rounded border border-[rgba(40,25,80,0.1)] bg-white px-2 py-1 text-xs text-indigo outline-none"
+                        placeholder="Retrait à l'église..."
+                      />
+                    </div>
+
+                    {/* Price */}
+                    <div className="w-[100px] shrink-0">
+                      <span className="text-[9px] font-bold text-indigo/60 uppercase block mb-1">Frais (FCFA)</span>
+                      <input
+                        type="number"
+                        value={item.price}
+                        onChange={(e) => handleUpdateDeliveryOption(idx, "price", e.target.value ? Number(e.target.value) : 0)}
+                        className="w-full rounded border border-[rgba(40,25,80,0.1)] bg-white px-2 py-1 text-xs text-indigo outline-none font-bold"
+                      />
+                    </div>
+
+                    {/* Delete */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDeliveryOption(idx)}
+                      className="text-red-500 hover:bg-red-500/10 p-2 rounded transition-colors self-end shrink-0 cursor-pointer"
+                    >
+                      <Trash className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                {storeDeliveryOptions.length === 0 && (
+                  <p className="text-xs font-bold text-indigo/55 text-center py-4 bg-white border border-[rgba(40,25,80,0.06)] rounded-xl">Aucun mode de livraison configuré.</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

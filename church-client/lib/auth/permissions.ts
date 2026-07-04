@@ -28,6 +28,7 @@ export const PERMISSIONS = {
   manageChurchVision: "manage_church_vision",
   viewBranches: "view_branches",
   manageBranches: "manage_branches",
+  manageStore: "manage_store",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

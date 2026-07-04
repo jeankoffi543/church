@@ -95,6 +95,11 @@ Route::prefix('v1')->group(function (): void {
         // SRS (studio WHIP→Facebook): publish authorization + relay lifecycle.
         Route::post('srs/on_publish', [Public\SrsController::class, 'onPublish'])->name('srs.on_publish');
         Route::post('srs/on_unpublish', [Public\SrsController::class, 'onUnpublish'])->name('srs.on_unpublish');
+
+        // Storefront
+        Route::get('store/products', [Public\ProductController::class, 'index'])->name('store.products.index');
+        Route::get('store/products/{id}', [Public\ProductController::class, 'show'])->name('store.products.show');
+        Route::post('store/orders', [Public\OrderController::class, 'store'])->name('store.orders.store');
     });
 
     // ── Webhooks (stateless, signature-verified — no CSRF, no auth) ────
@@ -261,6 +266,20 @@ Route::prefix('v1')->group(function (): void {
                 Route::put('roles/{role}/permissions', [Admin\RoleController::class, 'syncPermissions'])
                     ->name('roles.permissions.sync');
                 Route::apiResource('roles', Admin\RoleController::class);
+            });
+
+            // ── Store / Boutique Admin ─────────────────────────────────
+            Route::middleware('permission:manage_store')->group(function (): void {
+                Route::get('store/products/categories', [Admin\ProductController::class, 'categories'])->name('store.products.categories');
+                Route::apiResource('store/products', Admin\ProductController::class)
+                    ->parameter('products', 'product')
+                    ->names('store.products');
+
+                Route::get('store/orders', [Admin\OrderController::class, 'index'])->name('store.orders.index');
+                Route::patch('store/orders/{order}/status', [Admin\OrderController::class, 'updateStatus'])->name('store.orders.status');
+                Route::get('store/clients', [Admin\OrderController::class, 'clients'])->name('store.clients');
+                Route::get('store/analytics', [Admin\OrderController::class, 'analytics'])->name('store.analytics');
+                Route::get('store/analytics/export', [Admin\OrderController::class, 'exportAnalytics'])->name('store.analytics.export');
             });
         });
     });
