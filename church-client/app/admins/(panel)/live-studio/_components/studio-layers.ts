@@ -253,16 +253,8 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
     base.audioLiveActive = false;
   }
   if (type === "group") {
-    base.layers = [
-      {
-        id: `layer-${Date.now()}-group-child-1`,
-        type: "text",
-        name: "Texte du groupe",
-        visible: true,
-        style: { ...DEFAULT_STUDIO_SETTINGS, fontBodySize: 28, fontBodyColor: "#ffffff" },
-        content: "Ceci est un calque texte groupé",
-      }
-    ];
+    // Children are real, flat layers (parentId) added via the Sources "+" — the
+    // renderer and drag use that model. A nested `layers` child would never draw.
     base.groupLiveActive = false;
   }
   if (hasAudio(base)) {

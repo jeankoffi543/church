@@ -26,12 +26,19 @@ import {
   Music,
   Trash2,
   Headphones,
+  Type,
+  ImageIcon,
+  BookOpen,
+  Video,
+  Film,
+  Folder,
+  Radio,
 } from "lucide-react";
 
 import { importStudioMediaFromUrl } from "@/lib/admin-api";
 import { uploadStudioMediaWithProgress } from "@/lib/studio-upload";
 
-import { DEFAULT_STUDIO_SETTINGS, type ScriptureVerse, type StudioSettings } from "@/lib/studio";
+import { type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getVideoController, type VideoTransportState } from "./studio-video";
 import { listInputs, requestCameraPermission, type MediaDeviceLite } from "./studio-camera";
@@ -53,7 +60,19 @@ import {
   EASING_OPTIONS,
   TYPO_ELEMENTS,
 } from "./studio-tokens";
-import { LAYER_META, layerTabs, type InspTab, type StudioLayer } from "./studio-layers";
+import { LAYER_META, layerTabs, type InspTab, type StudioLayer, type StudioLayerType } from "./studio-layers";
+
+const TYPE_ICON: Record<StudioLayerType, typeof BookOpen> = {
+  bible: BookOpen,
+  text: Type,
+  song: Music,
+  image: ImageIcon,
+  embed: Radio,
+  camera: Video,
+  video: Film,
+  audio: Volume2,
+  group: Folder,
+};
 
 export type InspectorBible = {
   query: string;
@@ -128,6 +147,12 @@ export function InspectorDock({
   onDeletePreset,
   onRestoreDefaults,
   onPlayAnim,
+  allLayers,
+  onAddChild,
+  onSelectLayer,
+  onToggleLayer,
+  onRemoveLayer,
+  onPatchLayer,
 }: {
   selectedLayer: StudioLayer | null;
   effectiveStyle: StudioSettings;
@@ -144,6 +169,13 @@ export function InspectorDock({
   onDeletePreset: (name: string) => void;
   onRestoreDefaults?: () => void;
   onPlayAnim?: () => void;
+  /** Full scene layer list — the group inspector derives its flat children. */
+  allLayers?: StudioLayer[];
+  onAddChild?: (type: StudioLayerType, parentId: string) => void;
+  onSelectLayer?: (id: string) => void;
+  onToggleLayer?: (id: string) => void;
+  onRemoveLayer?: (id: string) => void;
+  onPatchLayer?: (id: string, patch: Partial<StudioLayer>) => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -208,6 +240,12 @@ export function InspectorDock({
                  onRestoreDefaults={onRestoreDefaults}
                  bible={bible}
                  onPlayAnim={onPlayAnim}
+                 allLayers={allLayers}
+                 onAddChild={onAddChild}
+                 onSelectLayer={onSelectLayer}
+                 onToggleLayer={onToggleLayer}
+                 onRemoveLayer={onRemoveLayer}
+                 onPatchLayer={onPatchLayer}
                />
             )}
             {activeTab === "layout" && (
@@ -461,96 +499,43 @@ function GroupInspector({
   layer,
   patchLayerData,
   onRestoreDefaults,
+  childLayers,
+  onAddChild,
+  onSelectChild,
+  onToggleChild,
+  onRemoveChild,
+  onPatchChild,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
   onRestoreDefaults?: () => void;
+  /** Real, flat scene layers whose `parentId` points at this group. */
+  childLayers: StudioLayer[];
+  onAddChild?: (type: StudioLayerType, parentId: string) => void;
+  onSelectChild?: (id: string) => void;
+  onToggleChild?: (id: string) => void;
+  onRemoveChild?: (id: string) => void;
+  onPatchChild?: (id: string, patch: Partial<StudioLayer>) => void;
 }) {
-  const childLayers = layer.layers ?? [];
   const groupLiveActive = layer.groupLiveActive ?? false;
 
-  const [childType, setChildType] = useState<"text" | "image">("text");
-  const [childName, setChildName] = useState("");
-  const [childContent, setChildContent] = useState("");
-  const [editIdx, setEditIdx] = useState<number | null>(null);
-
-  const handleAddOrUpdateChild = () => {
-    const name = childName.trim();
-    const content = childContent.trim();
-    if (!name || !content) return;
-
-    const nextChildLayers = [...childLayers];
-    if (editIdx !== null) {
-      const existing = nextChildLayers[editIdx];
-      nextChildLayers[editIdx] = {
-        ...existing,
-        name,
-        type: childType,
-        imageUrl: childType === "image" ? content : undefined,
-        content: childType === "text" ? content : undefined,
-      };
-      setEditIdx(null);
-    } else {
-      nextChildLayers.push({
-        id: `layer-${Date.now()}-group-child-${nextChildLayers.length + 1}`,
-        type: childType,
-        name,
-        visible: true,
-        style: {
-          ...DEFAULT_STUDIO_SETTINGS,
-          fontBodySize: childType === "text" ? 28 : DEFAULT_STUDIO_SETTINGS.fontBodySize,
-          fontBodyColor: "#ffffff",
-        },
-        imageUrl: childType === "image" ? content : undefined,
-        content: childType === "text" ? content : undefined,
-      });
-    }
-
-    patchLayerData({ layers: nextChildLayers });
-    setChildName("");
-    setChildContent("");
-  };
-
-  const handleEditChild = (index: number) => {
-    const child = childLayers[index];
-    if (!child) return;
-    setChildType(child.type as "text" | "image");
-    setChildName(child.name);
-    setChildContent((child.type === "image" ? child.imageUrl : child.content) ?? "");
-    setEditIdx(index);
-  };
-
-  const handleDeleteChild = (index: number) => {
-    const nextChildLayers = childLayers.filter((_, idx) => idx !== index);
-    patchLayerData({ layers: nextChildLayers });
-  };
-
-  const handleToggleChildVisibility = (index: number) => {
-    const nextChildLayers = childLayers.map((c, idx) =>
-      idx === index ? { ...c, visible: !c.visible } : c
-    );
-    patchLayerData({ layers: nextChildLayers });
-  };
-
+  // Push the group's style onto every child while keeping each child's own
+  // position/size — a one-click way to unify look across the group.
   const handleApplyGroupStyleToChildren = () => {
-    const nextChildLayers = childLayers.map((c) => {
-      const preservedPosition = {
-        positionMode: c.style.positionMode,
-        predefinedPosition: c.style.predefinedPosition,
-        customX: c.style.customX,
-        customY: c.style.customY,
-        customWidth: c.style.customWidth,
-        customHeight: c.style.customHeight,
-      };
-      return {
-        ...c,
+    if (!onPatchChild) return;
+    childLayers.forEach((c) => {
+      onPatchChild(c.id, {
         style: {
           ...layer.style,
-          ...preservedPosition,
+          positionMode: c.style.positionMode,
+          predefinedPosition: c.style.predefinedPosition,
+          customX: c.style.customX,
+          customY: c.style.customY,
+          customWidth: c.style.customWidth,
+          customHeight: c.style.customHeight,
         },
-      };
+      });
     });
-    patchLayerData({ layers: nextChildLayers });
   };
 
   return (
@@ -559,7 +544,8 @@ function GroupInspector({
       <button
         type="button"
         onClick={handleApplyGroupStyleToChildren}
-        className="w-full rounded-lg border border-gold/30 bg-gold/10 hover:bg-gold/20 py-2 text-[11px] font-bold text-gold transition flex items-center justify-center gap-1.5"
+        disabled={childLayers.length === 0}
+        className="w-full rounded-lg border border-gold/30 bg-gold/10 hover:bg-gold/20 py-2 text-[11px] font-bold text-gold transition flex items-center justify-center gap-1.5 disabled:opacity-40"
       >
         <Sparkles className="size-3.5" />
         Uniformiser le style sur tout le groupe
@@ -596,72 +582,34 @@ function GroupInspector({
         </button>
       </div>
 
-      {/* Form to add or edit a child layer */}
+      {/* Quick-add a real child layer (rendered + diffused) */}
       <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
-        <Label className="text-white/70">
-          {editIdx !== null ? "Modifier le calque groupé" : "Ajouter un calque au groupe"}
-        </Label>
+        <Label className="text-white/70">Ajouter un calque au groupe</Label>
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setChildType("text")}
-            className={cn(
-              "flex-1 rounded-md py-1 text-[10.5px] font-bold transition",
-              childType === "text" ? "bg-studio-purple text-white" : "bg-white/5 text-white/60"
-            )}
+            onClick={() => onAddChild?.("text", layer.id)}
+            className="flex-1 rounded-md bg-white/5 py-1.5 text-[10.5px] font-bold text-white/70 transition hover:bg-white/10 flex items-center justify-center gap-1.5"
           >
+            <Type className="size-3.5" style={{ color: LAYER_META.text.color }} />
             Texte
           </button>
           <button
             type="button"
-            onClick={() => setChildType("image")}
-            className={cn(
-              "flex-1 rounded-md py-1 text-[10.5px] font-bold transition",
-              childType === "image" ? "bg-studio-purple text-white" : "bg-white/5 text-white/60"
-            )}
+            onClick={() => onAddChild?.("image", layer.id)}
+            className="flex-1 rounded-md bg-white/5 py-1.5 text-[10.5px] font-bold text-white/70 transition hover:bg-white/10 flex items-center justify-center gap-1.5"
           >
+            <ImageIcon className="size-3.5" style={{ color: LAYER_META.image.color }} />
             Image
           </button>
         </div>
-        <input
-          value={childName}
-          onChange={(e) => setChildName(e.target.value)}
-          placeholder="Nom du calque (ex: Titre, Logo...)"
-          className={FIELD}
-        />
-        <textarea
-          value={childContent}
-          onChange={(e) => setChildContent(e.target.value)}
-          placeholder={childType === "image" ? "URL de l'image..." : "Contenu textuel..."}
-          rows={2}
-          className={cn(FIELD, "resize-y")}
-        />
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleAddOrUpdateChild}
-            disabled={!childName.trim() || !childContent.trim()}
-            className="flex-1 rounded-lg bg-gold py-1.5 text-[11.5px] font-extrabold text-ink transition hover:brightness-105 disabled:opacity-50"
-          >
-            {editIdx !== null ? "Mettre à jour" : "Ajouter au groupe"}
-          </button>
-          {editIdx !== null && (
-            <button
-              type="button"
-              onClick={() => {
-                setChildName("");
-                setChildContent("");
-                setEditIdx(null);
-              }}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-[11.5px] font-bold text-white/75 transition hover:bg-white/5"
-            >
-              Annuler
-            </button>
-          )}
-        </div>
+        <p className="text-[9.5px] leading-relaxed text-white/35">
+          Le nouveau calque s&apos;ajoute au groupe et s&apos;ouvre dans l&apos;inspecteur pour
+          régler son contenu, son style et son animation.
+        </p>
       </div>
 
-      {/* List of group child layers */}
+      {/* List of group child layers (flat, parentId-linked) */}
       <div>
         <Label className="mb-1.5">Calques regroupés</Label>
         {childLayers.length === 0 ? (
@@ -670,51 +618,52 @@ function GroupInspector({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {childLayers.map((c, idx) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 hover:bg-white/5"
-              >
-                <div className="flex-1 text-left min-w-0">
-                  <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
-                    <span className={cn("size-2 rounded-full", c.visible ? "bg-studio-preview-bright" : "bg-white/20")} />
-                    {c.name}
-                  </div>
-                  <div className="mt-0.5 truncate text-[10px] text-white/45">
-                    {c.type === "image" ? c.imageUrl : c.content}
+            {childLayers.map((c) => {
+              const ChildIcon = TYPE_ICON[c.type];
+              return (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 hover:bg-white/5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSelectChild?.(c.id)}
+                    className="flex-1 text-left min-w-0"
+                    title="Ouvrir dans l'inspecteur"
+                  >
+                    <div className="text-[11.5px] font-bold text-white flex items-center gap-1.5">
+                      <span className={cn("size-2 rounded-full", c.visible ? "bg-studio-preview-bright" : "bg-white/20")} />
+                      <ChildIcon className="size-3 shrink-0" style={{ color: LAYER_META[c.type].color }} />
+                      {c.name}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] text-white/45">
+                      {c.type === "image" ? c.imageUrl || "Aucune image" : c.content || LAYER_META[c.type].typeLabel}
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onToggleChild?.(c.id)}
+                      className={cn(
+                        "p-0.5 transition-colors",
+                        c.visible ? "text-studio-preview-bright" : "text-white/25"
+                      )}
+                      title={c.visible ? "Masquer" : "Afficher"}
+                    >
+                      {c.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveChild?.(c.id)}
+                      className="text-white/30 transition hover:text-[#ff8a8a]"
+                      title="Retirer du groupe"
+                    >
+                      <X className="size-3.5" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleChildVisibility(idx)}
-                    className={cn(
-                      "p-0.5 transition-colors",
-                      c.visible ? "text-studio-preview-bright" : "text-white/25"
-                    )}
-                    title={c.visible ? "Masquer" : "Afficher"}
-                  >
-                    {c.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEditChild(idx)}
-                    className="text-white/30 transition hover:text-white"
-                    title="Modifier"
-                  >
-                    <Sparkles className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteChild(idx)}
-                    className="text-white/30 transition hover:text-[#ff8a8a]"
-                    title="Supprimer"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1246,6 +1195,12 @@ function ContentPanel({
   onRestoreDefaults,
   bible,
   onPlayAnim,
+  allLayers,
+  onAddChild,
+  onSelectLayer,
+  onToggleLayer,
+  onRemoveLayer,
+  onPatchLayer,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
@@ -1253,6 +1208,12 @@ function ContentPanel({
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
   onPlayAnim?: () => void;
+  allLayers?: StudioLayer[];
+  onAddChild?: (type: StudioLayerType, parentId: string) => void;
+  onSelectLayer?: (id: string) => void;
+  onToggleLayer?: (id: string) => void;
+  onRemoveLayer?: (id: string) => void;
+  onPatchLayer?: (id: string, patch: Partial<StudioLayer>) => void;
 }) {
   if (layer.type === "bible") return <BibleContent bible={bible} />;
 
@@ -1302,6 +1263,12 @@ function ContentPanel({
         layer={layer}
         patchLayerData={patchLayerData}
         onRestoreDefaults={onRestoreDefaults}
+        childLayers={(allLayers ?? []).filter((l) => l.parentId === layer.id)}
+        onAddChild={onAddChild}
+        onSelectChild={onSelectLayer}
+        onToggleChild={onToggleLayer}
+        onRemoveChild={onRemoveLayer}
+        onPatchChild={onPatchLayer}
       />
     );
   }
