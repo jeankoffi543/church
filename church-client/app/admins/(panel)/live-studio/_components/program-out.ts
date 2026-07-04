@@ -19,7 +19,7 @@
  * headers, and external links without CORS simply won't appear.
  */
 
-import { getAudioContext } from "./studio-audio";
+import { getAudioContext, getAudioController } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
 import {
   drawBibleLayer,
@@ -145,12 +145,12 @@ function applyEntranceTransform(
 
 /* ── Per-layer render sources ────────────────────────────────────────────── */
 
-type DrawKind = "camera" | "video" | "image";
+type DrawKind = "camera" | "video" | "image" | "audio";
 
 type Source = {
   kind: DrawKind;
-  /** The element sampled every frame (`<video>` or `<img>`). */
-  el: HTMLVideoElement | HTMLImageElement;
+  /** The element sampled every frame (`<video>`/`<img>`), or the mixed `<audio>`. */
+  el: HTMLVideoElement | HTMLImageElement | HTMLAudioElement;
   /** Current source key (deviceId / feedUrl / imageUrl) to detect changes. */
   key: string;
   /** Audio nodes for video / camera channels (null for images). */
@@ -163,8 +163,15 @@ type Source = {
   camStream?: MediaStream;
 };
 
-/** Whether a layer is drawable by the v1 compositor and has a real source. */
+/** The source (visual or audio-only) a layer needs in the program feed, if any. */
 function drawableKey(layer: StudioLayer): { kind: DrawKind; key: string } | null {
+  // Audio has no visual — it feeds the mix only when "Mode de diffusion direct
+  // (Antenne)" is on (audioLiveActive); otherwise it stays a local-only preview.
+  if (layer.type === "audio") {
+    return layer.audioFileUrl && layer.audioLiveActive
+      ? { kind: "audio", key: `aud:${layer.audioFileUrl}` }
+      : null;
+  }
   if (!layer.visible) return null;
   if (layer.type === "camera") {
     return layer.deviceId ? { kind: "camera", key: `dev:${layer.deviceId}` } : null;
@@ -176,7 +183,7 @@ function drawableKey(layer: StudioLayer): { kind: DrawKind; key: string } | null
   if (layer.type === "image") {
     return layer.imageUrl ? { kind: "image", key: `img:${layer.imageUrl}` } : null;
   }
-  return null; // text / bible / song / embed / audio — not drawn in v1
+  return null; // text / bible / song / embed — not drawn
 }
 
 export type ProgramOut = {
@@ -266,8 +273,12 @@ export function startProgramOut(opts?: {
     const muted = layer.audioMuted ?? false;
     const level = (layer.audioLevel ?? 80) / 100;
     const gainDb = layer.audioGain ?? 0;
-    src.audio.gain.gain.value = muted ? 0 : level * dbToLinear(gainDb);
-    src.audio.pan.pan.value = Math.max(-1, Math.min(1, (layer.audioBalance ?? 0) / 100));
+    const target = muted ? 0 : level * dbToLinear(gainDb);
+    const pan = Math.max(-1, Math.min(1, (layer.audioBalance ?? 0) / 100));
+    // Ramp instead of an abrupt assignment — a stepped gain clicks/crackles.
+    const t = audioCtx?.currentTime ?? 0;
+    src.audio.gain.gain.setTargetAtTime(target, t, 0.02);
+    src.audio.pan.pan.setTargetAtTime(pan, t, 0.02);
   }
 
   function ensureSource(layer: StudioLayer, kind: DrawKind, key: string): Source | null {
@@ -318,6 +329,25 @@ export function startProgramOut(opts?: {
         }
       }
       src = { kind, el, key, audio };
+    } else if (kind === "audio") {
+      // Audio file source → its own element (CORS so Web Audio isn't tainted) →
+      // mix. Silent locally (never routed to ctx.destination); synced to the
+      // master transport in the interval below.
+      const el = document.createElement("audio");
+      el.crossOrigin = "anonymous";
+      el.preload = "auto";
+      el.loop = layer.audioLoop ?? false;
+      el.src = resolveMediaUrl(layer.audioFileUrl);
+      void el.play().catch(() => {});
+      let audio: Source["audio"];
+      if (audioCtx) {
+        try {
+          audio = connectAudio(audioCtx.createMediaElementSource(el));
+        } catch {
+          audio = undefined;
+        }
+      }
+      src = { kind, el, key, audio };
     } else {
       const el = new Image();
       el.crossOrigin = "anonymous";
@@ -337,10 +367,10 @@ export function startProgramOut(opts?: {
     } catch {
       /* noop */
     }
-    if (src.el instanceof HTMLVideoElement) {
-      const streamObj = src.el.srcObject;
+    if (src.el instanceof HTMLMediaElement) {
+      const streamObj = src.el instanceof HTMLVideoElement ? src.el.srcObject : null;
       src.el.pause();
-      src.el.srcObject = null;
+      if (src.el instanceof HTMLVideoElement) src.el.srcObject = null;
       // Stop our own cloned camera tracks (independent of the Preview's stream).
       if (streamObj instanceof MediaStream) {
         streamObj.getTracks().forEach((t) => t.stop());
@@ -563,17 +593,26 @@ export function startProgramOut(opts?: {
   // the snapshot array reference doesn't change, so we refresh here instead.
   const unsubCameras = subscribeCameraStreams(() => setScene(scene, bibleContext));
 
-  // Keep each video source in step with the operator's transport (play/pause/
-  // seek drive the Preview's master controller) so what airs on Facebook mirrors
-  // the studio. Falls back to independent playback when no master is registered.
-  const videoSync = setInterval(() => {
+  // Keep each video/audio source in step with the operator's transport (play/
+  // pause/seek drive the Preview's master controller) so what airs on Facebook
+  // mirrors the studio. Falls back to independent playback when no master exists.
+  const transportSync = setInterval(() => {
     for (const [id, src] of sources) {
-      if (src.kind !== "video" || !(src.el instanceof HTMLVideoElement)) continue;
-      const master = getVideoController(id);
+      if (!(src.el instanceof HTMLMediaElement)) continue;
+      const master =
+        src.kind === "video"
+          ? getVideoController(id)
+          : src.kind === "audio"
+            ? getAudioController(id)
+            : undefined;
       if (!master) continue;
       const st = master.getState();
       if (!st.ready) continue;
-      if (Math.abs(src.el.currentTime - st.currentTime) > 0.4) src.el.currentTime = st.currentTime;
+      // Only VIDEO position-syncs (visual match matters). Seeking AUDIO on every
+      // small drift crackles — a soundtrack just needs the play/pause state.
+      if (src.kind === "video" && Math.abs(src.el.currentTime - st.currentTime) > 0.4) {
+        src.el.currentTime = st.currentTime;
+      }
       if (st.paused && !src.el.paused) src.el.pause();
       else if (!st.paused && src.el.paused) void src.el.play().catch(() => {});
     }
@@ -592,7 +631,7 @@ export function startProgramOut(opts?: {
     setScene,
     stop() {
       cancelAnimationFrame(raf);
-      clearInterval(videoSync);
+      clearInterval(transportSync);
       if (clock) {
         clock.onaudioprocess = null;
         try {

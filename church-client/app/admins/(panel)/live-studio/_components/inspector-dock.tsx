@@ -120,7 +120,6 @@ export function InspectorDock({
   onRename,
   patchLayerData,
   onImageUrl,
-  onAudioFile,
   bible,
   presets,
   newPresetName,
@@ -137,7 +136,6 @@ export function InspectorDock({
   onRename: (name: string) => void;
   patchLayerData: Patch;
   onImageUrl: (url: string) => void;
-  onAudioFile: (file: File) => void;
   bible: InspectorBible;
   presets: { name: string; settings: StudioSettings }[];
   newPresetName: string;
@@ -207,7 +205,6 @@ export function InspectorDock({
                  layer={selectedLayer}
                  patchLayerData={patchLayerData}
                  onImageUrl={onImageUrl}
-                 onAudioFile={onAudioFile}
                  onRestoreDefaults={onRestoreDefaults}
                  bible={bible}
                  onPlayAnim={onPlayAnim}
@@ -737,12 +734,10 @@ function GroupInspector({
 function AudioInspector({
   layer,
   patchLayerData,
-  onAudioFile,
   onRestoreDefaults,
 }: {
   layer: StudioLayer;
   patchLayerData: Patch;
-  onAudioFile?: (file: File) => void;
   onRestoreDefaults?: () => void;
 }) {
   const audioLevel = layer.audioLevel ?? 80;
@@ -758,6 +753,9 @@ function AudioInspector({
   const [dragOver, setDragOver] = useState(false);
   const [transport, setTransport] = useState<AudioTransportState | null>(null);
   const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const sliderRef = useRef<HTMLInputElement>(null);
   const isDraggingRef = useRef(false);
@@ -808,20 +806,37 @@ function AudioInspector({
     };
   }, [layer.id]);
 
+  // Upload to the CORS-enabled /studio/media route (with progress) so Web Audio
+  // can mix the file into the Facebook feed without tainting it.
+  const handleAudioFile = async (file: File) => {
+    if (!file.type.startsWith("audio/")) {
+      setUploadError("Choisissez un fichier audio (MP3, WAV…).");
+      return;
+    }
+    setUploadError(null);
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      const { url } = await uploadStudioMediaWithProgress(file, setUploadProgress);
+      patchLayerData({ audioFileUrl: url, audioFileName: file.name });
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Échec de l'envoi de l'audio.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && onAudioFile) {
-      onAudioFile(file);
-    }
+    if (file) void handleAudioFile(file);
+    e.target.value = "";
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && onAudioFile) {
-      onAudioFile(file);
-    }
+    if (file) void handleAudioFile(file);
   };
 
   return (
@@ -909,7 +924,19 @@ function AudioInspector({
             className="hidden"
             onChange={handleFileChange}
           />
-          {layer.audioFileUrl ? (
+          {uploading ? (
+            <div className="flex w-full flex-col items-center gap-2 px-4">
+              <span className="text-[11px] font-bold text-gold">
+                Envoi… {Math.round(uploadProgress * 100)}%
+              </span>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gold transition-[width] duration-150"
+                  style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+                />
+              </div>
+            </div>
+          ) : layer.audioFileUrl ? (
             <div className="flex flex-col items-center px-3">
               <span className="text-[11.5px] font-bold text-white max-w-[200px] truncate">
                 {layer.audioFileName || "Bande audio chargée"}
@@ -924,6 +951,7 @@ function AudioInspector({
             </div>
           )}
         </div>
+        {uploadError && <span className="text-[10px] text-[#ff8a8a]">{uploadError}</span>}
 
         {/* Audio Player Controls */}
         {layer.audioFileUrl && (
@@ -1215,7 +1243,6 @@ function ContentPanel({
   layer,
   patchLayerData,
   onImageUrl,
-  onAudioFile,
   onRestoreDefaults,
   bible,
   onPlayAnim,
@@ -1223,7 +1250,6 @@ function ContentPanel({
   layer: StudioLayer;
   patchLayerData: Patch;
   onImageUrl: (url: string) => void;
-  onAudioFile: (file: File) => void;
   onRestoreDefaults?: () => void;
   bible: InspectorBible;
   onPlayAnim?: () => void;
@@ -1265,7 +1291,6 @@ function ContentPanel({
       <AudioInspector
         layer={layer}
         patchLayerData={patchLayerData}
-        onAudioFile={onAudioFile}
         onRestoreDefaults={onRestoreDefaults}
       />
     );

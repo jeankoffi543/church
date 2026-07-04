@@ -195,6 +195,31 @@ it('re-hosts an external image URL server-side', function () {
     expect(Storage::disk('public')->files('studio/images'))->toHaveCount(1);
 });
 
+it('uploads a local studio audio file to studio/audio', function () {
+    Storage::fake('public');
+
+    $data = actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media', [
+            'file' => File::fake()->create('track.mp3', 200, 'audio/mpeg'),
+        ])
+        ->assertCreated()
+        ->json('data');
+
+    expect($data['url'])->toContain('/api/v1/public/studio/media/');
+    expect(Storage::disk('public')->files('studio/audio'))->toHaveCount(1);
+});
+
+it('re-hosts an external audio URL to studio/audio', function () {
+    Storage::fake('public');
+    Http::fake(['*' => Http::response('fake-mp3-bytes', 200, ['Content-Type' => 'audio/mpeg'])]);
+
+    actingAs(liveAdmin(), 'sanctum')
+        ->postJson('/api/v1/admin/studio/media/from-url', ['url' => 'https://example.com/track.mp3'])
+        ->assertCreated();
+
+    expect(Storage::disk('public')->files('studio/audio'))->toHaveCount(1);
+});
+
 it('re-hosts an external video URL to studio/videos', function () {
     Storage::fake('public');
     Http::fake(['*' => Http::response('fake-mp4-bytes', 200, ['Content-Type' => 'video/mp4'])]);
