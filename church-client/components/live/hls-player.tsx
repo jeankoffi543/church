@@ -49,19 +49,54 @@ export function HlsPlayer({
           if (!Hls.isSupported()) setFailed(true);
           return;
         }
-        hls = new Hls({
-          lowLatencyMode: true,
-          liveSyncDurationCount: 2,
-          liveMaxLatencyDurationCount: 6,
-          maxLiveSyncPlaybackRate: 1.5,
-          backBufferLength: 30,
-          enableWorker: true,
-        });
+        hls = new Hls(
+          live
+            ? {
+                enableWorker: true,
+                // The studio feed (WebRTC → SRS RTMP → HLS) has slightly jittery
+                // segment timing — hugging the live edge (2-segment sync + 1.5×
+                // catch-up) stalled constantly and froze the page. Keep a healthy
+                // cushion (~6s from edge) and let hls.js retry hard on blips.
+                liveSyncDuration: 6,
+                liveMaxLatencyDuration: 24,
+                maxLiveSyncPlaybackRate: 1.1,
+                maxBufferLength: 30,
+                backBufferLength: 30,
+                fragLoadingMaxRetry: 8,
+                levelLoadingMaxRetry: 8,
+                manifestLoadingMaxRetry: 8,
+              }
+            : { enableWorker: true, backBufferLength: 30 },
+        );
+
+        // A live blip (segment rollover, brief gap, decode hiccup) is recoverable
+        // — retry instead of killing the player forever. Bounded so a truly dead
+        // stream still surfaces the fallback; reset once media flows again.
+        let recoveries = 0;
+        const MAX_RECOVERIES = 6;
         hls.loadSource(src);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          recoveries = 0;
+        });
         hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) setFailed(true);
+          if (!data.fatal || !hls) return;
+          if (recoveries >= MAX_RECOVERIES) {
+            hls.destroy();
+            setFailed(true);
+            return;
+          }
+          recoveries += 1;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // Wait a beat so we don't hammer a momentarily-down segment.
+            setTimeout(() => hls?.startLoad(), 1000);
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            hls.recoverMediaError();
+          } else {
+            hls.destroy();
+            setFailed(true);
+          }
         });
       })
       .catch(() => setFailed(true));
@@ -70,7 +105,7 @@ export function HlsPlayer({
       cancelled = true;
       hls?.destroy();
     };
-  }, [src]);
+  }, [src, live]);
 
   const toggleMute = () => {
     const v = videoRef.current;

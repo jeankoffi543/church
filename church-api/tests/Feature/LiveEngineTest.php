@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\LiveSourceChanged;
 use App\Events\LiveStateChanged;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
@@ -187,6 +188,46 @@ it('auto-archives the live when OBS stops (on_publish_done)', function () {
 
     expect((bool) Setting::get('live_status'))->toBeFalse();
     expect(PastLive::query()->where('title', 'Veillée RTMP')->exists())->toBeTrue();
+});
+
+it('broadcasts a source change when the embed url swaps mid-live (no state event)', function () {
+    Event::fake([LiveSourceChanged::class, LiveStateChanged::class]);
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_embed_url', 'https://old.example/hls/a.m3u8', 'live');
+    Setting::set('live_title', 'Culte', 'live');
+
+    actingAsSuperAdmin();
+    $this->patchJson('/api/v1/admin/settings', ['settings' => [
+        ['key' => 'live_status', 'value' => true, 'group' => 'live'],
+        ['key' => 'live_embed_url', 'value' => 'http://127.0.0.1:8088/live/fb-new.m3u8', 'group' => 'live'],
+    ]])->assertOk();
+
+    Event::assertDispatched(
+        LiveSourceChanged::class,
+        fn (LiveSourceChanged $e) => $e->streamUrl === 'http://127.0.0.1:8088/live/fb-new.m3u8' && $e->title === 'Culte',
+    );
+    // Still live → no on/off transition event (which would wipe the chat).
+    Event::assertNotDispatched(LiveStateChanged::class);
+});
+
+it('does not broadcast a source change when the url is unchanged or off air', function () {
+    Event::fake([LiveSourceChanged::class]);
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_embed_url', 'https://same.example/hls/a.m3u8', 'live');
+
+    actingAsSuperAdmin();
+    // Same url while live → nothing.
+    $this->patchJson('/api/v1/admin/settings', ['settings' => [
+        ['key' => 'live_status', 'value' => true, 'group' => 'live'],
+        ['key' => 'live_embed_url', 'value' => 'https://same.example/hls/a.m3u8', 'group' => 'live'],
+    ]])->assertOk();
+    // New url but off air → the state event path handles going live, not this.
+    $this->patchJson('/api/v1/admin/settings', ['settings' => [
+        ['key' => 'live_status', 'value' => false, 'group' => 'live'],
+        ['key' => 'live_embed_url', 'value' => 'https://other.example/hls/b.m3u8', 'group' => 'live'],
+    ]])->assertOk();
+
+    Event::assertNotDispatched(LiveSourceChanged::class);
 });
 
 it('never exposes the stream key on the public settings API', function () {

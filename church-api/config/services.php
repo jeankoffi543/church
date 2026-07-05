@@ -60,6 +60,12 @@ return [
         'rtmp_internal' => env('SRS_RTMP_INTERNAL', 'rtmp://127.0.0.1:1936/live'),
         // SRS application (must match the WHIP url's ?app=…).
         'app' => env('SRS_APP', 'live'),
+        // Public WebRTC playback endpoint — the site plays the studio's feed back
+        // over WebRTC from here. SRS's NATIVE play API (`/rtc/v1/play/`, JSON), used
+        // over the WHEP standard because it's confirmed on this SRS build. Same SRS
+        // :1985 as WHIP. Put behind HTTPS in prod (an https page can't POST to http).
+        // e.g. https://media.example.ci/rtc/v1/play/
+        'whep_base' => env('SRS_WHEP_BASE', 'http://127.0.0.1:1985/rtc/v1/play/'),
     ],
 
     // Facebook Live ingest. The client's own stream key is appended to this base

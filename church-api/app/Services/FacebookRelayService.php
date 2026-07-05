@@ -15,12 +15,19 @@ use Illuminate\Support\Str;
  * internal RTMP to Facebook over RTMPS with the client's stream key — the key
  * never leaves the backend.
  *
- * Runtime state (token + relay pid) lives in the cache, keyed by the random
- * stream name, so the `on_publish` webhook (a separate request) can resolve it.
+ * The PUBLIC site does NOT get an HLS re-encode (that pipeline was hopelessly
+ * fragile against the jittery browser source — a stalled tab duplicated thousands
+ * of frames and killed ffmpeg). Instead the site plays the SAME WebRTC stream back
+ * over **WHEP** ({@see createBroadcast()} returns its url): WebRTC natively absorbs
+ * a frozen/jittery source (jitter buffer, last-frame hold, resume) so playback
+ * never dies. No transcode, no segmentation, no relay for the site.
+ *
+ * Runtime state (token + relay pid) lives in the cache, keyed by the random stream
+ * name, so the `on_publish` webhook (a separate request) can resolve it.
  *
  * The only OS-touching steps — spawning and killing ffmpeg — are isolated in
- * {@see spawnFfmpeg()} and {@see killPid()}; swap those to change the relay
- * mechanism (e.g. `docker exec` into the SRS container, or a dedicated agent).
+ * {@see spawnFacebookRelay()} and {@see killStream()}; swap those to change the
+ * relay mechanism (e.g. `docker exec` into the SRS container).
  *
  * @phpstan-type BroadcastState array{token: string, target: string, pid: int|null}
  */
@@ -29,11 +36,11 @@ class FacebookRelayService
     private const TTL_HOURS = 6;
 
     /**
-     * Issue a one-shot broadcast: a random stream name + publish token, and the
-     * WHIP url the studio publishes to. `$rtmpsUrl` + `$streamKey` form the
-     * Facebook ingest target the relay will push to.
+     * Issue a one-shot broadcast: a random stream name + publish token, the WHIP
+     * url the studio publishes to, and the WHEP url the public site plays back.
+     * `$rtmpsUrl` + `$streamKey` form the Facebook ingest target the relay pushes to.
      *
-     * @return array{stream: string, whipUrl: string}
+     * @return array{stream: string, whipUrl: string, whepUrl: string}
      */
     public function createBroadcast(string $rtmpsUrl, string $streamKey): array
     {
@@ -43,11 +50,16 @@ class FacebookRelayService
 
         $this->put($stream, ['token' => $token, 'target' => $target, 'pid' => null]);
 
-        $base = rtrim((string) config('services.srs.whip_base'), '?');
         $app = (string) config('services.srs.app', 'live');
-        $whipUrl = $base.'?app='.$app.'&stream='.$stream.'&token='.$token;
 
-        return ['stream' => $stream, 'whipUrl' => $whipUrl];
+        $whipBase = rtrim((string) config('services.srs.whip_base'), '?');
+        $whipUrl = $whipBase.'?app='.$app.'&stream='.$stream.'&token='.$token;
+
+        // The public site plays the same WebRTC publish back over WHEP — no re-encode.
+        $whepBase = rtrim((string) config('services.srs.whep_base'), '?');
+        $whepUrl = $whepBase.'?app='.$app.'&stream='.$stream;
+
+        return ['stream' => $stream, 'whipUrl' => $whipUrl, 'whepUrl' => $whepUrl];
     }
 
     /**
@@ -61,9 +73,8 @@ class FacebookRelayService
     }
 
     /**
-     * Start the ffmpeg relay (SRS internal RTMP → Facebook RTMPS) for a stream
-     * that has just been authorized. Idempotent: a relay already running is left
-     * untouched.
+     * Start the ffmpeg relay (SRS internal RTMP → Facebook RTMPS) for a stream that
+     * has just been authorized. Idempotent: a relay already running is left untouched.
      */
     public function startRelay(string $stream): void
     {
@@ -73,9 +84,7 @@ class FacebookRelayService
         }
 
         $input = rtrim((string) config('services.srs.rtmp_internal'), '/').'/'.$stream;
-        $pid = $this->spawnFfmpeg($input, $state['target'], $stream);
-
-        $state['pid'] = $pid;
+        $state['pid'] = $this->spawnFacebookRelay($input, $state['target'], $stream);
         $this->put($stream, $state);
     }
 
@@ -90,25 +99,18 @@ class FacebookRelayService
             return;
         }
 
-        if ($state['pid'] !== null) {
-            $this->killPid($state['pid']);
-        }
-
+        $this->killStream($stream);
         Cache::forget($this->key($stream));
     }
 
     /**
-     * Spawn a detached ffmpeg relay to Facebook. Video and audio are **re-encoded**
-     * with Facebook-safe settings: a fixed 2 s GOP (`-g 60 -keyint_min 60
-     * -sc_threshold 0` at 30 fps) so keyframes are regular, `yuv420p`/High profile,
-     * and stereo AAC. A passthrough (`-c:v copy`) was rejected — the WebRTC
-     * encoder's irregular keyframe interval and late-appearing audio made Facebook
-     * drop the connection. `nohup` keeps it alive; the returned pid is ffmpeg's.
+     * Spawn the detached Facebook relay. Re-encoded with Facebook-safe settings: a
+     * fixed 2 s GOP (`-g 60 -keyint_min 60 -sc_threshold 0` at 30 fps), `yuv420p`/
+     * High profile, stereo AAC. A passthrough (`-c:v copy`) was rejected — the
+     * WebRTC encoder's irregular keyframes + late audio made Facebook drop.
      */
-    protected function spawnFfmpeg(string $input, string $target, string $stream): ?int
+    protected function spawnFacebookRelay(string $input, string $target, string $stream): ?int
     {
-        $log = storage_path('logs/relay-'.$stream.'.log');
-
         $command = sprintf(
             'nohup ffmpeg -hide_banner -loglevel warning -i %s '.
             '-c:v libx264 -preset fast -profile:v high -pix_fmt yuv420p -r 30 '.
@@ -117,7 +119,7 @@ class FacebookRelayService
             '-f flv %s >> %s 2>&1 & echo $!',
             escapeshellarg($input),
             escapeshellarg($target),
-            escapeshellarg($log),
+            escapeshellarg(storage_path('logs/relay-'.$stream.'.log')),
         );
 
         $pid = (int) trim(Process::run($command)->output());
@@ -126,11 +128,12 @@ class FacebookRelayService
     }
 
     /**
-     * Terminate a relay process (SIGTERM lets ffmpeg flush and close cleanly).
+     * Kill the relay ffmpeg by the (unique, random) stream name on its command line
+     * — robust against a leaked/renamed pid.
      */
-    protected function killPid(int $pid): void
+    protected function killStream(string $stream): void
     {
-        Process::run('kill '.$pid);
+        Process::run('pkill -f '.escapeshellarg($stream));
     }
 
     /**

@@ -22,6 +22,7 @@ import {
 import { getCurrentScripture, type ScripturePayload } from "@/lib/studio";
 
 import { HlsPlayer } from "./hls-player";
+import { WhepPlayer } from "./whep-player";
 import { LiveChat, PseudonymGate } from "./live-chat";
 import { DescriptionTab, NotesTab, PrayerTab, type LiveTab } from "./live-panel";
 import { LiveReactions, type ReactionsHandle } from "./live-reactions";
@@ -100,6 +101,15 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
       setJustEnded(!is_live);
       setConfig((prev) => ({ ...prev, isLive: is_live }));
       void refreshConfig(); // pull the fresh stream URL / title
+    },
+    // Source swapped mid-broadcast (e.g. a fresh studio HLS stream) — re-point
+    // the player instantly, keep the chat intact.
+    onSource: ({ stream_url, title }) => {
+      setConfig((prev) => ({
+        ...prev,
+        streamUrl: stream_url || prev.streamUrl,
+        title: title || prev.title,
+      }));
     },
   });
 
@@ -201,8 +211,10 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
     [appendMessage],
   );
 
-  // Our own RTMP→HLS server is served as a `.m3u8` URL → played via hls.js;
-  // everything else (YouTube / Facebook) is embedded as an iframe.
+  // Studio broadcasts play back over WebRTC (WHEP url); our own RTMP→HLS server is
+  // served as a `.m3u8` URL → played via hls.js; everything else (YouTube /
+  // Facebook) is embedded as an iframe.
+  const isWhep = /\/rtc\/v1\/(whep|play)\//i.test(config.streamUrl);
   const isHls = /\.m3u8(\?|$)/i.test(config.streamUrl);
   const embedUrl = toEmbedUrl(config.streamUrl);
   // Chat / audience / reactions are only meaningful while on air.
@@ -242,7 +254,9 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
         </div>
 
         <div className="relative flex-1 overflow-hidden bg-black">
-          {config.isLive && isHls ? (
+          {config.isLive && isWhep ? (
+            <WhepPlayer url={config.streamUrl} title={config.title} />
+          ) : config.isLive && isHls ? (
             <HlsPlayer src={config.streamUrl} title={config.title} live />
           ) : config.isLive && embedUrl ? (
             <iframe

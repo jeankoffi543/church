@@ -48,7 +48,10 @@ it('issues a WHIP url with a stream + token for an authenticated régisseur', fu
 
     expect($data['stream'])->toStartWith('fb-')
         ->and($data['whip_url'])->toContain('stream='.$data['stream'])
-        ->and($data['whip_url'])->toContain('token=');
+        ->and($data['whip_url'])->toContain('token=')
+        ->and($data['whep_url'])->toContain('/rtc/v1/play/')
+        ->and($data['whep_url'])->toContain('stream='.$data['stream'])
+        ->and($data['whep_url'])->not->toContain('token=');
 });
 
 it('forbids starting a broadcast without the manage_live permission', function () {
@@ -65,8 +68,8 @@ it('rejects a broadcast when no Facebook stream key is configured', function () 
         ->assertStatus(422);
 });
 
-it('authorizes a valid SRS publish and launches the ffmpeg relay', function () {
-    Process::fake(['nohup ffmpeg*' => Process::result(output: '12345')]);
+it('authorizes a valid SRS publish and launches the Facebook relay', function () {
+    Process::fake(['nohup *' => Process::result(output: '12345')]);
 
     [$stream, $token] = issueBroadcast();
 
@@ -75,7 +78,9 @@ it('authorizes a valid SRS publish and launches the ffmpeg relay', function () {
         'param' => '?app=live&stream='.$stream.'&token='.$token,
     ])->assertOk()->assertSee('0');
 
+    // Single relay to Facebook RTMPS (the site plays WHEP, no re-encode/HLS).
     Process::assertRan(fn ($process) => str_contains($process->command, 'ffmpeg')
+        && str_contains($process->command, 'rtmps://')
         && str_contains($process->command, $stream));
 });
 
@@ -90,8 +95,8 @@ it('rejects an SRS publish with a forged token', function () {
 
 it('kills the relay on SRS on_unpublish', function () {
     Process::fake([
-        'nohup ffmpeg*' => Process::result(output: '12345'),
-        'kill*' => Process::result(),
+        'nohup *' => Process::result(output: '12345'),
+        'pkill*' => Process::result(),
     ]);
 
     [$stream, $token] = issueBroadcast();
@@ -103,5 +108,7 @@ it('kills the relay on SRS on_unpublish', function () {
 
     postJson('/api/v1/public/srs/on_unpublish', ['stream' => $stream])->assertOk();
 
-    Process::assertRan(fn ($process) => str_contains($process->command, 'kill 12345'));
+    // Kills the Facebook ffmpeg, the HLS ffmpeg and its supervisor by stream name.
+    Process::assertRan(fn ($process) => str_contains($process->command, 'pkill -f')
+        && str_contains($process->command, $stream));
 });
