@@ -192,12 +192,19 @@ export async function importStudioMediaFromUrl(
  * publish token and returns the WHIP url the studio publishes its program feed to
  * (our own SRS, which relays to Facebook RTMPS with the stored stream key).
  */
-export async function startFacebookBroadcast(): Promise<{ whipUrl: string; stream: string }> {
-  const response = await adminFetch<{ data: { whip_url: string; stream: string } }>(
-    "/studio/broadcast/facebook/start",
-    { method: "POST" },
-  );
-  return { whipUrl: response.data.whip_url, stream: response.data.stream };
+export async function startFacebookBroadcast(): Promise<{
+  whipUrl: string;
+  stream: string;
+  whepUrl: string;
+}> {
+  const response = await adminFetch<{
+    data: { whip_url: string; stream: string; whep_url: string };
+  }>("/studio/broadcast/facebook/start", { method: "POST" });
+  return {
+    whipUrl: response.data.whip_url,
+    stream: response.data.stream,
+    whepUrl: response.data.whep_url,
+  };
 }
 
 /** Stop a running studio→Facebook broadcast (kills the server-side ffmpeg relay). */

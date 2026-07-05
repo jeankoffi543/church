@@ -35,6 +35,7 @@ class StudioBroadcastController extends Controller
             'data' => [
                 'whip_url' => $broadcast['whipUrl'],
                 'stream' => $broadcast['stream'],
+                'whep_url' => $broadcast['whepUrl'],
             ],
         ]);
     }

@@ -34,7 +34,7 @@ import { SourcesDock } from "./_components/sources-dock";
 import { MixerDock } from "./_components/mixer-dock";
 import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
-import { ProgramOutMonitor } from "./_components/program-out-monitor";
+import { useProgramBroadcast } from "./_components/use-program-broadcast";
 import {
   lsGet,
   lsGetJSON,
@@ -1042,19 +1042,20 @@ export function LiveStudioConsole({
     );
   };
 
-  const saveLiveSettings = async (overrideStatus?: boolean) => {
+  const saveLiveSettings = async (overrideStatus?: boolean, overrideEmbedUrl?: string) => {
     setSavingSettings(true);
     setStatus(null);
     try {
       const targetStatus = overrideStatus !== undefined ? overrideStatus : liveStreamActive;
-      // Going live broadcasts a visible "Direct externe" source's link if present,
-      // otherwise the link configured in the settings.
+      // Priority for the site's live source: an explicit override (the studio's own
+      // HLS feed) wins; else a visible "Direct externe" source's link; else the
+      // link configured in the settings.
       const embedFromSource =
         overrideStatus === true
           ? scenes.flatMap((s) => s.layers).find((l) => l.type === "embed" && l.visible && l.feedUrl)
               ?.feedUrl
           : undefined;
-      const effectiveEmbedUrl = embedFromSource ?? liveEmbedUrl;
+      const effectiveEmbedUrl = overrideEmbedUrl ?? embedFromSource ?? liveEmbedUrl;
       if (effectiveEmbedUrl !== liveEmbedUrl) setLiveEmbedUrl(effectiveEmbedUrl);
       const payload = [
         { key: "live_embed_url", value: effectiveEmbedUrl, group: "live" },
@@ -1245,6 +1246,38 @@ export function LiveStudioConsole({
     { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
+
+  // Headless program-out broadcaster (compositor → WHIP → SRS → Facebook). Fed
+  // with the ON-AIR layers so it mirrors the antenne.
+  const broadcast = useProgramBroadcast({
+    layers: programBlack ? [] : programLayers,
+    bibleVerse: programBlack ? null : live,
+    bibleStyle: onAirSettings,
+    animNonce: programAnimNonce,
+    previewStageRef,
+  });
+  const [liveBusy, setLiveBusy] = useState(false);
+  // One gesture = go live on Facebook AND flip the public site live together.
+  const startLive = async () => {
+    setLiveBusy(true);
+    try {
+      // The studio's own WHEP (WebRTC playback) feed becomes the site's live source
+      // (overriding any stale embed link) so /live shows the broadcast directly.
+      const whepUrl = await broadcast.startBroadcast();
+      if (whepUrl) await saveLiveSettings(true, whepUrl);
+    } finally {
+      setLiveBusy(false);
+    }
+  };
+  const stopLive = async () => {
+    setLiveBusy(true);
+    try {
+      await broadcast.stopBroadcast();
+      await saveLiveSettings(false);
+    } finally {
+      setLiveBusy(false);
+    }
+  };
 
   // Persist the session view state so a refresh keeps the current scene + the
   // on-air snapshot (scene DEFINITIONS live in the backend; this is the view).
@@ -2040,6 +2073,12 @@ export function LiveStudioConsole({
           onPatchLayer={patchLayerById}
         />
         <ControlsDock
+          liveActive={broadcast.broadcasting}
+          liveBusy={broadcast.busy || liveBusy}
+          liveState={broadcast.whipState}
+          liveError={broadcast.error}
+          onStartLive={() => void startLive()}
+          onStopLive={() => void stopLive()}
           recording={recording}
           onToggleRecord={() => setRecording((r) => !r)}
           recLabel={recLabel}
@@ -2047,13 +2086,6 @@ export function LiveStudioConsole({
           onToggleSandbox={() => setSandbox((s) => !s)}
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
-        />
-        <ProgramOutMonitor
-          layers={programBlack ? [] : programLayers}
-          bibleVerse={programBlack ? null : live}
-          bibleStyle={onAirSettings}
-          animNonce={programAnimNonce}
-          previewStageRef={previewStageRef}
         />
       </section>
 

@@ -6,6 +6,8 @@ services:
     ports:
       - "1985:1985"                    # API HTTP + WHIP — à mettre DERRIÈRE HTTPS
       - "8000:8000/udp"                # média WebRTC (ICE)
+      - "8088:8080"                    # HLS (http_server) → site /live. 8088 côté hôte
+                                        # pour coexister avec nginx-rtmp HLS (8080).
       - "127.0.0.1:1936:1935"          # RTMP interne — host only (relais ffmpeg). 1936
                                         # côté hôte pour coexister avec nginx-rtmp (1935).
     environment:

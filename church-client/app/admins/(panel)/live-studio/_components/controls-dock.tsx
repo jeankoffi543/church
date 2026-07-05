@@ -1,17 +1,34 @@
 "use client";
 
-import { Target, MonitorPlay, ExternalLink, TriangleAlert, SquareSplitHorizontal } from "lucide-react";
+import {
+  Target,
+  MonitorPlay,
+  ExternalLink,
+  TriangleAlert,
+  SquareSplitHorizontal,
+  RadioTower,
+  Square,
+  Loader2,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MONO } from "./studio-tokens";
+import type { WhipState } from "./whip-publisher";
 
 /**
- * Dock 5 · Studio controls. Record / Sandbox / Console layout are OBS chrome
- * (stub — TODO(studio): wire to a real engine). "Aperçu spectateur" is real: it
- * opens the public live page in a new tab.
+ * Dock 5 · Studio controls. The primary action — "Démarrer le live" — runs the
+ * program-out compositor + Facebook broadcast AND flips the public site live in
+ * one gesture. Record / Sandbox / Console layout are OBS chrome (stub). "Aperçu
+ * spectateur" opens the public live page in a new tab.
  */
 export function ControlsDock({
+  liveActive,
+  liveBusy,
+  liveState,
+  liveError,
+  onStartLive,
+  onStopLive,
   recording,
   onToggleRecord,
   recLabel,
@@ -20,6 +37,12 @@ export function ControlsDock({
   dualLayout,
   onToggleLayout,
 }: {
+  liveActive: boolean;
+  liveBusy: boolean;
+  liveState: WhipState | "idle";
+  liveError: string | null;
+  onStartLive: () => void;
+  onStopLive: () => void;
   recording: boolean;
   onToggleRecord: () => void;
   recLabel: string;
@@ -38,6 +61,60 @@ export function ControlsDock({
       </div>
 
       <ScrollArea className="flex min-h-0 flex-1 flex-col gap-2.5 p-2.5">
+        {/* Primary action — Facebook broadcast + public site live in one gesture. */}
+        <button
+          type="button"
+          onClick={liveActive ? onStopLive : onStartLive}
+          disabled={liveBusy}
+          className={cn(
+            "flex items-center gap-2.5 rounded-[10px] border px-3 py-3 text-left transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60",
+            liveActive
+              ? "border-studio-onair/45 bg-studio-onair/12"
+              : "border-[#1877f2]/45 bg-[#1877f2]/12",
+          )}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center">
+            {liveBusy ? (
+              <Loader2 className="size-5 animate-spin text-white/80" />
+            ) : liveActive ? (
+              <Square className="size-4 fill-studio-onair text-studio-onair" />
+            ) : (
+              <RadioTower className="size-5 text-[#4a94ff]" strokeWidth={1.9} />
+            )}
+          </span>
+          <span className="flex-1">
+            <span className="block text-[12px] font-bold text-white">
+              {liveActive ? "Arrêter le live" : "Démarrer le live"}
+            </span>
+            <span className={cn("block text-[9.5px] text-white/50", MONO)}>
+              {liveActive
+                ? liveState === "connected"
+                  ? "En direct · Facebook + site"
+                  : liveState === "failed"
+                    ? "Diffusion en échec"
+                    : liveState === "connecting"
+                      ? "Connexion à Facebook…"
+                      : "En direct · site"
+                : "Facebook + site en même temps"}
+            </span>
+          </span>
+          {liveActive && (
+            <span
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                liveState === "connected"
+                  ? "animate-onair-pulse bg-studio-onair"
+                  : liveState === "failed"
+                    ? "bg-red-400"
+                    : "bg-studio-sandbox",
+              )}
+            />
+          )}
+        </button>
+        {liveError && (
+          <p className="-mt-1 px-1 text-[10.5px] leading-snug text-red-400">{liveError}</p>
+        )}
+
         <button
           type="button"
           onClick={onToggleRecord}

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Events\LiveSourceChanged;
 use App\Events\LiveStateChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\V1\Admin\SettingsUpdateRequest;
@@ -41,8 +42,10 @@ class SettingController extends Controller
         return DB::transaction(function () use ($request) {
             $settings = $this->mapRequestUploadsToSettings($request, $request->validated('settings'));
 
-            // Capture the live state before applying, to detect on/off transitions.
+            // Capture the live state + source before applying, to detect on/off
+            // transitions and a mid-live source (embed/HLS url) swap.
             $wasLive = (bool) Setting::get('live_status');
+            $previousEmbedUrl = (string) Setting::get('live_embed_url');
 
             foreach ($settings as $item) {
                 Setting::set(
@@ -61,6 +64,14 @@ class SettingController extends Controller
                 broadcast(new LiveStateChanged(true, $startedAt));
             } elseif (! $isLive && $wasLive) {
                 Artisan::call('mfm:archive-live'); // broadcasts LiveStateChanged(false)
+            } elseif ($isLive) {
+                // Still live, but the source may have swapped (e.g. a fresh studio
+                // broadcast = new HLS stream). Push it so open tabs re-point the
+                // player instantly, without wiping the chat.
+                $newEmbedUrl = (string) Setting::get('live_embed_url');
+                if ($newEmbedUrl !== '' && $newEmbedUrl !== $previousEmbedUrl) {
+                    broadcast(new LiveSourceChanged($newEmbedUrl, (string) Setting::get('live_title')));
+                }
             }
 
             return response()->json([
