@@ -409,7 +409,10 @@ export function CompositeLayer({
         style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
       >
         {handles}
-        <CameraMedia layer={layer} audioOwner={audioOwner} />
+        {/* Monitors are always camera CONSUMERS — the getUserMedia stream is owned
+            by the console-level <CameraKeepAlive> (which survives scene switches),
+            so an on-air camera stays on air when the Preview changes scene. */}
+        <CameraMedia layer={layer} audioOwner={false} />
         <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#c89af0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
           CAMÉRA
         </span>
@@ -966,5 +969,39 @@ function CameraMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: bo
       muted={!audioOwner || !listenLocal || monitorMuted}
       playsInline
     />
+  );
+}
+
+/**
+ * Off-screen owner of every camera's getUserMedia stream. Rendered ONCE at the
+ * console level for the UNION of the preview + program cameras, so a camera that
+ * is on air keeps its stream + audio metering ALIVE even when the operator
+ * switches the Preview to another scene. Because ownership no longer lives in the
+ * (transient) Preview monitor, there is no ownership handoff on a scene switch —
+ * hence no re-`getUserMedia` black flash on air. The monitors render cameras as
+ * pure consumers ({@link CompositeLayer} forces `audioOwner={false}`) and read
+ * this shared stream. Deduped by `layer.id`, with the on-air (program) copy first
+ * so a shared id keeps the antenne stream. Positioned off-screen (NOT
+ * `display:none`) so playback/local-monitor audio keep running.
+ */
+export function CameraKeepAlive({ layers }: { layers: StudioLayer[] }) {
+  const seen = new Set<string>();
+  const cameras = layers.filter((l) => {
+    if (l.type !== "camera" || !l.deviceId || seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  });
+
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed left-[-9999px] top-[-9999px] size-px overflow-hidden opacity-0"
+    >
+      {cameras.map((l) => (
+        <div key={l.id} className="relative size-px">
+          <CameraMedia layer={l} audioOwner />
+        </div>
+      ))}
+    </div>
   );
 }
