@@ -28,6 +28,7 @@ import {
 } from "./_components/studio-style";
 import { StudioHeader } from "./_components/studio-header";
 import { StageMonitor } from "./_components/stage-monitor";
+import { CameraKeepAlive } from "./_components/composite-layer";
 import { TransitionBar } from "./_components/transition-bar";
 import { ScenesDock } from "./_components/scenes-dock";
 import { SourcesDock } from "./_components/sources-dock";
@@ -1247,6 +1248,15 @@ export function LiveStudioConsole({
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
 
+  // Cameras whose getUserMedia stream must stay alive: the union of the on-air
+  // (program) cameras and the current preview scene's cameras — program first so a
+  // shared id keeps the antenne stream. Owned off-screen by <CameraKeepAlive> so an
+  // on-air camera survives a Preview scene switch. Program cameras are kept even
+  // while blacked (a temporary cut) so un-blacking doesn't re-`getUserMedia`.
+  // (Recomputed each render — cheap; <CameraKeepAlive> keys children by id so
+  // nothing remounts / re-acquires.)
+  const keepAliveCameras = [...programLayers, ...layers].filter((l) => l.type === "camera");
+
   // Headless program-out broadcaster (compositor → WHIP → SRS → Facebook). Fed
   // with the ON-AIR layers so it mirrors the antenne.
   const broadcast = useProgramBroadcast({
@@ -1962,6 +1972,9 @@ export function LiveStudioConsole({
         recLabel={recLabel}
         onOpenSettings={() => setShowGeneralConfig(true)}
       />
+      {/* Off-screen owner of on-air + preview camera streams — survives scene
+          switches so a camera stays on the antenne when the Preview changes. */}
+      <CameraKeepAlive layers={keepAliveCameras} />
       {mounted &&
         status &&
         createPortal(
