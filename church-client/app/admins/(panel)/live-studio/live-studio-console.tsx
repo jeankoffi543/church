@@ -21,12 +21,7 @@ import {
   setPreparedVerses,
   updateAdminSettings,
 } from "@/lib/admin-api";
-import {
-  getContainerStyle,
-  getElementStyle,
-  getPredefinedAbsolutePosition,
-  parseResolution,
-} from "./_components/studio-style";
+import { parseResolution } from "./_components/studio-style";
 import { StudioHeader } from "./_components/studio-header";
 import { StageMonitor } from "./_components/stage-monitor";
 import { CameraKeepAlive } from "./_components/composite-layer";
@@ -47,6 +42,7 @@ import {
   SS_PROGRAM_LAYERS,
   SS_PROGRAM_SCENE,
 } from "./_components/studio-persist";
+import { ResizableRow } from "./_components/resizable-row";
 import { StatusBar } from "./_components/status-bar";
 import { SettingsModal } from "./_components/settings-modal";
 import {
@@ -435,8 +431,8 @@ export function LiveStudioConsole({
 
   // Extended UI/UX Design States
   const [showFullscreenPreview, setShowFullscreenPreview] = useState(false);
+  const [dockResetNonce, setDockResetNonce] = useState(0);
   const [newPresetName, setNewPresetName] = useState("");
-  const previewScreenRef = useRef<HTMLDivElement>(null);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [animNonce, setAnimNonce] = useState(0);
@@ -531,6 +527,21 @@ export function LiveStudioConsole({
     }
   };
 
+  const closeFullscreenPreview = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    setShowFullscreenPreview(false);
+  };
+  useEffect(() => {
+    if (!showFullscreenPreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowFullscreenPreview(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showFullscreenPreview]);
+
   // Fullscreen Handlers
   const toggleNativeFullscreen = async () => {
     if (!modalContainerRef.current) return;
@@ -557,66 +568,6 @@ export function LiveStudioConsole({
     };
   }, []);
 
-  const handlePointerDown = (e: React.PointerEvent, action: "move" | "nw" | "ne" | "se" | "sw") => {
-    e.preventDefault();
-    const rect = previewScreenRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startLeft = settings.customX;
-    const startTop = settings.customY;
-    const startWidth = settings.customWidth;
-    const startHeight = settings.customHeight;
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = ((moveEvent.clientX - startX) / rect.width) * 100;
-      const deltaY = ((moveEvent.clientY - startY) / rect.height) * 100;
-
-      if (action === "move") {
-        const nextX = Math.max(0, Math.min(100 - startWidth, startLeft + deltaX));
-        const nextY = Math.max(0, Math.min(100 - startHeight, startTop + deltaY));
-        setStudioField("customX", Math.round(nextX));
-        setStudioField("customY", Math.round(nextY));
-      } else if (action === "se") {
-        const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
-        const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudioField("customWidth", Math.round(nextWidth));
-        setStudioField("customHeight", Math.round(nextHeight));
-      } else if (action === "sw") {
-        const nextWidth = Math.max(10, startWidth - deltaX);
-        const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
-        const nextHeight = Math.max(10, Math.min(100 - startTop, startHeight + deltaY));
-        setStudioField("customWidth", Math.round(nextWidth));
-        setStudioField("customX", Math.round(nextX));
-        setStudioField("customHeight", Math.round(nextHeight));
-      } else if (action === "ne") {
-        const nextWidth = Math.max(10, Math.min(100 - startLeft, startWidth + deltaX));
-        const nextHeight = Math.max(10, startHeight - deltaY);
-        const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudioField("customWidth", Math.round(nextWidth));
-        setStudioField("customHeight", Math.round(nextHeight));
-        setStudioField("customY", Math.round(nextY));
-      } else if (action === "nw") {
-        const nextWidth = Math.max(10, startWidth - deltaX);
-        const nextX = Math.max(0, Math.min(100 - nextWidth, startLeft + deltaX));
-        const nextHeight = Math.max(10, startHeight - deltaY);
-        const nextY = Math.max(0, Math.min(100 - nextHeight, startTop + deltaY));
-        setStudioField("customWidth", Math.round(nextWidth));
-        setStudioField("customX", Math.round(nextX));
-        setStudioField("customHeight", Math.round(nextHeight));
-        setStudioField("customY", Math.round(nextY));
-      }
-    };
-
-    const handlePointerUp = () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-  };
 
   // Dynamic versions/translations selection
   const [allTranslations, setAllTranslations] = useState<string[]>([]);
@@ -2131,7 +2082,44 @@ export function LiveStudioConsole({
       >
         {dualLayout && (
           <>
-            <StageMonitor
+            <div
+              ref={modalContainerRef}
+              className={cn(
+                showFullscreenPreview
+                  ? "fixed inset-0 z-[160] flex flex-col gap-3 bg-[#05020c] p-4"
+                  : "contents",
+              )}
+            >
+              {showFullscreenPreview && (
+                <div className="flex flex-none items-center justify-between">
+                  <div>
+                    <h3 className="font-sans text-lg font-bold text-white">Aperçu · Plein écran</h3>
+                    <p className="text-xs text-white/50">
+                      Glissez / redimensionnez les sources comme dans le moniteur — même échelle,
+                      même rendu qu&apos;à l&apos;antenne. Échap pour fermer.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={toggleNativeFullscreen}
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/15"
+                    >
+                      <Maximize className="size-3.5" />
+                      {isNativeFullscreen ? "Quitter le plein écran réel" : "Plein écran réel"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeFullscreenPreview}
+                      className="cursor-pointer rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-700"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+              )}
+              <StageMonitor
+              className={showFullscreenPreview ? "min-h-0 flex-1" : undefined}
               tone="preview"
               layers={layers}
               bibleVerse={preview}
@@ -2148,6 +2136,7 @@ export function LiveStudioConsole({
               compositionWidth={composition.width}
               compositionHeight={composition.height}
             />
+            </div>
             <TransitionBar
               onCut={sendToProgram}
               onBlack={blackScreen}
@@ -2180,8 +2169,14 @@ export function LiveStudioConsole({
         />
       </section>
 
-      <section className="grid auto-rows-[clamp(360px,52vh,520px)] grid-cols-[repeat(auto-fit,minmax(218px,1fr))] gap-3">
-        <ScenesDock
+      {/* Docks row — each panel is width-resizable via the grab handles between
+          neighbours (weights persisted); stacked below lg. */}
+      <section>
+        <ResizableRow
+          storageKey="studio_docks_v2"
+          resetNonce={dockResetNonce}
+          items={[
+            { id: "scenes", label: "Scènes", node: <ScenesDock
           scenes={scenes}
           currentSceneId={currentSceneId}
           programSceneId={programSceneId}
@@ -2190,8 +2185,8 @@ export function LiveStudioConsole({
           onReorder={reorderScene}
           onRequestDelete={setPendingDeleteSceneId}
           onRename={renameScene}
-        />
-        <SourcesDock
+        /> },
+            { id: "sources", label: "Sources", node: <SourcesDock
           layers={layers}
           selectedLayerId={selectedLayerId}
           onSelect={setSelectedLayerId}
@@ -2200,9 +2195,9 @@ export function LiveStudioConsole({
           onMove={moveLayer}
           onReorder={reorderLayer}
           onRequestDelete={setPendingDeleteId}
-        />
-        <MixerDock channels={mixerLayers} onChange={setLayerAudio} />
-        <InspectorDock
+        /> },
+            { id: "mixer", label: "Mixage", node: <MixerDock channels={mixerLayers} onChange={setLayerAudio} /> },
+            { id: "inspector", label: "Style Pro", node: <InspectorDock
           selectedLayer={selectedLayer}
           effectiveStyle={effectiveStyle}
           patchStyleField={patchStyleField}
@@ -2224,8 +2219,8 @@ export function LiveStudioConsole({
           onToggleLayer={toggleLayerVisible}
           onRemoveLayer={setPendingDeleteId}
           onPatchLayer={patchLayerById}
-        />
-        <ControlsDock
+        /> },
+            { id: "controls", label: "Commandes", node: <ControlsDock
           liveActive={broadcast.broadcasting}
           liveBusy={broadcast.busy || liveBusy}
           liveState={broadcast.whipState}
@@ -2239,6 +2234,9 @@ export function LiveStudioConsole({
           onToggleSandbox={() => setSandbox((s) => !s)}
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
+          onResetDockWidths={() => setDockResetNonce((n) => n + 1)}
+        /> },
+          ]}
         />
       </section>
 
@@ -2414,120 +2412,6 @@ export function LiveStudioConsole({
       )}
 
       {/* Interactive Drag & Resize Fullscreen Preview Modal */}
-      {showFullscreenPreview && (
-        <div 
-          ref={modalContainerRef}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-6 backdrop-blur-md"
-        >
-          <div className="mb-4 flex w-full max-w-5xl items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-white font-sans">Éditeur de Position Intéractif</h3>
-              <p className="text-xs text-white/50">Faites glisser le conteneur pour le déplacer. Ajustez ses dimensions à l&apos;aide des poignées d&apos;ancrage aux coins.</p>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={toggleNativeFullscreen}
-                className="rounded-lg bg-white/10 hover:bg-white/15 px-4 py-2 text-xs font-bold text-white transition cursor-pointer flex items-center gap-1.5"
-              >
-                <Maximize className="size-3.5" />
-                {isNativeFullscreen ? "Quitter le Plein Écran" : "Plein Écran Réel"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (document.fullscreenElement) {
-                    void document.exitFullscreen();
-                  }
-                  setShowFullscreenPreview(false);
-                }}
-                className="rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-xs font-bold text-white transition cursor-pointer"
-              >
-                Fermer l&apos;éditeur
-              </button>
-            </div>
-          </div>
-
-          {/* Simulated 16:9 Screen */}
-          <div 
-            ref={previewScreenRef}
-            className="relative aspect-video w-full max-w-5xl bg-[#160f33]/40 border-2 border-white/20 overflow-hidden shadow-2xl rounded-xl"
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)",
-              backgroundSize: "20px 20px"
-            }}
-          >
-            {/* Broadcast visual indicators */}
-            <div className="absolute top-4 left-4 flex items-center gap-1.5 rounded bg-red-600 px-2.5 py-1 text-[9px] font-black text-white tracking-widest animate-pulse">
-              <span className="size-1.5 rounded-full bg-white" /> REC
-            </div>
-            <div className="absolute top-4 right-4 text-[9px] font-mono text-white/30">
-              1920 x 1080 | SIMULATEUR D&apos;OVERLAY
-            </div>
-
-            {/* Draggable container box */}
-            <div
-              style={{
-                ...getContainerStyle(settings),
-                position: "absolute",
-                left: settings.positionMode === "custom" ? `${settings.customX}%` : undefined,
-                top: settings.positionMode === "custom" ? `${settings.customY}%` : undefined,
-                width: settings.positionMode === "custom" ? `${settings.customWidth}%` : undefined,
-                height: settings.positionMode === "custom" ? `${settings.customHeight}%` : undefined,
-                ...(settings.positionMode === "predefined" && getPredefinedAbsolutePosition(settings.predefinedPosition || "centered_bottom")),
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-              }}
-              onPointerDown={(e) => {
-                if (settings.positionMode === "custom") {
-                  handlePointerDown(e, "move");
-                }
-              }}
-              className={cn(
-                "select-none ring-1 ring-white/10 group",
-                settings.positionMode === "custom" ? "cursor-move hover:ring-[#e2b85f]/40" : ""
-              )}
-            >
-              {/* Resize Handles (rendered at corners, visible on hover) */}
-              {settings.positionMode === "custom" && (
-                <>
-                  <div 
-                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "nw"); }}
-                    className="absolute -top-1.5 -left-1.5 size-3 cursor-nw-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
-                  />
-                  <div 
-                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "ne"); }}
-                    className="absolute -top-1.5 -right-1.5 size-3 cursor-ne-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
-                  />
-                  <div 
-                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "sw"); }}
-                    className="absolute -bottom-1.5 -left-1.5 size-3 cursor-sw-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
-                  />
-                  <div 
-                    onPointerDown={(e) => { e.stopPropagation(); handlePointerDown(e, "se"); }}
-                    className="absolute -bottom-1.5 -right-1.5 size-3 cursor-se-resize rounded-full border border-[#e2b85f] bg-[#090514] shadow z-10"
-                  />
-                </>
-              )}
-
-              {/* Simulated visual layout matching LiveVideoOverlay */}
-              <span style={getElementStyle("fontRef", settings)} className="block mb-2 text-center pointer-events-none">
-                {preview?.reference || "Jean 3:16"}
-              </span>
-
-              <div className="grid grid-cols-1 gap-2 pointer-events-none">
-                <p style={getElementStyle("fontBody", settings)} className="text-center">
-                  {preview?.text || "Car Dieu a tant aimé le monde qu&apos;il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu&apos;il ait la vie éternelle."}
-                </p>
-                <span style={getElementStyle("fontVer", settings)} className="text-center mt-1 block">
-                  {preview?.translation || "LSG"}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

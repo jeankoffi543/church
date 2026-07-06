@@ -9,6 +9,7 @@ import {
   RadioTower,
   Square,
   Loader2,
+  Columns3,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function ControlsDock({
   onToggleSandbox,
   dualLayout,
   onToggleLayout,
+  onResetDockWidths,
 }: {
   liveActive: boolean;
   liveBusy: boolean;
@@ -50,6 +52,7 @@ export function ControlsDock({
   onToggleSandbox: () => void;
   dualLayout: boolean;
   onToggleLayout: () => void;
+  onResetDockWidths: () => void;
 }) {
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
@@ -175,6 +178,20 @@ export function ControlsDock({
             <span className="block text-[12px] font-bold text-white">Disposition console</span>
             <span className="block text-[9.5px] text-white/45">
               {dualLayout ? "Aperçu + Antenne" : "Antenne seule"}
+            </span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onResetDockWidths}
+          className="flex items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-colors hover:border-studio-purple/45"
+        >
+          <Columns3 className="size-[17px] shrink-0 text-studio-purple" strokeWidth={1.7} />
+          <span className="flex-1">
+            <span className="block text-[12px] font-bold text-white">Disposition par défaut</span>
+            <span className="block text-[9.5px] text-white/45">
+              Position, visibilité et largeur des panneaux
             </span>
           </span>
         </button>

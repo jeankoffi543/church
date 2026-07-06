@@ -43,6 +43,7 @@ export function StageMonitor({
   animNonce = 0,
   compositionWidth = 1920,
   compositionHeight = 1080,
+  className,
 }: {
   tone: "preview" | "program";
   layers: StudioLayer[];
@@ -62,6 +63,7 @@ export function StageMonitor({
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
+  className?: string;
 }) {
   const isProgram = tone === "program";
 
@@ -102,6 +104,7 @@ export function StageMonitor({
     <div
       className={cn(
         "relative overflow-hidden rounded-2xl",
+        className,
         isProgram
           ? "border-2 border-studio-onair/55 bg-studio-onair/[0.03] shadow-[0_0_0_1px_rgba(239,68,68,.1),0_14px_40px_rgba(239,68,68,.12)]"
           : "border-[1.5px] border-studio-preview/40 bg-studio-preview/[0.03]",
