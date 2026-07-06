@@ -101,31 +101,42 @@ export function MixerDock({
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
       <div className="flex flex-none items-center gap-2 border-b border-white/6 px-3.5 py-2.5">
-        <Volume2 className="size-[15px] text-studio-preview-bright" strokeWidth={1.8} />
-        <span className="text-[11px] font-extrabold tracking-[1.2px] text-white uppercase">
+        <Volume2 className="size-[15px] shrink-0 text-studio-preview-bright" strokeWidth={1.8} />
+        <span className="min-w-0 truncate text-[11px] font-extrabold tracking-[1.2px] text-white uppercase">
           Table de mixage
         </span>
-        <button
-          type="button"
-          onClick={() => setMonitorMuted(!monitorMuted)}
-          title={
-            monitorMuted
-              ? "Retour local coupé — le direct continue. Cliquez pour réécouter en local."
-              : "Couper le retour local (n'affecte pas le direct)"
-          }
-          className={cn(
-            "ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-[9px] font-bold tracking-wide uppercase transition-colors",
-            monitorMuted
-              ? "bg-studio-onair/15 text-studio-onair"
-              : "text-white/45 hover:text-white",
-          )}
-        >
-          {monitorMuted ? <VolumeX className="size-3.5" /> : <Headphones className="size-3.5" />}
-          {monitorMuted ? "Local coupé" : "Retour local"}
-        </button>
-        <span className="rounded-md bg-white/6 px-1.5 py-[3px] text-[9px] font-bold text-white/50">
-          {channels.length} voie{channels.length > 1 ? "s" : ""}
-        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span
+            className={cn(
+              "rounded-full border px-2 py-[3px] text-[9px] font-bold tracking-wide",
+              channels.length > 0
+                ? "border-studio-preview/30 bg-studio-preview/10 text-studio-preview-bright"
+                : "border-white/10 bg-white/5 text-white/40",
+            )}
+          >
+            {channels.length} voie{channels.length > 1 ? "s" : ""}
+          </span>
+          {/* Local-monitor toggle — icon-only, red ring when the operator's own
+              return is cut (the broadcast is never affected). */}
+          <button
+            type="button"
+            onClick={() => setMonitorMuted(!monitorMuted)}
+            aria-pressed={monitorMuted}
+            title={
+              monitorMuted
+                ? "Retour local coupé — le direct continue. Cliquez pour réécouter en local."
+                : "Couper le retour local (n'affecte pas le direct)"
+            }
+            className={cn(
+              "flex size-7 items-center justify-center rounded-full border transition-colors",
+              monitorMuted
+                ? "border-studio-onair/50 bg-studio-onair/15 text-studio-onair"
+                : "border-white/10 bg-white/5 text-white/55 hover:border-white/25 hover:text-white",
+            )}
+          >
+            {monitorMuted ? <VolumeX className="size-3.5" /> : <Headphones className="size-3.5" />}
+          </button>
+        </div>
       </div>
 
       {channels.length === 0 ? (

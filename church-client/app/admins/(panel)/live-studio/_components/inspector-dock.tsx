@@ -100,6 +100,16 @@ export type InspectorBible = {
 
 type Patch = (patch: Partial<StudioLayer>) => void;
 
+/** Bar pinned to the top of the inspector's scroll area while it scrolls, so
+ *  the panel's primary control stays reachable (CHR-55 P4/P5). */
+function StickyBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="sticky top-0 z-20 -mx-3.5 -mt-3.5 bg-studio-panel px-3.5 pt-3.5 pb-2.5 shadow-[0_10px_14px_-10px_rgba(0,0,0,.8)]">
+      {children}
+    </div>
+  );
+}
+
 const TAB_LABELS: Record<InspTab, string> = {
   contenu: "Contenu",
   layout: "Mise en page",
@@ -231,10 +241,40 @@ export function InspectorDock({
           </div>
 
           <ScrollArea className="flex min-h-0 flex-1 flex-col gap-3 p-3.5">
-            <div>
-              <Label className="mb-1.5">Nom de la source</Label>
-              <input value={selectedLayer.name} onChange={(e) => onRename(e.target.value)} className={FIELD} />
-            </div>
+            {activeTab === "contenu" && (
+              <StickyBar>
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Label className="mb-1.5">Nom de la source</Label>
+                    <input
+                      value={selectedLayer.name}
+                      onChange={(e) => onRename(e.target.value)}
+                      className={FIELD}
+                    />
+                  </div>
+                  {selectedLayer.type === "bible" && (
+                    <button
+                      type="button"
+                      onClick={bible.onToggleOnAir}
+                      title={
+                        bible.onAir
+                          ? "Diffusée à l'antenne — cliquer pour la retirer (l'aperçu reste visible)"
+                          : "Retirée de l'antenne — cliquer pour la remettre en direct"
+                      }
+                      className={cn(
+                        "flex h-[35px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[10.5px] font-extrabold whitespace-nowrap transition",
+                        bible.onAir
+                          ? "bg-studio-onair/20 text-[#ff9a9a] hover:bg-studio-onair/30"
+                          : "bg-white/8 text-white/50 hover:bg-white/15",
+                      )}
+                    >
+                      {bible.onAir ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                      {bible.onAir ? "À l'antenne" : "Retirée"}
+                    </button>
+                  )}
+                </div>
+              </StickyBar>
+            )}
 
             {activeTab === "contenu" && (
                <ContentPanel
@@ -1772,32 +1812,6 @@ function BibleContent({
 }) {
   return (
     <>
-      {/* Antenne gate — the PREVIEW keeps showing the bible either way; only the
-          diffusion is pulled (a verse already on air is taken down immediately). */}
-      <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
-        <div className="flex flex-col">
-          <span className="text-[11px] font-bold text-white">Diffuser la bible à l&apos;antenne</span>
-          <span className="text-[9.5px] text-white/40">
-            {bible.onAir
-              ? "Diffusée · part à l'antenne au CUT"
-              : "Retirée de l'antenne · reste visible en aperçu"}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={bible.onToggleOnAir}
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
-            bible.onAir
-              ? "bg-studio-onair/20 text-[#ff9a9a] hover:bg-studio-onair/30"
-              : "bg-white/8 text-white/50 hover:bg-white/15",
-          )}
-        >
-          {bible.onAir ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-          {bible.onAir ? "À l'antenne" : "Retirée"}
-        </button>
-      </div>
-
       <div>
         <Label className="mb-1.5">Versions ({bible.visibleVersions.length})</Label>
         <div className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-white/10 bg-studio-field px-2.5 py-1.5">
@@ -1961,7 +1975,7 @@ function LayoutPanel({
   const custom = settings.positionMode === "custom";
   return (
     <>
-      <div>
+      <StickyBar>
         <Label className="mb-1.5">Mode de position</Label>
         <div className="flex rounded-[9px] bg-black/25 p-[3px]">
           {(["predefined", "custom"] as const).map((m) => (
@@ -1980,7 +1994,7 @@ function LayoutPanel({
             </button>
           ))}
         </div>
-      </div>
+      </StickyBar>
 
       {!custom && (
         <div>
@@ -2109,7 +2123,7 @@ function TypoPanel({
 
   return (
     <>
-      <div>
+      <StickyBar>
         <Label className="mb-1.5">Élément à styler</Label>
         <div className="flex rounded-[9px] border border-studio-purple/25 bg-black/25 p-[3px]">
           {TYPO_ELEMENTS.map((e) => (
@@ -2128,11 +2142,11 @@ function TypoPanel({
             </button>
           ))}
         </div>
-        <p className="mt-1 text-[10px] leading-relaxed text-white/40">
-          Police, graisse, taille et couleur ci-dessous s&apos;appliquent à l&apos;élément
-          sélectionné : la référence (titre), le verset ou la version.
-        </p>
-      </div>
+      </StickyBar>
+      <p className="-mt-1 text-[10px] leading-relaxed text-white/40">
+        Police, graisse, taille et couleur ci-dessous s&apos;appliquent à l&apos;élément
+        sélectionné : la référence (titre), le verset ou la version.
+      </p>
 
       <div>
         <Label className="mb-1.5">Police</Label>
@@ -2290,7 +2304,7 @@ function ContainerPanel({
 }) {
   return (
     <>
-      <div>
+      <StickyBar>
         <Label className="mb-1.5">Forme du conteneur</Label>
         <Select
           value={settings.containerShape}
@@ -2303,7 +2317,7 @@ function ContainerPanel({
             </option>
           ))}
         </Select>
-      </div>
+      </StickyBar>
 
       <div>
         <Label className="mb-1.5">Arrière-plan (CSS)</Label>
@@ -2417,7 +2431,7 @@ function AnimPanel({
   const durLabel = settings.duration === 0 ? "Manuel" : `${settings.duration}s`;
   return (
     <>
-      <div>
+      <StickyBar>
         <Label className="mb-1.5">Effet d&apos;apparition</Label>
         <Select
           value={settings.animation}
@@ -2433,7 +2447,7 @@ function AnimPanel({
             </option>
           ))}
         </Select>
-      </div>
+      </StickyBar>
 
       <div>
         <SliderLabel label="Durée de transition" value={`${settings.animDuration}ms`} />
@@ -2514,8 +2528,9 @@ function PresetsPanel({
 }) {
   return (
     <>
-      <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
-        <Label>Enregistrer le style actuel</Label>
+      <StickyBar>
+        <div className="flex flex-col gap-2 rounded-[10px] border border-white/5 bg-black/[0.18] p-3">
+          <Label>Enregistrer le style actuel</Label>
         <input
           value={newPresetName}
           onChange={(e) => onNewPresetNameChange(e.target.value)}
@@ -2528,8 +2543,9 @@ function PresetsPanel({
           className="w-full rounded-lg bg-gold py-2 text-[12px] font-extrabold text-ink transition hover:brightness-105"
         >
           Sauvegarder le preset
-        </button>
-      </div>
+          </button>
+        </div>
+      </StickyBar>
 
       <div>
         <Label className="mb-1.5">Presets sauvegardés</Label>
