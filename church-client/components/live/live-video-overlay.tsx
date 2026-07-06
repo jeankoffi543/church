@@ -286,16 +286,31 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
 
   // Geometry in composition space — the SAME % boxes the régie composes with.
   const isCustom = s.positionMode === "custom";
+  // Dynamic frame (parity with the studio): the OUTER box keeps its configured
+  // geometry; the INNER container hugs long verses and overflows the box in the
+  // operator-chosen direction (overflowDirection).
+  const rawBox = isCustom
+    ? {
+        left: `${s.customX}%`,
+        top: `${s.customY}%`,
+        width: `${s.customWidth}%`,
+        height: `${s.customHeight}%`,
+      }
+    : { ...(PREDEFINED_BOX[s.predefinedPosition || "centered_bottom"] ?? PREDEFINED_BOX.centered_bottom) };
+  const dir = s.overflowDirection ?? "down";
   const boxStyle: React.CSSProperties = {
     position: "absolute",
-    ...(isCustom
-      ? {
-          left: `${s.customX}%`,
-          top: `${s.customY}%`,
-          width: `${s.customWidth}%`,
-          height: `${s.customHeight}%`,
-        }
-      : PREDEFINED_BOX[s.predefinedPosition || "centered_bottom"] ?? PREDEFINED_BOX.centered_bottom),
+    ...rawBox,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: dir === "up" ? "flex-end" : dir === "center" ? "center" : "flex-start",
+  };
+  const innerStyle: React.CSSProperties = {
+    minHeight: "100%",
+    width: "100%",
+    // Without this the fixed-height flex box squashes the container below its
+    // content (default flex-shrink) and the frame never hugs a long verse.
+    flexShrink: 0,
     display: "flex",
     flexDirection: "column",
     justifyContent:
@@ -308,10 +323,7 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
   const animPlugin = ANIMATION_PLUGINS[s.animation] || ANIMATION_PLUGINS.fade_slide;
   const variants = animPlugin.getVariants(s.animDuration || 500, animEase);
 
-  const containerStyle = {
-    ...getContainerStyle(s),
-    ...boxStyle,
-  };
+  const containerStyle = getContainerStyle(s);
 
   return (
     <div ref={hostRef} className="pointer-events-none absolute inset-0 z-30">
@@ -337,11 +349,11 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
             initial="initial"
             animate="animate"
             exit="exit"
-            style={containerStyle}
-            className="ring-1 ring-white/5"
+            style={boxStyle}
           >
+            <div style={{ ...containerStyle, ...innerStyle }} className="ring-1 ring-white/5">
             {/* Reference */}
-            <span 
+            <span
               style={getElementStyle("fontRef", s)}
               className="block mb-3"
             >
@@ -373,6 +385,7 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
                   </span>
                 </div>
               ))}
+            </div>
             </div>
           </motion.div>
         )}

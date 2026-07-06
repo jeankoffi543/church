@@ -43,6 +43,9 @@ export type StudioLayer = {
   listenLocal?: boolean;
   // audio input (audio source device)
   device?: string;
+  /** Bible only: when false the bible keeps showing in the PREVIEW but is
+   *  excluded from the antenne/diffusion (CUT sends it hidden). Default true. */
+  bibleOnAir?: boolean;
   // song stanzas (feature/CHR-39)
   stanzas?: Array<{ name: string; content: string }>;
   activeStanzaIndex?: number;

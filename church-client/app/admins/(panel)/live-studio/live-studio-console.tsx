@@ -43,6 +43,7 @@ import {
   lsSet,
   lsSetJSON,
   SS_CURRENT_SCENE,
+  SS_PREVIEW_VERSE,
   SS_PROGRAM_LAYERS,
   SS_PROGRAM_SCENE,
 } from "./_components/studio-persist";
@@ -805,6 +806,7 @@ export function LiveStudioConsole({
           customWidth: settings.customWidth,
           customHeight: settings.customHeight,
           positionMode: settings.positionMode,
+          overflowDirection: settings.overflowDirection,
         },
         live_typography: {
           font: settings.font,
@@ -984,6 +986,36 @@ export function LiveStudioConsole({
     },
     [live, preview, settings, pushLive, defaultVersion, visibleVersions, allTranslations],
   );
+
+  // Which navigation directions exist from the current base verse — probed via
+  // the same navigate API (null at the bible's edges) so the transition-bar
+  // arrows are disabled exactly when there is no previous/next verse or chapter.
+  const [navAvail, setNavAvail] = useState({
+    prevVerse: true,
+    nextVerse: true,
+    prevChapter: true,
+    nextChapter: true,
+  });
+  useEffect(() => {
+    const base = live ?? preview;
+    if (!base) return;
+    let cancelled = false;
+    const versions = [defaultVersion];
+    void (async () => {
+      const [pv, nv, pc, nc] = await Promise.all([
+        navigateBible(base, "prev_verse", versions),
+        navigateBible(base, "next_verse", versions),
+        navigateBible(base, "prev_chapter", versions),
+        navigateBible(base, "next_chapter", versions),
+      ]);
+      if (!cancelled) {
+        setNavAvail({ prevVerse: !!pv, nextVerse: !!nv, prevChapter: !!pc, nextChapter: !!nc });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [live, preview, defaultVersion]);
 
   const liveRef = useRef(live);
   useEffect(() => {
@@ -1302,6 +1334,9 @@ export function LiveStudioConsole({
   const stopLive = async () => {
     setLiveBusy(true);
     try {
+      // A verse still on air must go down with the live — otherwise the bible
+      // kept "broadcasting" (studio antenne + /live overlay) after the stop.
+      if (live) await masquer();
       await broadcast.stopBroadcast();
       await saveLiveSettings(false);
     } finally {
@@ -1317,23 +1352,29 @@ export function LiveStudioConsole({
     cs: string | null;
     ps: string | null;
     pl: StudioLayer[] | null;
+    pv: ScriptureVerse | null;
   } | null>(null);
   if (savedSessionRef.current === null) {
     savedSessionRef.current = {
       cs: lsGet(SS_CURRENT_SCENE),
       ps: lsGet(SS_PROGRAM_SCENE),
       pl: lsGetJSON<StudioLayer[]>(SS_PROGRAM_LAYERS),
+      pv: lsGetJSON<ScriptureVerse>(SS_PREVIEW_VERSE),
     };
   }
   useEffect(() => void lsSet(SS_CURRENT_SCENE, currentSceneId), [currentSceneId]);
   useEffect(() => void lsSet(SS_PROGRAM_SCENE, programSceneId), [programSceneId]);
   useEffect(() => void lsSetJSON(SS_PROGRAM_LAYERS, programLayers), [programLayers]);
+  useEffect(() => void lsSetJSON(SS_PREVIEW_VERSE, preview), [preview]);
   useEffect(() => {
     const saved = savedSessionRef.current;
     const t = setTimeout(() => {
       if (saved?.cs) setCurrentSceneId(saved.cs);
       if (saved?.ps) setProgramSceneId(saved.ps);
       if (saved?.pl && saved.pl.length > 0) setProgramLayers(saved.pl);
+      // The preview verse is pure view state — restore it so a browser refresh
+      // doesn't wipe what the operator had cued up.
+      if (saved?.pv && saved.pv.reference) setPreview(saved.pv);
     }, 0);
     return () => clearTimeout(t);
   }, []);
@@ -1479,6 +1520,14 @@ export function LiveStudioConsole({
   );
   const restoreLayerDefaults = useCallback(() => {
     if (!selectedLayerId || !selectedLayer) return;
+    if (selectedLayer.type === "bible") {
+      // The bible's style is the orchestrator's global `settings` (broadcast
+      // anchor), not layer.style — reset THAT. The debounced autosave persists it.
+      setSettings({ ...DEFAULT_STUDIO_SETTINGS });
+      setAnimNonce((n) => n + 1);
+      setStatus({ type: "success", message: "Paramètres de la bible réinitialisés !" });
+      return;
+    }
     if (selectedLayer.type === "image") {
       setLayers((ls) =>
         ls.map((l) =>
@@ -1583,7 +1632,7 @@ export function LiveStudioConsole({
       );
       setStatus({ type: "success", message: "Paramètres audio réinitialisés !" });
     }
-  }, [selectedLayerId, selectedLayer, setLayers]);
+  }, [selectedLayerId, selectedLayer, setLayers, setSettings]);
   const onImageUrl = useCallback(
     async (rawUrl: string) => {
       if (!selectedLayerId) return;
@@ -1809,8 +1858,14 @@ export function LiveStudioConsole({
       const dy = ((ev.clientY - sy) / rect.height) * 100;
       // OBS-like: layers may overflow the frame (clipped by the stage/canvas).
       // Keep ≥2% inside so an off-screen layer can always be grabbed back.
-      const nx = Math.max(-(w0 - 2), Math.min(98, Math.round(x0 + dx)));
-      const ny = Math.max(-(h0 - 2), Math.min(98, Math.round(y0 + dy)));
+      let nx = Math.max(-(w0 - 2), Math.min(98, Math.round(x0 + dx)));
+      let ny = Math.max(-(h0 - 2), Math.min(98, Math.round(y0 + dy)));
+      // Edge magnetism: within 2% of a frame edge, snap flush (a 98%-wide layer
+      // dropped "almost" at the edge left a visible gap on the broadcast).
+      if (Math.abs(nx) <= 2) nx = 0;
+      if (Math.abs(nx + w0 - 100) <= 2) nx = 100 - w0;
+      if (Math.abs(ny) <= 2) ny = 0;
+      if (Math.abs(ny + h0 - 100) <= 2) ny = 100 - h0;
       if (isBible) {
         setStudioField("positionMode", "custom");
         setStudioField("customX", nx);
@@ -1873,6 +1928,20 @@ export function LiveStudioConsole({
       scenes.find((s) => s.id === currentSceneIdRef.current)?.layers.find((l) => l.id === layerId)?.type === "bible";
     setSelectedLayerId(layerId);
     const apply = (x: number, y: number, w: number, h: number) => {
+      // Edge magnetism (matches the drag): a border released within 2% of the
+      // frame edge snaps flush so "full width/height" is one gesture.
+      const right = x + w;
+      const bottom = y + h;
+      if (Math.abs(x) <= 2) {
+        w = right;
+        x = 0;
+      }
+      if (Math.abs(100 - right) <= 2) w = 100 - x;
+      if (Math.abs(y) <= 2) {
+        h = bottom;
+        y = 0;
+      }
+      if (Math.abs(100 - bottom) <= 2) h = 100 - y;
       const p = { customX: Math.round(x), customY: Math.round(y), customWidth: Math.round(w), customHeight: Math.round(h) };
       if (isBible) {
         setStudioField("positionMode", "custom");
@@ -1930,10 +1999,19 @@ export function LiveStudioConsole({
   const sendToProgram = () => {
     if (layers.every((l) => !l.visible)) return;
     setProgramBlack(false);
-    setProgramLayers(layers.map((l) => ({ ...l, style: { ...l.style } })));
+    // A bible gated off-air (bibleOnAir=false) stays in the PREVIEW but goes to
+    // the program hidden — the operator keeps preparing without broadcasting it.
+    setProgramLayers(
+      layers.map((l) => ({
+        ...l,
+        style: { ...l.style },
+        visible: l.type === "bible" && l.bibleOnAir === false ? false : l.visible,
+      })),
+    );
     setProgramSceneId(currentSceneId);
     setProgramAnimNonce((n) => n + 1);
-    const bibleOnAir = layers.some((l) => l.type === "bible" && l.visible) && !!preview;
+    const bibleOnAir =
+      layers.some((l) => l.type === "bible" && l.visible && l.bibleOnAir !== false) && !!preview;
     if (bibleOnAir) {
       diffuse();
     } else {
@@ -1975,6 +2053,32 @@ export function LiveStudioConsole({
     visibleTranslations: sortedTranslations,
     hasMoreTranslations: false,
     onShowMoreTranslations: () => {},
+    // ANTENNE-only gate: the preview keeps showing the bible so the operator can
+    // keep preparing; only the diffusion side is pulled.
+    onAir: selectedIsBible ? selectedLayer?.bibleOnAir !== false : true,
+    onToggleOnAir: () => {
+      if (!selectedIsBible || !selectedLayer) return;
+      const disabling = selectedLayer.bibleOnAir !== false;
+      setLayers((ls) =>
+        ls.map((l) => (l.id === selectedLayer.id ? { ...l, bibleOnAir: !disabling } : l)),
+      );
+      if (disabling) {
+        // Pull a verse currently on air + hide the program-monitor copy.
+        if (live) void masquer();
+        if (programSceneId === currentSceneIdRef.current && !programBlack) {
+          setProgramLayers((pls) =>
+            pls.map((l) => (l.type === "bible" ? { ...l, visible: false } : l)),
+          );
+        }
+      } else {
+        // Re-enabling puts the bible STRAIGHT BACK on air (no CUT needed): show
+        // the program-monitor copy again and re-broadcast the cued verse.
+        setProgramLayers((pls) =>
+          pls.map((l) => (l.type === "bible" ? { ...l, visible: true } : l)),
+        );
+        if (preview) void pushLive(preview, settings);
+      }
+    },
   };
 
   return (
@@ -2047,13 +2151,19 @@ export function LiveStudioConsole({
             <TransitionBar
               onCut={sendToProgram}
               onBlack={blackScreen}
+              onPrevVerse={() => void advance("prev_verse")}
               onNextVerse={() => void advance("next_verse")}
+              onPrevChapter={() => void advance("prev_chapter")}
               onNextChapter={() => void advance("next_chapter")}
               busy={busy}
               canCut={layers.some((l) => l.visible)}
               black={programBlack}
-              showVerseNav={selectedLayer?.type === "bible"}
+              showVerseNav={layers.some((l) => l.type === "bible" && l.visible)}
               canNavigate={!!(preview || live)}
+              canPrevVerse={navAvail.prevVerse}
+              canNextVerse={navAvail.nextVerse}
+              canPrevChapter={navAvail.prevChapter}
+              canNextChapter={navAvail.nextChapter}
             />
           </>
         )}

@@ -2,6 +2,7 @@
 
 use App\Events\LiveSourceChanged;
 use App\Events\LiveStateChanged;
+use App\Events\ScriptureStreamEvent;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
@@ -175,6 +176,27 @@ it('broadcasts the off-air state when a broadcast is archived', function () {
     $this->artisan('mfm:archive-live')->assertSuccessful();
 
     Event::assertDispatched(LiveStateChanged::class, fn (LiveStateChanged $e) => $e->isLive === false);
+});
+
+it('hides the scripture overlay when the broadcast is archived', function () {
+    Event::fake([ScriptureStreamEvent::class, LiveStateChanged::class]);
+    Setting::set('live_status', true, 'live');
+    Setting::set('live_started_at', now()->subMinute()->toIso8601String(), 'live');
+    Setting::set('live_current_scripture', [
+        'action' => 'show',
+        'verse' => ['reference' => 'Jean 3:16', 'text' => '…'],
+        'settings' => [],
+    ], 'live');
+    LiveChatMessage::create(['author_name' => 'A', 'message' => 'x', 'time_offset_seconds' => 1]);
+
+    $this->artisan('mfm:archive-live')->assertSuccessful();
+
+    // Catch-up payload cleared + hide pushed to every open /live tab.
+    expect(Setting::get('live_current_scripture')['action'])->toBe('hide');
+    Event::assertDispatched(
+        ScriptureStreamEvent::class,
+        fn (ScriptureStreamEvent $e) => $e->action === 'hide',
+    );
 });
 
 it('auto-archives the live when OBS stops (on_publish_done)', function () {

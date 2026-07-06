@@ -63,6 +63,58 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
 
   const reactionsRef = useRef<ReactionsHandle>(null);
   const pendingMessage = useRef<string | null>(null);
+
+  // Contain-fit an EXACT 16:9 frame inside the flexible player area (threshold-
+  // guarded so sub-pixel ResizeObserver ticks can't re-render in a loop).
+  const frameHostRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState({ w: 0, h: 0, x: 0, y: 0 });
+  useEffect(() => {
+    const el = frameHostRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const k = Math.min(width / 16, height / 9);
+      const w = Math.round(16 * k);
+      const h = Math.round(9 * k);
+      const x = Math.round((width - w) / 2);
+      const y = Math.round((height - h) / 2);
+      setFrame((p) =>
+        Math.abs(p.w - w) < 1 && Math.abs(p.h - h) < 1 && p.x === x && p.y === y ? p : { w, h, x, y },
+      );
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Size the VIDEO COLUMN itself to an exact 16:9 fit and hand every remaining
+  // pixel to the chat column — no side bands around the picture at all (the
+  // user's ask: the chat absorbs the leftover width). Below the lg breakpoint
+  // the stacked single-column layout applies instead.
+  const sectionRef = useRef<HTMLElement>(null);
+  const headerRowRef = useRef<HTMLDivElement>(null);
+  const [videoColW, setVideoColW] = useState<number | null>(null);
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 1024) {
+        setVideoColW(null);
+        return;
+      }
+      const headerH = headerRowRef.current?.getBoundingClientRect().height ?? 56;
+      const ideal = Math.round((rect.height - headerH) * (16 / 9));
+      // Chat keeps at least its previous 380px; the video column never collapses.
+      const w = Math.max(560, Math.min(ideal, Math.round(rect.width - 380)));
+      setVideoColW((p) => (p !== null && Math.abs(p - w) < 1 ? p : w));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Tracks the broadcast's start stamp so a new live wipes the previous chat.
   const startedAtRef = useRef<string | null>(null);
 
@@ -231,10 +283,15 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
   const activeTab: LiveTab = !chatActive && tab === "chat" ? "priere" : tab;
 
   return (
-    <section className="grid h-[calc(100vh-72px)] grid-cols-1 bg-[#0d091e] text-white lg:grid-cols-[1fr_380px]">
+    <section
+      ref={sectionRef}
+      className="grid h-[calc(100vh-72px)] grid-cols-1 bg-[#0d091e] text-white lg:grid-cols-[1fr_380px]"
+      // Measured override: video column = exact 16:9 width, chat = all the rest.
+      style={videoColW !== null ? { gridTemplateColumns: `${videoColW}px 1fr` } : undefined}
+    >
       {/* ── Stage (player) ─────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-col">
-        <div className="flex items-center gap-3 px-5 py-3.5">
+        <div ref={headerRowRef} className="flex items-center gap-3 px-5 py-3.5">
           {config.isLive ? (
             <span className="flex items-center gap-2 rounded-lg bg-live px-3 py-1.5 text-xs font-extrabold tracking-wide">
               <LiveDot className="size-2" /> EN DIRECT
@@ -253,7 +310,11 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
           )}
         </div>
 
-        <div className="relative flex-1 overflow-hidden bg-black">
+        {/* The player fills the whole area (its ambient blur backdrop erases the
+            letterbox bands); the scripture overlay + reactions are pinned to the
+            EXACT 16:9 frame of the sharp picture — same edges as the studio
+            preview/antenne, windowed or fullscreen. */}
+        <div ref={frameHostRef} className="relative flex-1 overflow-hidden bg-black">
           {config.isLive && isWhep ? (
             <WhepPlayer url={config.streamUrl} title={config.title} />
           ) : config.isLive && isHls ? (
@@ -292,11 +353,17 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
             </div>
           )}
 
-          {/* Régie scripture overlay — rendered above the player. */}
-          <LiveVideoOverlay payload={scripture} />
+          {/* 16:9 frame of the SHARP picture — overlay + reactions align to it. */}
+          <div
+            className="absolute overflow-hidden"
+            style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
+          >
+            {/* Régie scripture overlay — rendered above the player. */}
+            <LiveVideoOverlay payload={scripture} />
 
-          {/* Ephemeral reactions — only while on air. */}
-          {config.isLive && <LiveReactions ref={reactionsRef} onReact={handleReact} />}
+            {/* Ephemeral reactions — only while on air. */}
+            {config.isLive && <LiveReactions ref={reactionsRef} onReact={handleReact} />}
+          </div>
         </div>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, ChevronsRight, EyeOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, EyeOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -8,29 +8,91 @@ import { cn } from "@/lib/utils";
  * Center transition column between the Preview and Program monitors.
  *  - CUT        → send the whole current scene on air (`sendToProgram`)
  *  - Écran vide → black out the Program monitor (toggle, all sources)
- *  - Verset + / Chapitre +  → bible navigation, shown only when a bible source
- *    is selected.
+ *  - `[<] Verset [>]` / `[<] Chapitre [>]` → bible navigation, shown while the
+ *    scene has a VISIBLE bible source (whatever layer is selected); each arrow
+ *    is disabled when the bible has no verse/chapter in that direction.
  */
+/** One symmetric navigation row: `[<] label [>]` with per-direction disabling. */
+function NavRow({
+  label,
+  PrevIcon,
+  NextIcon,
+  onPrev,
+  onNext,
+  canPrev,
+  canNext,
+  disabled,
+}: {
+  label: string;
+  PrevIcon: typeof ChevronLeft;
+  NextIcon: typeof ChevronLeft;
+  onPrev: () => void;
+  onNext: () => void;
+  canPrev: boolean;
+  canNext: boolean;
+  disabled: boolean;
+}) {
+  const arrow =
+    "flex w-[30px] shrink-0 items-center justify-center rounded-[9px] border border-white/10 bg-studio-field py-2.5 transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-35";
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={disabled || !canPrev}
+        title={`${label} précédent`}
+        className={arrow}
+      >
+        <PrevIcon className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
+      </button>
+      <span className="flex-1 text-center text-[11px] font-bold whitespace-nowrap text-white">
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={disabled || !canNext}
+        title={`${label} suivant`}
+        className={arrow}
+      >
+        <NextIcon className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
+      </button>
+    </div>
+  );
+}
+
 export function TransitionBar({
   onCut,
   onBlack,
+  onPrevVerse,
   onNextVerse,
+  onPrevChapter,
   onNextChapter,
   busy,
   canCut,
   black = false,
   showVerseNav = false,
   canNavigate = false,
+  canPrevVerse = true,
+  canNextVerse = true,
+  canPrevChapter = true,
+  canNextChapter = true,
 }: {
   onCut: () => void;
   onBlack: () => void;
+  onPrevVerse: () => void;
   onNextVerse: () => void;
+  onPrevChapter: () => void;
   onNextChapter: () => void;
   busy: boolean;
   canCut: boolean;
   black?: boolean;
   showVerseNav?: boolean;
   canNavigate?: boolean;
+  canPrevVerse?: boolean;
+  canNextVerse?: boolean;
+  canPrevChapter?: boolean;
+  canNextChapter?: boolean;
 }) {
   return (
     <div className="flex w-[124px] flex-col justify-center gap-2.5 rounded-2xl border border-white/6 bg-black/40 px-3 py-3.5">
@@ -63,24 +125,26 @@ export function TransitionBar({
       {showVerseNav && (
         <>
           <div className="my-px h-px bg-white/7" />
-          <button
-            type="button"
-            onClick={onNextVerse}
+          <NavRow
+            label="Verset"
+            PrevIcon={ChevronLeft}
+            NextIcon={ChevronRight}
+            onPrev={onPrevVerse}
+            onNext={onNextVerse}
+            canPrev={canPrevVerse}
+            canNext={canNextVerse}
             disabled={busy || !canNavigate}
-            className="flex items-center justify-between gap-1 rounded-[9px] border border-white/10 bg-studio-field px-2 py-2.5 text-[11px] font-bold whitespace-nowrap text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Verset +
-            <ChevronRight className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
-          </button>
-          <button
-            type="button"
-            onClick={onNextChapter}
+          />
+          <NavRow
+            label="Chapitre"
+            PrevIcon={ChevronsLeft}
+            NextIcon={ChevronsRight}
+            onPrev={onPrevChapter}
+            onNext={onNextChapter}
+            canPrev={canPrevChapter}
+            canNext={canNextChapter}
             disabled={busy || !canNavigate}
-            className="flex items-center justify-between gap-1 rounded-[9px] border border-white/10 bg-studio-field px-2 py-2.5 text-[11px] font-bold whitespace-nowrap text-white transition hover:border-gold/50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Chapitre +
-            <ChevronsRight className="size-3.5 shrink-0 text-gold" strokeWidth={2.2} />
-          </button>
+          />
         </>
       )}
     </div>

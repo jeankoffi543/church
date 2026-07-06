@@ -33,6 +33,7 @@ function waitForIce(pc: RTCPeerConnection, timeoutMs = 3000): Promise<void> {
 export function WhepPlayer({ url, title }: { url: string; title?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const ambientRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const [connected, setConnected] = useState(false);
 
@@ -75,6 +76,12 @@ export function WhepPlayer({ url, title }: { url: string; title?: string }) {
         if (v && v.srcObject !== remote) {
           v.srcObject = remote;
           void v.play().catch(() => {});
+        }
+        // Ambient backdrop shares the SAME MediaStream (no extra connection).
+        const b = ambientRef.current;
+        if (b && b.srcObject !== remote) {
+          b.srcObject = remote;
+          void b.play().catch(() => {});
         }
       };
       peer.addEventListener("connectionstatechange", () => {
@@ -145,11 +152,24 @@ export function WhepPlayer({ url, title }: { url: string; title?: string }) {
   };
 
   return (
-    <div ref={wrapRef} className="absolute inset-0">
+    <div ref={wrapRef} className="absolute inset-0 overflow-hidden bg-black">
+      {/* Ambient fill: the same stream cover-scaled + blurred behind the sharp
+          16:9 picture, so a container that isn't exactly 16:9 shows glow instead
+          of empty black bands (the fullscreen look, windowed). */}
+      <video
+        ref={ambientRef}
+        aria-hidden
+        // Full-strength ambient (45% opacity read as plain black): the bands must
+        // feel like the video spilling over, not empty space.
+        className="absolute inset-0 size-full scale-125 object-cover blur-3xl brightness-[.72] saturate-125"
+        playsInline
+        autoPlay
+        muted
+      />
       <video
         ref={videoRef}
         title={title}
-        className="size-full bg-black"
+        className="relative size-full object-contain"
         playsInline
         autoPlay
         muted
