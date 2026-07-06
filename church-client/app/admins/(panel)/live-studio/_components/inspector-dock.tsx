@@ -92,6 +92,10 @@ export type InspectorBible = {
   visibleTranslations: string[];
   hasMoreTranslations: boolean;
   onShowMoreTranslations: () => void;
+  /** Antenne gate — false keeps the bible in the PREVIEW but off the diffusion;
+   *  disabling also pulls a verse that is currently on air. */
+  onAir: boolean;
+  onToggleOnAir: () => void;
 };
 
 type Patch = (patch: Partial<StudioLayer>) => void;
@@ -1215,7 +1219,7 @@ function ContentPanel({
   onRemoveLayer?: (id: string) => void;
   onPatchLayer?: (id: string, patch: Partial<StudioLayer>) => void;
 }) {
-  if (layer.type === "bible") return <BibleContent bible={bible} />;
+  if (layer.type === "bible") return <BibleContent bible={bible} onRestoreDefaults={onRestoreDefaults} />;
 
   if (layer.type === "song") {
     return (
@@ -1759,9 +1763,41 @@ function TransportBtn({
   );
 }
 
-function BibleContent({ bible }: { bible: InspectorBible }) {
+function BibleContent({
+  bible,
+  onRestoreDefaults,
+}: {
+  bible: InspectorBible;
+  onRestoreDefaults?: () => void;
+}) {
   return (
     <>
+      {/* Antenne gate — the PREVIEW keeps showing the bible either way; only the
+          diffusion is pulled (a verse already on air is taken down immediately). */}
+      <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/[0.18] p-2.5">
+        <div className="flex flex-col">
+          <span className="text-[11px] font-bold text-white">Diffuser la bible à l&apos;antenne</span>
+          <span className="text-[9.5px] text-white/40">
+            {bible.onAir
+              ? "Diffusée · part à l'antenne au CUT"
+              : "Retirée de l'antenne · reste visible en aperçu"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={bible.onToggleOnAir}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10.5px] font-extrabold transition",
+            bible.onAir
+              ? "bg-studio-onair/20 text-[#ff9a9a] hover:bg-studio-onair/30"
+              : "bg-white/8 text-white/50 hover:bg-white/15",
+          )}
+        >
+          {bible.onAir ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+          {bible.onAir ? "À l'antenne" : "Retirée"}
+        </button>
+      </div>
+
       <div>
         <Label className="mb-1.5">Versions ({bible.visibleVersions.length})</Label>
         <div className="mb-1.5 flex items-center gap-1.5 rounded-lg border border-white/10 bg-studio-field px-2.5 py-1.5">
@@ -1900,6 +1936,15 @@ function BibleContent({ bible }: { bible: InspectorBible }) {
           </div>
         )}
       </div>
+
+      {/* Reset the bible's style (the global broadcast settings) to defaults. */}
+      <button
+        type="button"
+        onClick={onRestoreDefaults}
+        className="w-full rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 py-2 text-[11.5px] font-bold text-red-400 transition"
+      >
+        Réinitialiser aux paramètres par défaut
+      </button>
     </>
   );
 }
@@ -1972,6 +2017,25 @@ function LayoutPanel({
               <Slider min={min} max={max} value={settings[key]} onValueChange={(v) => setStudioField(key, v)} />
             </div>
           ))}
+
+          <div>
+            <Label className="mb-1.5">Débordement du contenu</Label>
+            <Select
+              value={settings.overflowDirection ?? "down"}
+              onValueChange={(v) =>
+                setStudioField("overflowDirection", v as StudioSettings["overflowDirection"])
+              }
+              className={FIELD}
+            >
+              <option value="down" className="bg-studio-field">Agrandir vers le bas</option>
+              <option value="up" className="bg-studio-field">Agrandir vers le haut</option>
+              <option value="center" className="bg-studio-field">Agrandir des deux côtés (centré)</option>
+            </Select>
+            <p className="mt-1 text-[10px] leading-relaxed text-white/40">
+              Quand le texte (ex. un verset long) dépasse la hauteur du cadre, le cadre
+              s&apos;agrandit dans cette direction.
+            </p>
+          </div>
           <div className="text-[10px] leading-relaxed text-white/40">
             Astuce : glissez directement la source dans l&apos;aperçu pour la positionner.
           </div>
@@ -2045,20 +2109,29 @@ function TypoPanel({
 
   return (
     <>
-      <div className="flex rounded-[9px] bg-black/25 p-[3px]">
-        {TYPO_ELEMENTS.map((e) => (
-          <button
-            key={e.id}
-            type="button"
-            onClick={() => setTypoEl(e.id)}
-            className={cn(
-              "flex-1 rounded-[7px] py-1.5 text-[10.5px] font-bold transition-colors",
-              typoEl === e.id ? "bg-studio-purple/20 text-studio-purple" : "text-white/55",
-            )}
-          >
-            {e.label}
-          </button>
-        ))}
+      <div>
+        <Label className="mb-1.5">Élément à styler</Label>
+        <div className="flex rounded-[9px] border border-studio-purple/25 bg-black/25 p-[3px]">
+          {TYPO_ELEMENTS.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              onClick={() => setTypoEl(e.id)}
+              className={cn(
+                "flex-1 rounded-[7px] py-2 text-[11.5px] font-bold transition-colors",
+                typoEl === e.id
+                  ? "bg-studio-purple text-white shadow-[0_2px_8px_rgba(178,112,255,.35)]"
+                  : "text-white/55 hover:text-white",
+              )}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] leading-relaxed text-white/40">
+          Police, graisse, taille et couleur ci-dessous s&apos;appliquent à l&apos;élément
+          sélectionné : la référence (titre), le verset ou la version.
+        </p>
       </div>
 
       <div>

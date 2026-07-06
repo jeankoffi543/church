@@ -107,6 +107,8 @@ export type StudioSettings = {
   // Alignements
   textAlign?: "left" | "center" | "right";
   textVerticalAlign?: "top" | "center" | "bottom";
+  /** Where the frame grows when the content overflows its configured height. */
+  overflowDirection?: "down" | "up" | "center";
 };
 
 export const DEFAULT_STUDIO_SETTINGS: StudioSettings = {
@@ -173,6 +175,7 @@ export const DEFAULT_STUDIO_SETTINGS: StudioSettings = {
 
   textAlign: "center",
   textVerticalAlign: "center",
+  overflowDirection: "down",
 };
 
 /** Payload broadcast over the `live` channel (`.scripture`). */

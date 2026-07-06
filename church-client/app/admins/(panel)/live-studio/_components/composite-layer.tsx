@@ -325,6 +325,11 @@ export function CompositeLayer({
   // Bible verse overlay
   if (layer.type === "bible") {
     const versionLabel = verse?.texts ? Object.keys(verse.texts)[0] : verse?.translation || "LSG";
+    // Dynamic frame: the OUTER box keeps its exact configured geometry (stable
+    // drag/resize target); the INNER container hugs the content (min 100% of the
+    // box) and overflows the box in the operator-chosen direction. The canvas
+    // mirrors this in growBoxToContent.
+    const dir = layer.style.overflowDirection ?? "down";
     return (
       <motion.div
         key={layer.id}
@@ -334,31 +339,56 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={alignClass}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        className={cn(
+          "absolute flex flex-col",
+          dir === "up" ? "justify-end" : dir === "center" ? "justify-center" : "justify-start",
+          movable && "cursor-move",
+        )}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
-        {verse ? (
-          <>
-            <span style={{ ...getElementStyle("fontRef", layer.style), whiteSpace: "pre-wrap" }} className="mb-2 block">
-              {verse.reference}
+        <div
+          className={cn(
+            // shrink-0 is LOAD-BEARING: as a flex item of the fixed-height box,
+            // the default flex-shrink:1 squashed the container below its content
+            // (measured: 44px bg for ~110px of text) — the frame then never
+            // "hugged" the verse.
+            "flex w-full shrink-0 flex-col",
+            (layer.style.textAlign || "center") === "left"
+              ? "items-start text-left"
+              : (layer.style.textAlign || "center") === "right"
+                ? "items-end text-right"
+                : "items-center text-center",
+            (layer.style.textVerticalAlign || "center") === "top"
+              ? "justify-start"
+              : (layer.style.textVerticalAlign || "center") === "bottom"
+                ? "justify-end"
+                : "justify-center",
+          )}
+          style={{ ...getContainerStyle(layer.style), minHeight: "100%" }}
+        >
+          {verse ? (
+            <>
+              <span style={{ ...getElementStyle("fontRef", layer.style), whiteSpace: "pre-wrap" }} className="mb-2 block">
+                {verse.reference}
+              </span>
+              <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
+                {layer.style.animation === "typewriter" ? (
+                  <TypewriterText text={verse.text} />
+                ) : (
+                  verse.text
+                )}
+              </p>
+              <span style={{ ...getElementStyle("fontVer", layer.style), whiteSpace: "pre-wrap" }} className="mt-1 block">
+                {versionLabel}
+              </span>
+            </>
+          ) : (
+            <span className={cn("text-[11px] tracking-[2px] text-white/25", MONO)}>
+              Sélectionnez un verset
             </span>
-            <p style={{ ...getElementStyle("fontBody", layer.style), whiteSpace: "pre-wrap" }}>
-              {layer.style.animation === "typewriter" ? (
-                <TypewriterText text={verse.text} />
-              ) : (
-                verse.text
-              )}
-            </p>
-            <span style={{ ...getElementStyle("fontVer", layer.style), whiteSpace: "pre-wrap" }} className="mt-1 block">
-              {versionLabel}
-            </span>
-          </>
-        ) : (
-          <span className={cn("text-[11px] tracking-[2px] text-white/25", MONO)}>
-            Sélectionnez un verset
-          </span>
-        )}
+          )}
+        </div>
       </motion.div>
     );
   }

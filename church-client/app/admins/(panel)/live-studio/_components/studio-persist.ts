@@ -9,6 +9,7 @@
 export const SS_CURRENT_SCENE = "studio_current_scene";
 export const SS_PROGRAM_SCENE = "studio_program_scene";
 export const SS_PROGRAM_LAYERS = "studio_program_layers";
+export const SS_PREVIEW_VERSE = "studio_preview_verse";
 
 export function lsGet(key: string): string | null {
   try {

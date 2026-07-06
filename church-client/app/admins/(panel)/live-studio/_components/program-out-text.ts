@@ -508,7 +508,43 @@ export function drawScrollLayer(
   ctx.restore();
 }
 
-/** Render the bible verse layer: reference + body + version label. */
+/**
+ * Grow a box downward so the container hugs its wrapped content (min-height
+ * semantics, mirroring the DOM bible's `minHeight` + auto height): long verses
+ * used to overflow/clip the fixed frame. Measures with the same wrap + line
+ * metrics `drawBlocks` uses.
+ */
+function growBoxToContent(
+  ctx: CanvasRenderingContext2D,
+  box: Box,
+  s: StudioSettings,
+  blocks: Block[],
+  scale: number,
+): Box {
+  const padX = num(s, "containerPaddingX", 28) * scale;
+  const padY = num(s, "containerPaddingY", 24) * scale;
+  const innerW = Math.max(1, box.w - padX * 2);
+  ctx.save();
+  let totalH = 0;
+  for (const block of blocks) {
+    const f = fontOf(s, block.prefix, scale);
+    ctx.font = f.font;
+    ctx.letterSpacing = `${f.spacing}px`;
+    const text = f.upper ? block.text.toUpperCase() : block.text;
+    const lines = wrapText(ctx, text, innerW);
+    totalH += block.gapBefore * scale + lines.length * f.size * f.lineHeight;
+  }
+  ctx.restore();
+  const h = Math.max(box.h, totalH + padY * 2);
+  const extra = h - box.h;
+  // Operator-chosen growth direction (mirrors the DOM's flex justify).
+  const dir = s.overflowDirection ?? "down";
+  const y = dir === "up" ? box.y - extra : dir === "center" ? box.y - extra / 2 : box.y;
+  return { ...box, y, h };
+}
+
+/** Render the bible verse layer: reference + body + version label. The frame is
+ *  DYNAMIC: it grows below its configured height when the verse needs more room. */
 export function drawBibleLayer(
   ctx: CanvasRenderingContext2D,
   box: Box,
@@ -517,18 +553,13 @@ export function drawBibleLayer(
   scale: number,
   reveal = 1,
 ) {
-  drawContainer(ctx, box, s, scale);
   const versionLabel = verse.texts ? Object.keys(verse.texts)[0] : verse.translation || "LSG";
-  drawBlocks(
-    ctx,
-    box,
-    s,
-    [
-      { text: verse.reference ?? "", prefix: "fontRef", gapBefore: 0 },
-      { text: verse.text ?? "", prefix: "fontBody", gapBefore: 8 },
-      { text: versionLabel, prefix: "fontVer", gapBefore: 4 },
-    ],
-    scale,
-    reveal,
-  );
+  const blocks: Block[] = [
+    { text: verse.reference ?? "", prefix: "fontRef", gapBefore: 0 },
+    { text: verse.text ?? "", prefix: "fontBody", gapBefore: 8 },
+    { text: versionLabel, prefix: "fontVer", gapBefore: 4 },
+  ];
+  const grown = growBoxToContent(ctx, box, s, blocks, scale);
+  drawContainer(ctx, grown, s, scale);
+  drawBlocks(ctx, grown, s, blocks, scale, reveal);
 }

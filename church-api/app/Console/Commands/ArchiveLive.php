@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Enums\VideoSourceType;
 use App\Events\LiveStateChanged;
+use App\Events\ScriptureStreamEvent;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
@@ -26,6 +27,7 @@ class ArchiveLive extends Command
         if (! $hasChat && (! is_string($startedAt) || $startedAt === '')) {
             Setting::set('live_status', false, 'live');
             Setting::set('live_started_at', '', 'live');
+            $this->hideScriptureOverlay();
             broadcast(new LiveStateChanged(false));
             $this->info('Aucun direct à archiver.');
 
@@ -63,11 +65,28 @@ class ArchiveLive extends Command
 
         Setting::set('live_status', false, 'live');
         Setting::set('live_started_at', '', 'live');
+        $this->hideScriptureOverlay();
         broadcast(new LiveStateChanged(false));
 
         $this->info("Direct archivé : {$pastLive->slug} ({$moved} message(s) de chat).");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * A broadcast that ends must take its scripture overlay down with it: clear
+     * the persisted catch-up payload and push a hide to every open viewer —
+     * otherwise the last verse kept "playing" on /live after the live stopped.
+     */
+    private function hideScriptureOverlay(): void
+    {
+        Setting::set('live_current_scripture', [
+            'action' => 'hide',
+            'verse' => [],
+            'settings' => [],
+            'at' => now()->toIso8601String(),
+        ], 'live');
+        broadcast(new ScriptureStreamEvent('hide'));
     }
 
     /**
