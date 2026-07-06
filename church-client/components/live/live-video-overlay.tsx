@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, type Variants, type Easing } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 import { DEFAULT_STUDIO_SETTINGS, type ScripturePayload, type StudioSettings } from "@/lib/studio";
+
+// The overlay is laid out in the SAME logical composition space the régie
+// authors in (see stage-monitor.tsx): a 1920×1080 stage contain-fitted onto the
+// player and scaled down. Every px style then renders at the exact metric the
+// studio preview/canvas uses — identical on desktop, tablet and phone.
+const COMP_W = 1920;
+const COMP_H = 1080;
 
 /* ── Animation Easing Map ───────────────────────────────────────── */
 const EASING_MAP: Record<string, Easing> = {
@@ -199,21 +206,23 @@ const getContainerStyle = (s: StudioSettings): React.CSSProperties => {
   return baseStyle;
 };
 
-/* ── Predefined Layout Placement mapping ──────────────────────────── */
-const PREDEFINED_WRAP_CLASSES: Record<string, string> = {
-  lower_third_left: "items-end justify-start pb-[8vh] pl-[6vw] px-4",
-  lower_third_right: "items-end justify-end pb-[8vh] pr-[6vw] px-4",
-  centered_bottom: "items-end justify-center pb-[8vh] px-4",
-  ticker: "items-end justify-center pb-0 px-0",
-  full_screen_cinema: "items-center justify-center p-12",
-};
-
-const PREDEFINED_CARD_CLASSES: Record<string, string> = {
-  lower_third_left: "w-full max-w-xl text-left",
-  lower_third_right: "w-full max-w-xl text-left",
-  centered_bottom: "w-full max-w-4xl text-center",
-  ticker: "w-full max-w-none rounded-none text-center border-x-0 border-b-0",
-  full_screen_cinema: "w-full max-w-5xl text-center",
+/* ── Predefined Layout Placement mapping ──────────────────────────────
+ * Same % boxes as the régie (studio-style.ts getPredefinedAbsolutePosition +
+ * program-out PREDEFINED_BOX), so a preset lands at the exact same spot on the
+ * public overlay as on the studio preview and the burned-in broadcast. */
+const PREDEFINED_BOX: Record<string, React.CSSProperties> = {
+  lower_third_left: { left: "6%", top: "72%", width: "40%", height: "20%" },
+  lower_third_right: { left: "54%", top: "72%", width: "40%", height: "20%" },
+  centered_top: { left: "10%", top: "8%", width: "80%", height: "20%" },
+  ticker: { left: "0%", top: "86%", width: "100%", height: "14%" },
+  banner_top: { left: "0%", top: "0%", width: "100%", height: "14%" },
+  full_screen_cinema: { left: "10%", top: "10%", width: "80%", height: "80%" },
+  full_screen: { left: "0%", top: "0%", width: "100%", height: "100%" },
+  pip_top_left: { left: "4%", top: "5%", width: "34%", height: "34%" },
+  pip_top_right: { left: "62%", top: "5%", width: "34%", height: "34%" },
+  pip_bottom_left: { left: "4%", top: "61%", width: "34%", height: "34%" },
+  pip_bottom_right: { left: "62%", top: "61%", width: "34%", height: "34%" },
+  centered_bottom: { left: "10%", top: "72%", width: "80%", height: "20%" },
 };
 
 export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null }) {
@@ -237,6 +246,37 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
     return () => clearTimeout(t);
   }, [visible, shownKey, s.duration]);
 
+  // Contain-fit the 16:9 composition inside the player area (any device size).
+  // Wired through a CALLBACK ref: the component returns null until a verse
+  // exists, so a mount-time effect would never see the element — the observer
+  // must attach whenever the node (re)appears. setState is guarded by a 1px
+  // threshold so sub-pixel ResizeObserver ticks can't re-render in a loop.
+  const roRef = useRef<ResizeObserver | null>(null);
+  const [fit, setFit] = useState({ w: 0, h: 0, x: 0, y: 0 });
+  const hostRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const k = Math.min(width / COMP_W, height / COMP_H);
+      const w = Math.round(COMP_W * k);
+      const h = Math.round(COMP_H * k);
+      const x = Math.round((width - w) / 2);
+      const y = Math.round((height - h) / 2);
+      setFit((prev) =>
+        Math.abs(prev.w - w) < 1 && Math.abs(prev.h - h) < 1 && prev.x === x && prev.y === y
+          ? prev
+          : { w, h, x, y },
+      );
+    };
+    measure();
+    roRef.current = new ResizeObserver(measure);
+    roRef.current.observe(el);
+  }, []);
+  useEffect(() => () => roRef.current?.disconnect(), []);
+  const k = fit.w > 0 ? fit.w / COMP_W : 0;
+
   const isCurrentlyVisible = visible && !autoHidden && !!verse;
 
   if (!verse) return null;
@@ -244,22 +284,24 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
   const hasMultipleTexts = verse.texts && Object.keys(verse.texts).length > 1;
   const textsArray = verse.texts ? Object.entries(verse.texts) : [[verse.translation || "LSG", verse.text]];
 
-  // Positioning
+  // Geometry in composition space — the SAME % boxes the régie composes with.
   const isCustom = s.positionMode === "custom";
-  const wrapClass = isCustom ? "absolute inset-0 z-30" : cn("pointer-events-none absolute inset-0 z-30 flex", PREDEFINED_WRAP_CLASSES[s.predefinedPosition || "centered_bottom"]);
-  const cardClass = isCustom ? "" : cn(PREDEFINED_CARD_CLASSES[s.predefinedPosition || "centered_bottom"]);
-
-  // Custom positioning styles
-  const customPosStyle: React.CSSProperties = isCustom ? {
+  const boxStyle: React.CSSProperties = {
     position: "absolute",
-    left: `${s.customX}%`,
-    top: `${s.customY}%`,
-    width: `${s.customWidth}%`,
-    height: `${s.customHeight}%`,
+    ...(isCustom
+      ? {
+          left: `${s.customX}%`,
+          top: `${s.customY}%`,
+          width: `${s.customWidth}%`,
+          height: `${s.customHeight}%`,
+        }
+      : PREDEFINED_BOX[s.predefinedPosition || "centered_bottom"] ?? PREDEFINED_BOX.centered_bottom),
     display: "flex",
     flexDirection: "column",
-    justifyContent: "center",
-  } : {};
+    justifyContent:
+      s.textVerticalAlign === "top" ? "flex-start" : s.textVerticalAlign === "bottom" ? "flex-end" : "center",
+    textAlign: (s.textAlign as React.CSSProperties["textAlign"]) ?? "center",
+  };
 
   // Easing & Plugin
   const animEase = EASING_MAP[s.animEasing || "ease-out"] || EASING_MAP["ease-out"];
@@ -268,11 +310,25 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
 
   const containerStyle = {
     ...getContainerStyle(s),
-    ...customPosStyle,
+    ...boxStyle,
   };
 
   return (
-    <div className={wrapClass}>
+    <div ref={hostRef} className="pointer-events-none absolute inset-0 z-30">
+      {k > 0 && (
+        <div
+          className="absolute overflow-hidden"
+          style={{ left: fit.x, top: fit.y, width: fit.w, height: fit.h, contain: "strict" }}
+        >
+          <div
+            className="absolute top-0 left-0"
+            style={{
+              width: COMP_W,
+              height: COMP_H,
+              transform: `scale(${k})`,
+              transformOrigin: "top left",
+            }}
+          >
       <AnimatePresence>
         {isCurrentlyVisible && (
           <motion.div
@@ -282,10 +338,7 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
             animate="animate"
             exit="exit"
             style={containerStyle}
-            className={cn(
-              "ring-1 ring-white/5",
-              cardClass
-            )}
+            className="ring-1 ring-white/5"
           >
             {/* Reference */}
             <span 
@@ -324,6 +377,9 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
           </motion.div>
         )}
       </AnimatePresence>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

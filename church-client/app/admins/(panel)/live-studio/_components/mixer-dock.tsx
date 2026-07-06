@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Volume2, MicOff, Headphones, VolumeX } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -38,6 +38,57 @@ const panLabel = (p: number) => {
   return p < 0 ? `G ${Math.abs(p)}` : `D ${p}`;
 };
 
+/**
+ * Animated VU bar for one channel. The peak is written STRAIGHT to the DOM from
+ * its own timer — a `setState` version of this ticking at 70ms re-rendered the
+ * entire dock ~14×/s and pinned the CPU (measured: the biggest idle burner of
+ * the whole console). Prefer the REAL captured level (Web Audio RMS for owned
+ * media, or YouTube player-state sync); only fall back to a synthesised level
+ * for hardware audio-device inputs, which the browser can't meter.
+ */
+function VuMeter({ channel }: { channel: StudioLayer }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const peakRef = useRef(0);
+  const channelRef = useRef(channel);
+  useEffect(() => {
+    channelRef.current = channel;
+  }, [channel]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const ch = channelRef.current;
+      const real = readAudioLevel(ch.id);
+      let target = 0;
+      if (real != null) {
+        target = real;
+      } else if (ch.type === "audio" && isAudioActive(ch)) {
+        target = Math.random() * ((ch.audioLevel ?? 80) * 0.9);
+      }
+      const peak = Math.max(0, Math.min(100, peakRef.current + (target - peakRef.current) * 0.4));
+      // Skip the DOM write when the meter is parked at 0 (idle channel).
+      if (peak !== peakRef.current || peak > 0.2) {
+        peakRef.current = peak;
+        const el = barRef.current;
+        // scaleX (not width): transform transitions run on the compositor —
+        // animating `width` recalced style+layout every frame, ~60×/s.
+        if (el) el.style.transform = `scaleX(${(100 - peak) / 100})`;
+      }
+    }, 70);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="relative h-[9px] overflow-hidden rounded-[5px] border border-white/6 bg-[#0a0613]">
+      <div className="absolute inset-0 bg-gradient-to-r from-studio-preview via-[#fbbf24] to-studio-onair" />
+      <div
+        ref={barRef}
+        className="absolute inset-0 origin-right bg-[#0a0613] transition-transform duration-75 ease-out"
+        style={{ transform: "scaleX(1)" }}
+      />
+    </div>
+  );
+}
+
 export function MixerDock({
   channels,
   onChange,
@@ -45,38 +96,6 @@ export function MixerDock({
   channels: StudioLayer[];
   onChange: (id: string, patch: Partial<AudioPatch>) => void;
 }) {
-  // Animated VU peaks per channel id (0-100), random-walk scaled by live level.
-  const [vu, setVu] = useState<Record<string, number>>({});
-  const channelsRef = useRef(channels);
-  useEffect(() => {
-    channelsRef.current = channels;
-  }, [channels]);
-
-  useEffect(() => {
-    if (channels.length === 0) return;
-    const timer = setInterval(() => {
-      setVu((prev) => {
-        const next: Record<string, number> = {};
-        for (const ch of channelsRef.current) {
-          // Prefer the REAL captured level (Web Audio RMS for owned media, or
-          // YouTube player-state sync). Only fall back to a synthesised level
-          // for hardware audio-device inputs, which the browser can't meter.
-          const real = readAudioLevel(ch.id);
-          let target = 0;
-          if (real != null) {
-            target = real;
-          } else if (ch.type === "audio" && isAudioActive(ch)) {
-            target = Math.random() * ((ch.audioLevel ?? 80) * 0.9);
-          }
-          const last = prev[ch.id] ?? 0;
-          next[ch.id] = Math.max(0, Math.min(100, last + (target - last) * 0.4));
-        }
-        return next;
-      });
-    }, 70);
-    return () => clearInterval(timer);
-  }, [channels.length]);
-
   const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
 
   return (
@@ -134,7 +153,6 @@ export function MixerDock({
             const capturable = probed || ch.type === "audio";
             const on = hasSrc && ch.visible && !muted && capturable;
             const db = dbLabel(on ? level : 0);
-            const peak = vu[ch.id] ?? 0;
             const meta = LAYER_META[ch.type];
             const stateLabel = !hasSrc
               ? "Aucune source"
@@ -164,14 +182,8 @@ export function MixerDock({
                   )}
                 </div>
 
-                {/* Animated VU meter (peak) */}
-                <div className="relative h-[9px] overflow-hidden rounded-[5px] border border-white/6 bg-[#0a0613]">
-                  <div className="absolute inset-0 bg-gradient-to-r from-studio-preview via-[#fbbf24] to-studio-onair" />
-                  <div
-                    className="absolute inset-y-0 right-0 bg-[#0a0613] transition-[width] duration-75 ease-out"
-                    style={{ width: `${100 - peak}%` }}
-                  />
-                </div>
+                {/* Animated VU meter (peak) — DOM-driven, no React re-render */}
+                <VuMeter channel={ch} />
 
                 {/* Volume fader + mute */}
                 <div className="flex items-center gap-2.5">

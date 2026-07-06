@@ -76,21 +76,52 @@ export async function publishWhip(opts: {
   });
 
   // Send-only: add every track from the program feed (video + mixed audio).
+  let videoSender: RTCRtpSender | null = null;
   for (const track of stream.getTracks()) {
     const tr = pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
-    if (track.kind === "video" && preferH264 && tr.setCodecPreferences) {
-      const caps = RTCRtpSender.getCapabilities("video");
-      if (caps) {
-        const h264 = caps.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264");
-        if (h264.length > 0) {
-          const others = caps.codecs.filter((c) => c.mimeType.toLowerCase() !== "video/h264");
-          try {
-            tr.setCodecPreferences([...h264, ...others]);
-          } catch {
-            /* browser rejected the ordering — fall back to its default */
+    if (track.kind === "video") {
+      videoSender = tr.sender;
+      // NOTE: no `contentHint = "detail"` and no `maintain-resolution` here — we
+      // tried both for sharpness and they made the stream FREEZE under transient
+      // CPU/network pressure (the encoder's only remaining lever was framerate).
+      // "balanced" degradation keeps motion fluid; sharpness comes from the
+      // bitrate ceiling below.
+      if (preferH264 && tr.setCodecPreferences) {
+        const caps = RTCRtpSender.getCapabilities("video");
+        if (caps) {
+          const h264 = caps.codecs.filter((c) => c.mimeType.toLowerCase() === "video/h264");
+          if (h264.length > 0) {
+            const others = caps.codecs.filter((c) => c.mimeType.toLowerCase() !== "video/h264");
+            try {
+              tr.setCodecPreferences([...h264, ...others]);
+            } catch {
+              /* browser rejected the ordering — fall back to its default */
+            }
           }
         }
       }
+    }
+  }
+
+  /**
+   * Post-negotiation encoder tuning. Raise the bitrate CEILING (sized to the
+   * track's resolution) so text stays crisp, but keep the DEFAULT "balanced"
+   * degradation: under transient pressure the encoder may soften the image a
+   * little yet the motion stays fluid — forcing `maintain-resolution` made the
+   * broadcast freeze in bursts instead. Best-effort.
+   */
+  async function tuneVideoEncoding() {
+    if (!videoSender) return;
+    try {
+      const h = videoSender.track?.getSettings().height ?? 1080;
+      const maxBitrate = h >= 2160 ? 24_000_000 : h >= 1440 ? 14_000_000 : h >= 1080 ? 8_000_000 : 5_000_000;
+      const params = videoSender.getParameters();
+      params.degradationPreference = "balanced";
+      if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+      params.encodings[0].maxBitrate = maxBitrate;
+      await videoSender.setParameters(params);
+    } catch {
+      /* setParameters unsupported mid-flight — keep browser defaults */
     }
   }
 
@@ -126,6 +157,7 @@ export async function publishWhip(opts: {
   const resourceUrl = location ? new URL(location, endpoint).toString() : null;
 
   await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+  void tuneVideoEncoding();
 
   return {
     getState: () => state,

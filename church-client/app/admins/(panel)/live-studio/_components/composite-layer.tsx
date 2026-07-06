@@ -193,11 +193,25 @@ function TypewriterText({ text }: { text: string }) {
 export type ResizeCorner = "nw" | "ne" | "sw" | "se";
 
 const CORNER_POS: Record<ResizeCorner, string> = {
-  nw: "-top-1.5 -left-1.5 cursor-nw-resize",
-  ne: "-top-1.5 -right-1.5 cursor-ne-resize",
-  sw: "-bottom-1.5 -left-1.5 cursor-sw-resize",
-  se: "-bottom-1.5 -right-1.5 cursor-se-resize",
+  nw: "cursor-nw-resize",
+  ne: "cursor-ne-resize",
+  sw: "cursor-sw-resize",
+  se: "cursor-se-resize",
 };
+
+/** Corner offsets in px, scaled with the handle size (half overlaps the edge). */
+function cornerOffset(c: ResizeCorner, half: number): React.CSSProperties {
+  switch (c) {
+    case "nw":
+      return { top: -half, left: -half };
+    case "ne":
+      return { top: -half, right: -half };
+    case "sw":
+      return { bottom: -half, left: -half };
+    case "se":
+      return { bottom: -half, right: -half };
+  }
+}
 
 /**
  * Renders one composite layer (bible / text / song / image / camera / video /
@@ -219,6 +233,7 @@ export function CompositeLayer({
   onSelect,
   allLayers = [],
   selectedLayerId = null,
+  uiScale = 1,
 }: {
   layer: StudioLayer;
   verse?: ScriptureVerse | null;
@@ -233,6 +248,10 @@ export function CompositeLayer({
   onSelect?: (id: string) => void;
   allLayers?: StudioLayer[];
   selectedLayerId?: string | null;
+  /** Editing-chrome compensation for a scaled-down composition stage (1/k): the
+   *  monitor renders in composition px, so selection rings / resize handles are
+   *  multiplied by this to stay a usable on-screen size. Never broadcast. */
+  uiScale?: number;
 }) {
   const isBg = isBackgroundLayer(layer);
   const animEase = EASING_MAP[layer.style.animEasing || "ease-out"] || EASING_MAP["ease-out"];
@@ -240,15 +259,18 @@ export function CompositeLayer({
   const variants = getVariants(layer.style.animDuration || 500, animEase);
 
   const isSelectedChildsParent = selectedLayerId && allLayers.find((l) => l.id === selectedLayerId)?.parentId === layer.id;
-  const parentRing = isSelectedChildsParent
-    ? "outline-2 outline outline-gold outline-offset-2"
-    : "";
-
-  const ring = selected
-    ? isBg
-      ? "shadow-[inset_0_0_0_2px_#b270ff]"
-      : "outline-2 outline-dashed outline-studio-purple outline-offset-4"
-    : "";
+  // Selection chrome as inline styles so it scales with `uiScale` (a class-based
+  // 2px outline would render sub-pixel inside a scaled-down composition stage).
+  const editRingStyle: React.CSSProperties = {
+    ...(isSelectedChildsParent
+      ? { outline: `${2 * uiScale}px solid #e2b85f`, outlineOffset: 2 * uiScale }
+      : {}),
+    ...(selected
+      ? isBg
+        ? { boxShadow: `inset 0 0 0 ${2 * uiScale}px #b270ff` }
+        : { outline: `${2 * uiScale}px dashed #b270ff`, outlineOffset: 4 * uiScale }
+      : {}),
+  };
   const movable = draggable && !!onPointerDown && !isBg;
   const dragProps = movable
     ? {
@@ -266,8 +288,6 @@ export function CompositeLayer({
     alignX === "left" ? "items-start text-left" : alignX === "right" ? "items-end text-right" : "items-center text-center",
     alignY === "top" ? "justify-start" : alignY === "bottom" ? "justify-end" : "justify-center",
     movable && "cursor-move",
-    ring,
-    parentRing
   );
 
   const isScroll = layer.style.animation?.startsWith("scroll_");
@@ -288,9 +308,16 @@ export function CompositeLayer({
             key={c}
             onPointerDown={(e) => onResize(e, layer.id, c)}
             className={cn(
-              "absolute z-20 size-3 rounded-full border border-studio-purple bg-studio-bg shadow",
+              "absolute z-20 rounded-full border-studio-purple bg-studio-bg shadow",
               CORNER_POS[c],
             )}
+            style={{
+              width: 12 * uiScale,
+              height: 12 * uiScale,
+              borderWidth: Math.max(1, uiScale),
+              borderStyle: "solid",
+              ...cornerOffset(c, 6 * uiScale),
+            }}
           />
         ))
       : null;
@@ -308,7 +335,7 @@ export function CompositeLayer({
         data-layer
         {...dragProps}
         className={alignClass}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
         {verse ? (
@@ -350,13 +377,12 @@ export function CompositeLayer({
         className={cn(
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
-          ring,
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
         <EmbedMedia layer={layer} audioOwner={audioOwner} />
-        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-studio-onair/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-studio-onair/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white" style={{ transform: `scale(${uiScale})`, transformOrigin: "top left" }}>
           DIRECT EXTERNE
         </span>
       </motion.div>
@@ -377,13 +403,12 @@ export function CompositeLayer({
         className={cn(
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
-          ring,
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
         <VideoMedia layer={layer} audioOwner={audioOwner} />
-        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#f0a868]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#f0a868]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white" style={{ transform: `scale(${uiScale})`, transformOrigin: "top left" }}>
           FLUX VIDÉO
         </span>
       </motion.div>
@@ -404,16 +429,15 @@ export function CompositeLayer({
         className={cn(
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
-          ring,
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
         {/* Monitors are always camera CONSUMERS — the getUserMedia stream is owned
             by the console-level <CameraKeepAlive> (which survives scene switches),
             so an on-air camera stays on air when the Preview changes scene. */}
         <CameraMedia layer={layer} audioOwner={false} />
-        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#c89af0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white">
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#c89af0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white" style={{ transform: `scale(${uiScale})`, transformOrigin: "top left" }}>
           CAMÉRA
         </span>
       </motion.div>
@@ -444,8 +468,8 @@ export function CompositeLayer({
           animate="animate"
           exit="exit"
           {...selectProps}
-          className={cn("absolute inset-0", draggable && "cursor-pointer", ring)}
-          style={{ zIndex: z, ...bgStyle }}
+          className={cn("absolute inset-0", draggable && "cursor-pointer")}
+          style={{ zIndex: z, ...bgStyle, ...editRingStyle }}
         >
           <span
             className={cn(
@@ -467,8 +491,8 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute overflow-hidden", movable && "cursor-move", ring, parentRing)}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...bgStyle }}
+        className={cn("absolute overflow-hidden", movable && "cursor-move")}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...bgStyle, ...editRingStyle }}
       >
         {handles}
       </motion.div>
@@ -490,7 +514,7 @@ export function CompositeLayer({
         data-layer
         {...dragProps}
         className={alignClass}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
         {lines.map((line, i) => (
@@ -517,8 +541,8 @@ export function CompositeLayer({
         exit="exit"
         data-layer
         {...dragProps}
-        className={cn("absolute inset-0 select-none", ring, parentRing)}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
+        className={cn("absolute inset-0 select-none")}
+        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
       >
         {handles}
       </motion.div>
@@ -536,7 +560,7 @@ export function CompositeLayer({
       data-layer
       {...dragProps}
       className={alignClass}
-      style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z }}
+      style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
     >
       {handles}
       {isScroll ? (
@@ -653,10 +677,10 @@ function EmbedMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
   if (!src) {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
-        <div className={cn("text-[12px] font-semibold tracking-[2px] text-[#ff8a8a]", MONO)}>
+        <div className={cn("text-[34px] font-semibold tracking-[5px] text-[#ff8a8a]", MONO)}>
           DIRECT EXTERNE
         </div>
-        <div className="text-[10px] text-white/35">Collez un lien YouTube / Facebook…</div>
+        <div className="text-[26px] text-white/35">Collez un lien YouTube / Facebook…</div>
       </div>
     );
   }
@@ -815,10 +839,10 @@ function VideoMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: boo
   if (!src) {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
-        <div className={cn("text-[12px] font-semibold tracking-[2px]", MONO)} style={{ color: "rgba(240,168,104,.8)" }}>
+        <div className={cn("text-[34px] font-semibold tracking-[5px]", MONO)} style={{ color: "rgba(240,168,104,.8)" }}>
           FLUX VIDÉO
         </div>
-        <div className="text-[10px] text-white/35">Renseignez l&apos;URL du flux (.m3u8 / .mp4)…</div>
+        <div className="text-[26px] text-white/35">Renseignez l&apos;URL du flux (.m3u8 / .mp4)…</div>
       </div>
     );
   }
@@ -944,10 +968,10 @@ function CameraMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: bo
   if (!deviceId) {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
-        <div className={cn("text-[12px] font-semibold tracking-[2px]", MONO)} style={{ color: "rgba(200,154,240,.85)" }}>
+        <div className={cn("text-[34px] font-semibold tracking-[5px]", MONO)} style={{ color: "rgba(200,154,240,.85)" }}>
           CAMÉRA
         </div>
-        <div className="text-[10px] text-white/35">Sélectionnez un périphérique dans l&apos;inspecteur…</div>
+        <div className="text-[26px] text-white/35">Sélectionnez un périphérique dans l&apos;inspecteur…</div>
       </div>
     );
   }
@@ -955,8 +979,8 @@ function CameraMedia({ layer, audioOwner }: { layer: StudioLayer; audioOwner: bo
   if (error) {
     return (
       <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
-        <div className={cn("text-[12px] font-semibold tracking-[2px] text-[#ff8a8a]", MONO)}>CAMÉRA</div>
-        <div className="px-3 text-[10px] leading-relaxed text-white/45">{error}</div>
+        <div className={cn("text-[34px] font-semibold tracking-[5px] text-[#ff8a8a]", MONO)}>CAMÉRA</div>
+        <div className="px-3 text-[26px] leading-relaxed text-white/45">{error}</div>
       </div>
     );
   }

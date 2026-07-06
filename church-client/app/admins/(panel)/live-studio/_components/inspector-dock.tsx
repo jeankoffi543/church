@@ -1960,9 +1960,11 @@ function LayoutPanel({
         <>
           {(
             [
-              ["customX", "Position X", "%", 0, 100],
-              ["customY", "Position Y", "%", 0, 100],
-              ["customWidth", "Largeur", "%", 15, 100],
+              // OBS-like: allow off-frame positions and oversized boxes (the
+              // stage + broadcast canvas clip the overflow).
+              ["customX", "Position X", "%", -50, 150],
+              ["customY", "Position Y", "%", -50, 150],
+              ["customWidth", "Largeur", "%", 10, 200],
             ] as const
           ).map(([key, label, unit, min, max]) => (
             <div key={key}>
@@ -2129,10 +2131,12 @@ function TypoPanel({
       </div>
 
       <div>
+        {/* Sizes are composition px (1080p canvas) — a broadcast headline easily
+            needs 100-300px there, hence the wide range. */}
         <SliderLabel label="Taille" value={`${tv("Size")}px`} />
         <Slider
-          min={8}
-          max={120}
+          min={16}
+          max={360}
           value={tv("Size") as number}
           onValueChange={(v) => setStudioField(tk("Size"), v as StudioSettings[keyof StudioSettings])}
         />
@@ -2150,8 +2154,8 @@ function TypoPanel({
       <div>
         <SliderLabel label="Interlettrage" value={`${tv("Spacing")}px`} />
         <Slider
-          min={-1}
-          max={20}
+          min={-3}
+          max={60}
           step={0.5}
           value={tv("Spacing") as number}
           onValueChange={(v) => setStudioField(tk("Spacing"), v as StudioSettings[keyof StudioSettings])}
@@ -2242,7 +2246,7 @@ function ContainerPanel({
         <SliderLabel label="Arrondi des angles" value={`${settings.containerBorderRadius}px`} />
         <Slider
           min={0}
-          max={40}
+          max={120}
           value={settings.containerBorderRadius}
           onValueChange={(v) => setStudioField("containerBorderRadius", v)}
         />
@@ -2254,7 +2258,7 @@ function ContainerPanel({
           <input
             type="number"
             min={0}
-            max={8}
+            max={24}
             value={settings.containerBorderWidth}
             onChange={(e) => setStudioField("containerBorderWidth", Number(e.target.value))}
             className={FIELD}
@@ -2317,7 +2321,7 @@ function ContainerPanel({
         <SliderLabel label="Flou de l'ombre" value={`${settings.shadowBlur}px`} />
         <Slider
           min={0}
-          max={80}
+          max={240}
           value={settings.shadowBlur}
           onValueChange={(v) => setStudioField("shadowBlur", v)}
         />

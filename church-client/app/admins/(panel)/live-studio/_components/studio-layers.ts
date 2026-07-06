@@ -222,7 +222,7 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
     ];
     base.activeStanzaIndex = 0;
     base.songLiveActive = false;
-    base.style = { ...base.style, fontBodyStyle: "italic", fontBodySize: 34 };
+    base.style = { ...base.style, fontBodyStyle: "italic", fontBodySize: 102 };
   }
   if (type === "image") {
     // Default to a framed (movable + resizable) overlay; switch to "cover" in

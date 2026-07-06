@@ -58,6 +58,14 @@ export type SettingsModalProps = {
   fallbackImage: string;
   getPreviewUrl: (u: string) => string;
   onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  // Video (real) — OBS-like base (composition) / output canvas + framerate
+  baseResolution: string;
+  onBaseResolution: (v: string) => void;
+  outputResolution: string;
+  onOutputResolution: (v: string) => void;
+  outputFps: string;
+  onOutputFps: (v: string) => void;
+  broadcasting: boolean;
 };
 
 const TABS = [
@@ -145,7 +153,8 @@ export function SettingsModal(props: SettingsModalProps) {
         <ScrollArea className="min-w-0 flex-1 px-[30px] py-[26px]">
           {activeTab === "general" && <GeneralPanel {...props} />}
           {activeTab === "stream" && <StreamPanel {...props} />}
-          {activeTab !== "general" && activeTab !== "stream" && (
+          {activeTab === "video" && <VideoPanel {...props} />}
+          {activeTab !== "general" && activeTab !== "stream" && activeTab !== "video" && (
             <StubPanel title={TABS.find((t) => t.id === activeTab)?.label ?? ""} />
           )}
         </ScrollArea>
@@ -351,6 +360,104 @@ function StreamPanel(p: SettingsModalProps) {
               <input type="file" accept="image/*" onChange={p.onImageSelect} className="hidden" />
             </label>
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Full range offered — a powerful régie machine can drive 4K/60. The heavy
+// choices carry an explicit warning in the panel (a 4K@60 setting on a modest
+// machine pins CPU/GPU until the browser dies), and `parseResolution` sanity-caps
+// at 3840×2160. Note: Facebook receives the ffmpeg re-encode (30 fps); the site's
+// WebRTC playback gets the full canvas rate.
+const RESOLUTIONS = ["3840x2160", "2560x1440", "1920x1080", "1280x720", "854x480"];
+const FPS_OPTIONS = ["24", "25", "30", "50", "60"];
+const isHeavy = (res: string, fps: string) =>
+  res === "3840x2160" || res === "2560x1440" || fps === "50" || fps === "60";
+
+/**
+ * Vidéo — REAL OBS-like canvas sizing. "Base (composition)" is the logical
+ * canvas every layer style is authored in (drives the preview + program
+ * stages); "Sortie" is the broadcast canvas + framerate (applied the next time
+ * the live starts). Preview, antenne and diffusion share one metric space
+ * whatever sizes are picked, so scaling/quality stay identical.
+ */
+function VideoPanel(p: SettingsModalProps) {
+  return (
+    <>
+      <PanelTitle>Vidéo · Tailles du canevas</PanelTitle>
+
+      <div className="grid max-w-[560px] gap-5">
+        <div>
+          <GroupLabel>Composition (aperçu &amp; antenne)</GroupLabel>
+          <FieldLabel>Résolution de base — l&apos;espace dans lequel les calques sont composés</FieldLabel>
+          <select
+            value={p.baseResolution}
+            onChange={(e) => p.onBaseResolution(e.target.value)}
+            className={FIELD}
+          >
+            {[...new Set([p.baseResolution, ...RESOLUTIONS])].map((r) => (
+              <option key={r} value={r}>
+                {r.replace("x", " × ")}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-white/40">
+            L&apos;aperçu et l&apos;antenne affichent exactement cet espace, mis à l&apos;échelle
+            pour tenir dans le moniteur — la mise en page est identique quelle que soit la
+            taille de la fenêtre ou de l&apos;appareil.
+          </p>
+        </div>
+
+        <div>
+          <GroupLabel>Sortie (diffusion Facebook &amp; site)</GroupLabel>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <FieldLabel>Résolution de sortie</FieldLabel>
+              <select
+                value={p.outputResolution}
+                onChange={(e) => p.onOutputResolution(e.target.value)}
+                className={FIELD}
+              >
+                {[...new Set([p.outputResolution, ...RESOLUTIONS])].map((r) => (
+                  <option key={r} value={r}>
+                    {r.replace("x", " × ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Images / seconde (FPS)</FieldLabel>
+              <select
+                value={p.outputFps}
+                onChange={(e) => p.onOutputFps(e.target.value)}
+                className={FIELD}
+              >
+                {[...new Set([p.outputFps, ...FPS_OPTIONS])].map((f) => (
+                  <option key={f} value={f}>
+                    {f} fps
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-white/40">
+            La composition est rendue à cette résolution pour la diffusion — tous les
+            éléments sont mis à l&apos;échelle proportionnellement, sans décalage.
+          </p>
+          {isHeavy(p.outputResolution, p.outputFps) && (
+            <p className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11.5px] text-amber-300">
+              ⚠ 1440p/4K et 50/60 fps demandent une machine de régie puissante (CPU/GPU).
+              En cas de saccades ou de surchauffe, revenez à 1920 × 1080 / 30 fps.
+            </p>
+          )}
+          {p.broadcasting && (
+            <p className="mt-2 rounded-lg border border-studio-sandbox/30 bg-studio-sandbox/10 px-3 py-2 text-[11.5px] text-studio-sandbox">
+              Un direct est en cours : la nouvelle résolution de sortie sera appliquée au
+              prochain démarrage du live.
+            </p>
+          )}
         </div>
       </div>
     </>

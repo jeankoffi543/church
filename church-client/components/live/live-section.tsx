@@ -53,7 +53,7 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
         {/* Header */}
         <div className="mb-[26px] flex flex-wrap items-center gap-3.5">
           {config.isLive ? (
-            <span className="flex animate-live-pulse items-center gap-2 rounded-[9px] bg-live px-3.5 py-2 text-[13px] font-extrabold tracking-wide">
+            <span className="relative flex animate-live-pulse items-center gap-2 rounded-[9px] bg-live px-3.5 py-2 text-[13px] font-extrabold tracking-wide">
               <LiveDot className="size-2" />
               EN DIRECT
             </span>

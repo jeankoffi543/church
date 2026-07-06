@@ -1,6 +1,7 @@
 "use client";
 
 import type React from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Maximize } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 
@@ -15,6 +16,15 @@ import { MONO } from "./studio-tokens";
  * visible layer stack by z-order (top of `layers` = front). The Preview exposes
  * `stageRef` (drag surface) and lets overlays be dragged; Program is a passive
  * mirror. The bible layer is fed the real `bibleVerse` + `bibleStyle`.
+ *
+ * **Composition space (CHR-53).** Layers are laid out in a LOGICAL stage of
+ * exactly `compositionWidth × compositionHeight` CSS px (the OBS "base canvas"),
+ * letterboxed + downscaled to fit the monitor via `transform: scale(k)`. Every
+ * px-based style (font sizes, paddings, radii, borders) therefore renders at the
+ * same metric the program-out canvas uses — preview and antenne/diffusion are
+ * structurally identical, whatever the monitor's on-screen size or device. The
+ * drag math is unaffected: it works in % of the stage's bounding box, and
+ * `getBoundingClientRect()` accounts for the transform.
  */
 export function StageMonitor({
   tone,
@@ -31,6 +41,8 @@ export function StageMonitor({
   onFullscreen,
   black = false,
   animNonce = 0,
+  compositionWidth = 1920,
+  compositionHeight = 1080,
 }: {
   tone: "preview" | "program";
   layers: StudioLayer[];
@@ -47,8 +59,35 @@ export function StageMonitor({
   black?: boolean;
   /** Bumping this replays the entrance animations (remounts the layers). */
   animNonce?: number;
+  /** Logical composition (OBS base canvas) the layers are laid out in. */
+  compositionWidth?: number;
+  compositionHeight?: number;
 }) {
   const isProgram = tone === "program";
+
+  // Measure the monitor and contain-fit the composition ratio inside it; the
+  // logical stage is then scaled down by k to fill that letterboxed viewport.
+  // setState is GUARDED by a 0.5px threshold: an unconditional set on every
+  // ResizeObserver tick re-rendered the whole layer stack in a feedback loop
+  // (sub-pixel churn), pinning the CPU.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const k = Math.min(width / compositionWidth, height / compositionHeight);
+      const w = Math.round(compositionWidth * k);
+      const h = Math.round(compositionHeight * k);
+      setFit((prev) => (Math.abs(prev.w - w) < 1 && Math.abs(prev.h - h) < 1 ? prev : { w, h }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [compositionWidth, compositionHeight]);
+  const k = fit.w > 0 ? fit.w / compositionWidth : 0;
   const visible = layers.filter((l) => {
     if (!l.visible) return false;
     if (!isCompositable(l)) return false;
@@ -74,8 +113,10 @@ export function StageMonitor({
         <div className="absolute inset-x-0 top-0 h-2/5 animate-studio-scan bg-[linear-gradient(180deg,#fff,transparent)] opacity-10" />
       )}
 
-      {/* Composited layer stack — ref target for the drag math */}
-      <div ref={stageRef} className="absolute inset-0">
+      {/* Letterboxed 16:9 viewport → logical composition stage, scaled to fit.
+          stageRef targets the SCALED stage: getBoundingClientRect() returns its
+          visual box, so the console's %-based drag math keeps working as-is. */}
+      <div ref={frameRef} className="absolute inset-0 grid place-items-center">
         {visible.length === 0 && (
           <div className="absolute inset-0 grid place-items-center">
             <span className={cn("text-[11px] tracking-[2px] text-white/20", MONO)}>
@@ -83,33 +124,57 @@ export function StageMonitor({
             </span>
           </div>
         )}
-        <AnimatePresence>
-          {visible.map((layer, idx) => {
-            const z = visible.length - idx;
-            const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
-            // Camera/video keep a STABLE key so an animation replay (animNonce bump)
-            // doesn't remount them — a camera remount re-runs getUserMedia (black
-            // flash) and a video would reload. Images DO remount so they replay.
-            const stableKey = layer.type === "camera" || layer.type === "video";
+        {fit.w > 0 && (
+          <div
+            // `contain: strict` fences layout+paint inside the viewport: without
+            // it the browser invalidates the full 1920×1080 logical surface on
+            // every animation frame (marquee, entrances) — a big CPU cost. The
+            // ring marks the BROADCAST frame edge (the monitor may be wider than
+            // 16:9 — anything outside this line is letterbox, never diffused).
+            className="relative overflow-hidden ring-1 ring-white/15"
+            style={{ width: fit.w, height: fit.h, contain: "strict" }}
+          >
+            <div
+              ref={stageRef}
+              className="absolute top-0 left-0"
+              style={{
+                width: compositionWidth,
+                height: compositionHeight,
+                transform: `scale(${k})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <AnimatePresence>
+                {visible.map((layer, idx) => {
+                  const z = visible.length - idx;
+                  const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
+                  // Camera/video keep a STABLE key so an animation replay (animNonce bump)
+                  // doesn't remount them — a camera remount re-runs getUserMedia (black
+                  // flash) and a video would reload. Images DO remount so they replay.
+                  const stableKey = layer.type === "camera" || layer.type === "video";
 
-            return (
-              <CompositeLayer
-                key={stableKey ? layer.id : `${layer.id}-${animNonce}`}
-                layer={effective}
-                verse={layer.type === "bible" ? bibleVerse : undefined}
-                z={z}
-                selected={!isProgram && layer.id === selectedLayerId}
-                draggable={draggable}
-                audioOwner={!isProgram}
-                onPointerDown={onLayerPointerDown}
-                onResize={onLayerResize}
-                onSelect={onLayerSelect}
-                allLayers={layers}
-                selectedLayerId={selectedLayerId}
-              />
-            );
-          })}
-        </AnimatePresence>
+                  return (
+                    <CompositeLayer
+                      key={stableKey ? layer.id : `${layer.id}-${animNonce}`}
+                      layer={effective}
+                      verse={layer.type === "bible" ? bibleVerse : undefined}
+                      z={z}
+                      selected={!isProgram && layer.id === selectedLayerId}
+                      draggable={draggable}
+                      audioOwner={!isProgram}
+                      onPointerDown={onLayerPointerDown}
+                      onResize={onLayerResize}
+                      onSelect={onLayerSelect}
+                      allLayers={layers}
+                      selectedLayerId={selectedLayerId}
+                      uiScale={k > 0 ? 1 / k : 1}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
       </div>
 
       {black && (
