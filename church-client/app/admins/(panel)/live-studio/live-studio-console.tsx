@@ -25,6 +25,7 @@ import {
   getContainerStyle,
   getElementStyle,
   getPredefinedAbsolutePosition,
+  parseResolution,
 } from "./_components/studio-style";
 import { StudioHeader } from "./_components/studio-header";
 import { StageMonitor } from "./_components/stage-monitor";
@@ -73,8 +74,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontRefStyle: "normal",
       fontRefTransform: "uppercase",
       fontRefDecoration: "none",
-      fontRefSpacing: 2.5,
-      fontRefSize: 13,
+      fontRefSpacing: 7.5,
+      fontRefSize: 39,
       fontRefLineHeight: 1.2,
       fontRefColor: "#e2b85f",
       fontBodyFamily: "Cormorant Garamond",
@@ -83,7 +84,7 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontBodyTransform: "none",
       fontBodyDecoration: "none",
       fontBodySpacing: 0,
-      fontBodySize: 28,
+      fontBodySize: 84,
       fontBodyLineHeight: 1.3,
       fontBodyColor: "#ffffff",
       fontVerFamily: "Plus Jakarta Sans",
@@ -91,22 +92,22 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontVerStyle: "italic",
       fontVerTransform: "uppercase",
       fontVerDecoration: "none",
-      fontVerSpacing: 1,
-      fontVerSize: 11,
+      fontVerSpacing: 3,
+      fontVerSize: 33,
       fontVerLineHeight: 1.2,
       fontVerColor: "#e2b85f",
       containerShape: "rounded_rectangle",
       containerBg: "rgba(22, 15, 51, 0.95)",
-      containerBorderRadius: 16,
-      containerBorderWidth: 1.5,
+      containerBorderRadius: 48,
+      containerBorderWidth: 4.5,
       containerBorderStyle: "solid",
       containerBorderColor: "rgba(226, 184, 95, 0.25)",
-      containerPaddingX: 28,
-      containerPaddingY: 24,
-      shadowBlur: 35,
+      containerPaddingX: 84,
+      containerPaddingY: 72,
+      shadowBlur: 105,
       shadowSpread: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 12,
+      shadowOffsetY: 36,
       shadowColor: "rgba(0, 0, 0, 0.6)",
       positionMode: "predefined",
       predefinedPosition: "centered_bottom",
@@ -131,8 +132,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontRefStyle: "normal",
       fontRefTransform: "uppercase",
       fontRefDecoration: "none",
-      fontRefSpacing: 2,
-      fontRefSize: 12,
+      fontRefSpacing: 6,
+      fontRefSize: 36,
       fontRefLineHeight: 1.2,
       fontRefColor: "#ff007f",
       fontBodyFamily: "Plus Jakarta Sans",
@@ -140,8 +141,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontBodyStyle: "normal",
       fontBodyTransform: "none",
       fontBodyDecoration: "none",
-      fontBodySpacing: 0.5,
-      fontBodySize: 25,
+      fontBodySpacing: 1.5,
+      fontBodySize: 75,
       fontBodyLineHeight: 1.2,
       fontBodyColor: "linear-gradient(90deg, #ff007f 0%, #00e5ff 100%)",
       fontVerFamily: "Plus Jakarta Sans",
@@ -149,22 +150,22 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontVerStyle: "italic",
       fontVerTransform: "uppercase",
       fontVerDecoration: "none",
-      fontVerSpacing: 1,
-      fontVerSize: 11,
+      fontVerSpacing: 3,
+      fontVerSize: 33,
       fontVerLineHeight: 1.2,
       fontVerColor: "#00e5ff",
       containerShape: "asymmetric",
       containerBg: "rgba(10, 5, 25, 0.96)",
-      containerBorderRadius: 16,
-      containerBorderWidth: 2,
+      containerBorderRadius: 48,
+      containerBorderWidth: 6,
       containerBorderStyle: "glow",
       containerBorderColor: "#ff007f",
-      containerPaddingX: 24,
-      containerPaddingY: 20,
-      shadowBlur: 20,
+      containerPaddingX: 72,
+      containerPaddingY: 60,
+      shadowBlur: 60,
       shadowSpread: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 8,
+      shadowOffsetY: 24,
       shadowColor: "rgba(255, 0, 127, 0.25)",
       positionMode: "predefined",
       predefinedPosition: "lower_third_left",
@@ -189,8 +190,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontRefStyle: "normal",
       fontRefTransform: "uppercase",
       fontRefDecoration: "none",
-      fontRefSpacing: 3,
-      fontRefSize: 11,
+      fontRefSpacing: 9,
+      fontRefSize: 33,
       fontRefLineHeight: 1.2,
       fontRefColor: "#00e5ff",
       fontBodyFamily: "Inter",
@@ -199,7 +200,7 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontBodyTransform: "none",
       fontBodyDecoration: "none",
       fontBodySpacing: 0,
-      fontBodySize: 18,
+      fontBodySize: 54,
       fontBodyLineHeight: 1.2,
       fontBodyColor: "#ffffff",
       fontVerFamily: "Inter",
@@ -207,8 +208,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       fontVerStyle: "italic",
       fontVerTransform: "uppercase",
       fontVerDecoration: "none",
-      fontVerSpacing: 1,
-      fontVerSize: 10,
+      fontVerSpacing: 3,
+      fontVerSize: 30,
       fontVerLineHeight: 1.2,
       fontVerColor: "#00e5ff",
       containerShape: "transparent",
@@ -217,8 +218,8 @@ const PRELOADED_PRESETS: Array<{ name: string; settings: StudioSettings }> = [
       containerBorderWidth: 0,
       containerBorderStyle: "none",
       containerBorderColor: "transparent",
-      containerPaddingX: 20,
-      containerPaddingY: 10,
+      containerPaddingX: 60,
+      containerPaddingY: 30,
       shadowBlur: 0,
       shadowSpread: 0,
       shadowOffsetX: 0,
@@ -665,9 +666,6 @@ export function LiveStudioConsole({
     live_audio_monitor: (liveSettings.live_audio_monitor as string) ?? "default",
     live_audio_gain: (liveSettings.live_audio_gain as number) ?? 0,
     live_noise_suppression: liveSettings.live_noise_suppression !== false,
-    live_base_resolution: (liveSettings.live_base_resolution as string) ?? "1920x1080",
-    live_output_resolution: (liveSettings.live_output_resolution as string) ?? "1920x1080",
-    live_fps: (liveSettings.live_fps as string) ?? "60",
     live_ui_contrast: (liveSettings.live_ui_contrast as string) ?? "normal",
     live_ui_text_size: (liveSettings.live_ui_text_size as string) ?? "medium",
     live_audio_cues: Boolean(liveSettings.live_audio_cues),
@@ -676,6 +674,24 @@ export function LiveStudioConsole({
     live_auto_reconnect: liveSettings.live_auto_reconnect !== false,
     live_db_cache: (liveSettings.live_db_cache as string) ?? "aggressive",
   });
+
+  // ── Video sizing (OBS-like base/output canvas) — REAL, user-editable ─────
+  // Base = the logical composition every layer style is authored in (drives the
+  // preview/program stages); Output = the broadcast canvas + framerate. Both are
+  // persisted with the live settings and wired end-to-end so preview, antenne
+  // and diffusion share one metric space whatever sizes the operator picks.
+  const [baseResolution, setBaseResolution] = useState(
+    (liveSettings.live_base_resolution as string) ?? "1920x1080",
+  );
+  const [outputResolution, setOutputResolution] = useState(
+    (liveSettings.live_output_resolution as string) ?? "1920x1080",
+  );
+  const [outputFps, setOutputFps] = useState((liveSettings.live_fps as string) ?? "30");
+  const composition = parseResolution(baseResolution, 1920, 1080);
+  const outputSize = parseResolution(outputResolution, composition.width, composition.height);
+  // fps sanity-clamped to [10, 60]. Note: Facebook receives the ffmpeg re-encode
+  // (-r 30); a higher canvas rate benefits the site's direct WebRTC playback.
+  const output = { ...outputSize, fps: Math.min(60, Math.max(10, parseInt(outputFps, 10) || 30)) };
 
 
   const [savingSettings, setSavingSettings] = useState(false);
@@ -1078,6 +1094,9 @@ export function LiveStudioConsole({
         { key: "live_sermon_points", value: sermonPoints, group: "live" },
         { key: "bible_visible_versions", value: visibleVersions, group: "live" },
         { key: "bible_default_version", value: defaultVersion, group: "live" },
+        { key: "live_base_resolution", value: baseResolution, group: "live" },
+        { key: "live_output_resolution", value: outputResolution, group: "live" },
+        { key: "live_fps", value: outputFps, group: "live" },
         ...Object.entries(advancedConfig).map(([key, value]) => ({
           key,
           value,
@@ -1264,7 +1283,8 @@ export function LiveStudioConsole({
     bibleVerse: programBlack ? null : live,
     bibleStyle: onAirSettings,
     animNonce: programAnimNonce,
-    previewStageRef,
+    composition,
+    output,
   });
   const [liveBusy, setLiveBusy] = useState(false);
   // One gesture = go live on Facebook AND flip the public site live together.
@@ -1787,8 +1807,10 @@ export function LiveStudioConsole({
     const move = (ev: PointerEvent) => {
       const dx = ((ev.clientX - sx) / rect.width) * 100;
       const dy = ((ev.clientY - sy) / rect.height) * 100;
-      const nx = Math.max(0, Math.min(100 - w0, Math.round(x0 + dx)));
-      const ny = Math.max(0, Math.min(100 - h0, Math.round(y0 + dy)));
+      // OBS-like: layers may overflow the frame (clipped by the stage/canvas).
+      // Keep ≥2% inside so an off-screen layer can always be grabbed back.
+      const nx = Math.max(-(w0 - 2), Math.min(98, Math.round(x0 + dx)));
+      const ny = Math.max(-(h0 - 2), Math.min(98, Math.round(y0 + dy)));
       if (isBible) {
         setStudioField("positionMode", "custom");
         setStudioField("customX", nx);
@@ -1809,8 +1831,10 @@ export function LiveStudioConsole({
             if (l.parentId === layerId) {
               const orig = childOriginalPositions[l.id];
               if (orig) {
-                const cx = Math.max(0, Math.min(100, Math.round(orig.x + deltaX)));
-                const cy = Math.max(0, Math.min(100, Math.round(orig.y + deltaY)));
+                // Children follow the parent's raw delta unclamped so their
+                // offset inside the group never drifts at the frame edges.
+                const cx = Math.round(orig.x + deltaX);
+                const cy = Math.round(orig.y + deltaY);
                 return { ...l, style: { ...l.style, customX: cx, customY: cy } };
               }
             }
@@ -1869,22 +1893,24 @@ export function LiveStudioConsole({
       let y = startTop;
       let w = startW;
       let h = startH;
+      // OBS-like: resizing may push the box past the frame edges (clipped by the
+      // stage/canvas); only a minimum size is enforced.
       if (corner === "se") {
-        w = Math.max(10, Math.min(100 - startLeft, startW + dx));
+        w = Math.max(10, startW + dx);
         h = Math.max(6, startH + dy);
       } else if (corner === "sw") {
         w = Math.max(10, startW - dx);
-        x = Math.max(0, startLeft + dx);
+        x = startLeft + Math.min(dx, startW - 10);
         h = Math.max(6, startH + dy);
       } else if (corner === "ne") {
-        w = Math.max(10, Math.min(100 - startLeft, startW + dx));
+        w = Math.max(10, startW + dx);
         h = Math.max(6, startH - dy);
-        y = Math.max(0, startTop + dy);
+        y = startTop + Math.min(dy, startH - 6);
       } else {
         w = Math.max(10, startW - dx);
-        x = Math.max(0, startLeft + dx);
+        x = startLeft + Math.min(dx, startW - 10);
         h = Math.max(6, startH - dy);
-        y = Math.max(0, startTop + dy);
+        y = startTop + Math.min(dy, startH - 6);
       }
       apply(x, y, w, h);
     };
@@ -2015,6 +2041,8 @@ export function LiveStudioConsole({
               onLayerSelect={setSelectedLayerId}
               onFullscreen={() => setShowFullscreenPreview(true)}
               animNonce={animNonce}
+              compositionWidth={composition.width}
+              compositionHeight={composition.height}
             />
             <TransitionBar
               onCut={sendToProgram}
@@ -2037,6 +2065,8 @@ export function LiveStudioConsole({
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
           black={programBlack}
           animNonce={programAnimNonce}
+          compositionWidth={composition.width}
+          compositionHeight={composition.height}
         />
       </section>
 
@@ -2138,6 +2168,13 @@ export function LiveStudioConsole({
         fallbackImage={liveFallbackImage}
         getPreviewUrl={getPreviewUrl}
         onImageSelect={handleImageSelect}
+        baseResolution={baseResolution}
+        onBaseResolution={setBaseResolution}
+        outputResolution={outputResolution}
+        onOutputResolution={setOutputResolution}
+        outputFps={outputFps}
+        onOutputFps={setOutputFps}
+        broadcasting={broadcast.broadcasting}
       />
       {pendingDeleteLayer && (
         <div

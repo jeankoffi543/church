@@ -261,6 +261,40 @@
   border-radius: 4px;
 }
 
+/* ── Composited "pulse" badges ─────────────────────────────────────────
+   The original livePulse/onairPulse keyframes animated box-shadow, which is
+   NOT compositable: the badges are permanently on screen, so the main thread
+   recalculated style + repainted EVERY frame (~60×/s, measured — a top idle
+   CPU burner of the studio). Same look via a fixed ring on ::after animated
+   with opacity + transform only → runs entirely on the compositor. Elements
+   using these classes must be positioned (add `relative` if static). */
+.animate-live-pulse,
+.animate-onair-pulse {
+  animation: none;
+}
+.animate-live-pulse::after,
+.animate-onair-pulse::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 3px solid rgba(226, 59, 59, 0.55);
+  opacity: 0;
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulseRing {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
 /* ── Lightbox Animations ── */
 @keyframes fadeIn {
   from {

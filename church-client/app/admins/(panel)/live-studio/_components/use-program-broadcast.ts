@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { startFacebookBroadcast, stopFacebookBroadcast } from "@/lib/admin-api";
 import { startProgramOut, type BibleContext, type ProgramOut } from "./program-out";
@@ -63,7 +63,8 @@ export function useProgramBroadcast({
   bibleVerse,
   bibleStyle,
   animNonce,
-  previewStageRef,
+  composition,
+  output,
   autoResume = true,
 }: {
   layers: StudioLayer[];
@@ -71,8 +72,10 @@ export function useProgramBroadcast({
   bibleStyle: StudioSettings;
   /** Program animation nonce — bumps on CUT / advance / on-air edit to replay entrances. */
   animNonce: number;
-  /** The preview stage — its height is the reference for scaling burned-in text. */
-  previewStageRef: RefObject<HTMLDivElement | null>;
+  /** Logical composition (OBS base canvas) the layer styles are authored in. */
+  composition: { width: number; height: number };
+  /** Broadcast canvas resolution + framerate (OBS output). */
+  output: { width: number; height: number; fps: number };
   /** Resume a broadcast a page refresh interrupted (default true). */
   autoResume?: boolean;
 }): ProgramBroadcast {
@@ -92,12 +95,16 @@ export function useProgramBroadcast({
 
   const broadcasting = whipState !== "idle";
 
-  /** Create the compositor (once). Renders at 1080p so HD images/text stay sharp. */
+  /**
+   * Create the compositor (once) at the chosen OUTPUT resolution. Styles are
+   * authored in composition px (the preview stage renders 1:1 in that space), so
+   * the px scale is exactly `output.height / composition.height` — no fragile
+   * DOM measurement, preview and broadcast are metrically identical.
+   */
   function startCompositor(): ProgramOut {
     if (outRef.current) return outRef.current;
-    const refH = previewStageRef.current?.getBoundingClientRect().height ?? 0;
-    const scale = refH > 0 ? 1080 / refH : 1;
-    const out = startProgramOut({ width: 1920, height: 1080, fps: 30, scale });
+    const scale = composition.height > 0 ? output.height / composition.height : 1;
+    const out = startProgramOut({ width: output.width, height: output.height, fps: output.fps, scale });
     out.setScene(layersRef.current, bibleRef.current, animRef.current);
     outRef.current = out;
     setOn(true);

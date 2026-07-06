@@ -126,6 +126,29 @@ export const getPredefinedAbsolutePosition = (pos: string): React.CSSProperties 
   }
 };
 
+/**
+ * Parse an OBS-like "1920x1080" resolution string; falls back to the given
+ * defaults on anything malformed, and sanity-caps at 3840×2160 (fitted, ratio
+ * kept) so a corrupt persisted value can never lay out an absurd stage. 4K/60
+ * are legitimate choices for a powerful régie machine — the settings UI warns
+ * about their cost.
+ */
+export const parseResolution = (
+  value: string | undefined,
+  defaultWidth: number,
+  defaultHeight: number,
+): { width: number; height: number } => {
+  const m = /^(\d{3,5})\s*[x×]\s*(\d{3,5})$/.exec((value ?? "").trim());
+  let width = defaultWidth;
+  let height = defaultHeight;
+  if (m) {
+    width = parseInt(m[1], 10);
+    height = parseInt(m[2], 10);
+  }
+  const fit = Math.min(1, 3840 / width, 2160 / height);
+  return { width: Math.round(width * fit), height: Math.round(height * fit) };
+};
+
 /** Absolute position CSS for the overlay box (custom geometry or a preset). */
 export const getOverlayBoxStyle = (s: StudioSettings): React.CSSProperties =>
   s.positionMode === "custom"

@@ -63,7 +63,7 @@ export function StudioHeader({
 
       <div className="ml-auto flex items-center gap-2.5">
         {mode === "live" ? (
-          <span className="flex animate-onair-pulse items-center gap-1.5 rounded-[10px] border border-studio-onair/32 bg-studio-onair/15 px-3 py-[7px] text-[11px] font-extrabold tracking-[1px] text-[#ff9a9a]">
+          <span className="relative flex animate-onair-pulse items-center gap-1.5 rounded-[10px] border border-studio-onair/32 bg-studio-onair/15 px-3 py-[7px] text-[11px] font-extrabold tracking-[1px] text-[#ff9a9a]">
             <span className="size-2 animate-studio-blink rounded-full bg-studio-onair" />
             EN DIRECT
           </span>

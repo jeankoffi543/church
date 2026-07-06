@@ -103,7 +103,7 @@ export function ControlsDock({
               className={cn(
                 "size-2 shrink-0 rounded-full",
                 liveState === "connected"
-                  ? "animate-onair-pulse bg-studio-onair"
+                  ? "relative animate-onair-pulse bg-studio-onair"
                   : liveState === "failed"
                     ? "bg-red-400"
                     : "bg-studio-sandbox",
