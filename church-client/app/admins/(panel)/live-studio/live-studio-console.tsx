@@ -437,7 +437,34 @@ export function LiveStudioConsole({
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [animNonce, setAnimNonce] = useState(0);
-  const playAnim = () => setAnimNonce((n) => n + 1);
+  // PER-SOURCE replay tokens for the PREVIEW DOM. A source's token advances ONLY
+  // when that source is due to replay (an effect-preview action AND its "Rejouer
+  // au CUT" setting resolves true, or it's the source being edited). Encoding
+  // replay-ness as a per-source token — not `inSet ? nonce : 0` — avoids a
+  // spurious remount when a source merely LEAVES the replay set (e.g. set to
+  // "Jamais"): its token then stays put, so it isn't re-triggered. Honours the
+  // per-source setting so a "Jamais" source no longer re-animates in the preview
+  // when you edit another source; the selected one always previews.
+  const [previewTokens, setPreviewTokens] = useState<Record<string, number>>({});
+  // Latest inputs for the freeze, assigned after their state is declared below
+  // (avoids a temporal-dead-zone on `layers`/`selectedLayerId`/`replayOnCut`).
+  const previewReplayInputs = useRef<{ layers: StudioLayer[]; sel: string; global: boolean }>({
+    layers: [],
+    sel: "",
+    global: true,
+  });
+  const bumpPreviewAnim = useCallback(() => {
+    const { layers: ls, sel, global } = previewReplayInputs.current;
+    setPreviewTokens((prev) => {
+      const next = { ...prev };
+      for (const l of ls) {
+        if (replaysOnCut(l, global) || l.id === sel) next[l.id] = (next[l.id] ?? 0) + 1;
+      }
+      return next;
+    });
+    setAnimNonce((n) => n + 1);
+  }, []);
+  const playAnim = bumpPreviewAnim;
 
   // Re-hydrated presets state
   const [presets, setPresets] = useState<Array<{ name: string; settings: StudioSettings }>>(() => {
@@ -1255,6 +1282,11 @@ export function LiveStudioConsole({
   // deriving it live from the settings — is what stops a settings toggle from
   // retroactively re-triggering an animation (only a CUT recomputes it).
   const [programReplay, setProgramReplay] = useState<ReadonlySet<string>>(new Set());
+  // Per-source replay tokens for the PROGRAM DOM monitor (same rationale as
+  // previewTokens: a token advances only when its source actually replays, so a
+  // source leaving the set never causes a spurious remount). The broadcast CANVAS
+  // keeps using programReplay (its "reset animStart if in set" has no such issue).
+  const [programTokens, setProgramTokens] = useState<Record<string, number>>({});
 
   // Operator filter (CHR-56): replay entrance animations on every CUT to the
   // antenne, or only when a source first appears. Off = calmer air (a re-CUT of
@@ -1279,6 +1311,10 @@ export function LiveStudioConsole({
       return next;
     });
   }, []);
+  // Feed the latest inputs to the preview-replay freeze (read only when an
+  // action fires bumpPreviewAnim, so toggling a setting never replays — like the
+  // antenne). Assigned here, after the inputs' state exists.
+  previewReplayInputs.current = { layers, sel: selectedLayerId, global: replayOnCut };
 
   // Cameras whose getUserMedia stream must stay alive: the union of the on-air
   // (program) cameras and the current preview scene's cameras — program first so a
@@ -1409,9 +1445,9 @@ export function LiveStudioConsole({
           }),
         );
       }
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
     },
-    [selectedLayerId, selectedIsBible, setSettings, setLayers],
+    [selectedLayerId, selectedIsBible, setSettings, setLayers, bumpPreviewAnim],
   );
   const patchSelectedData = useCallback(
     (patch: Partial<StudioLayer>) => {
@@ -1506,7 +1542,7 @@ export function LiveStudioConsole({
       // The bible's style is the orchestrator's global `settings` (broadcast
       // anchor), not layer.style — reset THAT. The debounced autosave persists it.
       setSettings({ ...DEFAULT_STUDIO_SETTINGS });
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
       setStatus({ type: "success", message: "Paramètres de la bible réinitialisés !" });
       return;
     }
@@ -1533,7 +1569,7 @@ export function LiveStudioConsole({
             : l,
         ),
       );
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
       setStatus({ type: "success", message: "Paramètres de l'image réinitialisés !" });
     } else if (selectedLayer.type === "text") {
       setLayers((ls) =>
@@ -1553,7 +1589,7 @@ export function LiveStudioConsole({
             : l,
         ),
       );
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
       setStatus({ type: "success", message: "Paramètres du texte réinitialisés !" });
     } else if (selectedLayer.type === "song") {
       setLayers((ls) =>
@@ -1575,7 +1611,7 @@ export function LiveStudioConsole({
             : l,
         ),
       );
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
       setStatus({ type: "success", message: "Paramètres du chant réinitialisés !" });
     } else if (selectedLayer.type === "group") {
       setLayers((ls) =>
@@ -1593,7 +1629,7 @@ export function LiveStudioConsole({
             : l,
         ),
       );
-      setAnimNonce((n) => n + 1);
+      bumpPreviewAnim();
       setStatus({ type: "success", message: "Paramètres du groupe réinitialisés !" });
     } else if (selectedLayer.type === "audio") {
       setLayers((ls) =>
@@ -1614,7 +1650,7 @@ export function LiveStudioConsole({
       );
       setStatus({ type: "success", message: "Paramètres audio réinitialisés !" });
     }
-  }, [selectedLayerId, selectedLayer, setLayers, setSettings]);
+  }, [selectedLayerId, selectedLayer, setLayers, setSettings, bumpPreviewAnim]);
   const onImageUrl = useCallback(
     async (rawUrl: string) => {
       if (!selectedLayerId) return;
@@ -1723,7 +1759,19 @@ export function LiveStudioConsole({
     });
   const confirmDeleteLayer = () => {
     if (!pendingDeleteId) return;
+    const removed = layers.find((l) => l.id === pendingDeleteId);
     setLayers((ls) => ls.filter((l) => l.id !== pendingDeleteId));
+    // Also pull it OFF AIR: a source that was cut to the antenne must leave the
+    // program snapshot too, otherwise it keeps being diffused after deletion.
+    setProgramLayers((pls) => pls.filter((l) => l.id !== pendingDeleteId));
+    setProgramReplay((set) => {
+      if (!set.has(pendingDeleteId)) return set;
+      const next = new Set(set);
+      next.delete(pendingDeleteId);
+      return next;
+    });
+    // Deleting the on-air bible must also take down its live scripture overlay.
+    if (removed?.type === "bible" && live) void masquer();
     if (selectedLayerId === pendingDeleteId) {
       setSelectedLayerId(layers.find((l) => l.id !== pendingDeleteId)?.id ?? "");
     }
@@ -1993,7 +2041,14 @@ export function LiveStudioConsole({
     setProgramSceneId(currentSceneId);
     // Freeze which sources replay on THIS cut (per-source override, else the
     // global default) so a later settings toggle can't retroactively re-trigger.
-    setProgramReplay(new Set(layers.filter((l) => replaysOnCut(l, replayOnCut)).map((l) => l.id)));
+    // The Set feeds the broadcast canvas; the per-source tokens feed the DOM.
+    const replaying = layers.filter((l) => replaysOnCut(l, replayOnCut)).map((l) => l.id);
+    setProgramReplay(new Set(replaying));
+    setProgramTokens((prev) => {
+      const next = { ...prev };
+      for (const id of replaying) next[id] = (next[id] ?? 0) + 1;
+      return next;
+    });
     setProgramAnimNonce((n) => n + 1);
     const bibleOnAir =
       layers.some((l) => l.type === "bible" && l.visible && l.bibleOnAir !== false) && !!preview;
@@ -2167,6 +2222,7 @@ export function LiveStudioConsole({
               onLayerSelect={setSelectedLayerId}
               onFullscreen={() => setShowFullscreenPreview(true)}
               animNonce={animNonce}
+              tokens={previewTokens}
               compositionWidth={composition.width}
               compositionHeight={composition.height}
             />
@@ -2198,7 +2254,7 @@ export function LiveStudioConsole({
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
           black={programBlack}
           animNonce={programAnimNonce}
-          replaySet={programReplay}
+          tokens={programTokens}
           compositionWidth={composition.width}
           compositionHeight={composition.height}
         />

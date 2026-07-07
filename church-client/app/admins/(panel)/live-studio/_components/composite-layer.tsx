@@ -8,6 +8,7 @@ import type { ScriptureVerse } from "@/lib/studio";
 import {
   TypewriterText,
   domAnimVariants,
+  getAnimEffect,
   type AnimSourceKind,
 } from "@/lib/studio-animations";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,26 @@ import {
   subscribeCameraStreams,
 } from "./studio-camera";
 import { MONO } from "./studio-tokens";
+
+/**
+ * Every animatable property any effect touches, reset to its resting/identity
+ * value. Applied (imperatively, on media sources) BEFORE (re)starting an
+ * animation so a previously-running CONTINUOUS loop is fully cancelled — e.g.
+ * switching a camera from "battement"/"onde" (which loop `scale`) to "aucune"
+ * (whose empty variant would otherwise leave the `scale` loop running). Without
+ * this, only a new effect that drives the SAME property (e.g. zoom) would stop it.
+ */
+const MEDIA_RESET = {
+  opacity: 1,
+  scale: 1,
+  rotate: 0,
+  rotateX: 0,
+  rotateY: 0,
+  x: 0,
+  y: 0,
+  filter: "blur(0px)",
+  clipPath: "none",
+} as const;
 
 const getImageUrl = (url: string | undefined | null): string => {
   if (!url) return "";
@@ -141,15 +162,44 @@ export function CompositeLayer({
   const mediaInitial = (variants.initial ?? {}) as TargetAndTransition;
   const mediaAnimate = (variants.animate ?? {}) as TargetAndTransition;
   const mediaExit = (variants.exit ?? {}) as TargetAndTransition;
-  // Replay ONLY when the token advances (a CUT/preview where this layer is due):
-  // it deliberately excludes the animation SETTING deps, so changing a camera's
-  // effect doesn't fire it on air — the change is picked up at the next replay.
+  const mediaIsLoop = !!getAnimEffect(layer.style.animation).loop;
+  // A signature that changes only when a CONTINUOUS loop's identity changes (its
+  // id/speed/easing); one-shot⇄one-shot changes keep it "" so they never re-fire.
+  const mediaLoopSig = mediaIsLoop
+    ? `${layer.style.animation}:${layer.style.animDuration}:${layer.style.animEasing}`
+    : "";
+
+  // Replay ON TOKEN: a CUT/preview where this layer is due. Reset every property
+  // first (kills any running loop) then run the entrance / start the loop.
   useEffect(() => {
     if (!isStableMedia) return;
-    mediaControls.set(mediaInitial);
+    mediaControls.stop();
+    mediaControls.set({ ...MEDIA_RESET, ...mediaInitial });
     void mediaControls.start(mediaAnimate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStableMedia, replayToken]);
+
+  // Reconcile a LOOP change WITHOUT a replay (e.g. editing an on-air source):
+  // starting/stopping a continuous loop must reflect live, but a one-shot effect
+  // change must NOT re-trigger on air. Guarded to skip the initial mount (the
+  // token effect already set the state there).
+  const mediaMounted = useRef(false);
+  useEffect(() => {
+    if (!isStableMedia) return;
+    if (!mediaMounted.current) {
+      mediaMounted.current = true;
+      return;
+    }
+    mediaControls.stop();
+    if (mediaIsLoop) {
+      void mediaControls.set({ ...MEDIA_RESET, ...mediaInitial });
+      void mediaControls.start(mediaAnimate);
+    } else {
+      // Leaving a loop for a one-shot / "aucune": settle to identity, don't replay.
+      mediaControls.set(MEDIA_RESET);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStableMedia, mediaLoopSig]);
 
   const isSelectedChildsParent = selectedLayerId && allLayers.find((l) => l.id === selectedLayerId)?.parentId === layer.id;
   // Selection chrome as inline styles so it scales with `uiScale` (a class-based

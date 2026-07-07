@@ -41,7 +41,7 @@ export function StageMonitor({
   onFullscreen,
   black = false,
   animNonce = 0,
-  replaySet = null,
+  tokens = null,
   compositionWidth = 1920,
   compositionHeight = 1080,
   className,
@@ -59,14 +59,14 @@ export function StageMonitor({
   onLayerSelect?: (id: string) => void;
   onFullscreen?: () => void;
   black?: boolean;
-  /** Bumping this replays the entrance animations (remounts the layers). */
+  /** Replays the bible's entrance (verse-change); non-bible layers use `tokens`. */
   animNonce?: number;
-  /** Which layer ids replay on a nonce bump (CUT). `null` = every layer replays
-   *  (the Preview, where the operator's own nonce drives replays). A Set = only
-   *  those ids replay (the Program: the cut-replay decision FROZEN at CUT time,
-   *  so toggling a setting between cuts can't retroactively re-trigger). The
-   *  bible always replays (verse-change), independent of this set. */
-  replaySet?: ReadonlySet<string> | null;
+  /** Per-source replay tokens: a layer replays (remounts / imperative-replay)
+   *  exactly when ITS token changes. The console advances a source's token only
+   *  when that source is due to replay (a CUT/preview action AND its "Rejouer au
+   *  CUT" setting), so a source that leaves the replay set keeps its token and is
+   *  never spuriously re-triggered. `null` = every layer replays on `animNonce`. */
+  tokens?: Record<string, number> | null;
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
@@ -166,16 +166,14 @@ export function StageMonitor({
                   // Text/image/song/group DO remount so they replay declaratively.
                   const stableKey =
                     layer.type === "camera" || layer.type === "video" || layer.type === "embed";
-                  // The per-layer replay TOKEN: it advances (→ remount / imperative
-                  // replay) only when this layer should replay on the current nonce
-                  // — the bible always (verse-change), others per the frozen
-                  // replaySet (null = replay all, the Preview). A layer NOT due to
-                  // replay keeps token 0: it still animates on FIRST mount
-                  // (appearance) but a re-CUT (nonce bump) leaves the token
-                  // untouched, so nothing re-triggers.
-                  const replays =
-                    layer.type === "bible" || !replaySet || replaySet.has(layer.id);
-                  const token = replays ? animNonce : 0;
+                  // The per-layer replay TOKEN: the bible tracks animNonce
+                  // (verse-change); every other layer uses its own token, which
+                  // the console advances only when that source is actually due to
+                  // replay. `tokens == null` means "replay all on animNonce" (the
+                  // Preview fallback). A layer still animates on FIRST mount
+                  // regardless; the token only governs RE-triggers.
+                  const token =
+                    layer.type === "bible" || !tokens ? animNonce : (tokens[layer.id] ?? 0);
 
                   return (
                     <CompositeLayer
