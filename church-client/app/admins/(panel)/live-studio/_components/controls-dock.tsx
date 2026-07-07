@@ -10,6 +10,7 @@ import {
   Square,
   Loader2,
   Columns3,
+  Sparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -38,6 +39,8 @@ export function ControlsDock({
   dualLayout,
   onToggleLayout,
   onResetDockWidths,
+  replayOnCut,
+  onToggleReplayOnCut,
 }: {
   liveActive: boolean;
   liveBusy: boolean;
@@ -53,6 +56,9 @@ export function ControlsDock({
   dualLayout: boolean;
   onToggleLayout: () => void;
   onResetDockWidths: () => void;
+  /** Replay entrance animations on every CUT (true), or only on first appearance. */
+  replayOnCut: boolean;
+  onToggleReplayOnCut: () => void;
 }) {
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/8 bg-studio-panel">
@@ -141,6 +147,38 @@ export function ControlsDock({
             <span className={cn("block text-[9.5px] text-white/45", MONO)}>
               {recording ? recLabel : "Prêt"}
             </span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleReplayOnCut}
+          title={
+            replayOnCut
+              ? "Chaque passage à l'antenne rejoue les animations d'apparition des sources."
+              : "Les sources s'animent seulement à leur première apparition — un nouveau CUT ne rejoue pas (la bible s'anime toujours au changement de verset)."
+          }
+          className="flex items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-colors hover:border-studio-purple/45"
+        >
+          <Sparkles className="size-[17px] shrink-0 text-studio-purple" strokeWidth={1.7} />
+          <span className="flex-1">
+            <span className="block text-[12px] font-bold text-white">Animer à chaque CUT</span>
+            <span className="block text-[9.5px] text-white/45">
+              {replayOnCut ? "Rejoue les entrées à l'antenne" : "Seulement à la 1re apparition"}
+            </span>
+          </span>
+          <span
+            className={cn(
+              "relative h-5 w-[34px] shrink-0 rounded-full transition-colors",
+              replayOnCut ? "bg-studio-purple" : "bg-white/15",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+                replayOnCut ? "left-4" : "left-0.5",
+              )}
+            />
           </span>
         </button>
 

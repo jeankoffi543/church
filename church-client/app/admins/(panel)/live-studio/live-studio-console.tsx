@@ -1250,6 +1250,30 @@ export function LiveStudioConsole({
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
 
+  // Operator filter (CHR-56): replay entrance animations on every CUT to the
+  // antenne, or only when a source first appears. Off = calmer air (a re-CUT of
+  // the same scene doesn't re-trigger overlays); the bible still animates on a
+  // new verse. Persisted per-browser (operator preference, like the dock layout;
+  // lazy init from localStorage, mirroring ResizableRow — no setState-in-effect).
+  const [replayOnCut, setReplayOnCut] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("studio_replay_on_cut") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleReplayOnCut = useCallback(() => {
+    setReplayOnCut((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("studio_replay_on_cut", next ? "1" : "0");
+      } catch {
+        /* storage disabled */
+      }
+      return next;
+    });
+  }, []);
+
   // Cameras whose getUserMedia stream must stay alive: the union of the on-air
   // (program) cameras and the current preview scene's cameras — program first so a
   // shared id keeps the antenne stream. Owned off-screen by <CameraKeepAlive> so an
@@ -1266,6 +1290,7 @@ export function LiveStudioConsole({
     bibleVerse: programBlack ? null : live,
     bibleStyle: onAirSettings,
     animNonce: programAnimNonce,
+    replayOnCut,
     composition,
     output,
   });
@@ -2164,6 +2189,7 @@ export function LiveStudioConsole({
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
           black={programBlack}
           animNonce={programAnimNonce}
+          replayOnNonce={replayOnCut}
           compositionWidth={composition.width}
           compositionHeight={composition.height}
         />
@@ -2235,6 +2261,8 @@ export function LiveStudioConsole({
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
           onResetDockWidths={() => setDockResetNonce((n) => n + 1)}
+          replayOnCut={replayOnCut}
+          onToggleReplayOnCut={toggleReplayOnCut}
         /> },
           ]}
         />

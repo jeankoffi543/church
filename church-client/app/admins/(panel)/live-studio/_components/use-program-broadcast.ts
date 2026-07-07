@@ -63,6 +63,7 @@ export function useProgramBroadcast({
   bibleVerse,
   bibleStyle,
   animNonce,
+  replayOnCut = true,
   composition,
   output,
   autoResume = true,
@@ -72,6 +73,8 @@ export function useProgramBroadcast({
   bibleStyle: StudioSettings;
   /** Program animation nonce — bumps on CUT / advance / on-air edit to replay entrances. */
   animNonce: number;
+  /** Operator filter: when false, a CUT doesn't replay non-bible entrances. */
+  replayOnCut?: boolean;
   /** Logical composition (OBS base canvas) the layer styles are authored in. */
   composition: { width: number; height: number };
   /** Broadcast canvas resolution + framerate (OBS output). */
@@ -91,6 +94,7 @@ export function useProgramBroadcast({
   const layersRef = useRef(layers);
   const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
   const animRef = useRef(animNonce);
+  const replayRef = useRef(replayOnCut);
   const resumedRef = useRef(false);
 
   const broadcasting = whipState !== "idle";
@@ -105,7 +109,7 @@ export function useProgramBroadcast({
     if (outRef.current) return outRef.current;
     const scale = composition.height > 0 ? output.height / composition.height : 1;
     const out = startProgramOut({ width: output.width, height: output.height, fps: output.fps, scale });
-    out.setScene(layersRef.current, bibleRef.current, animRef.current);
+    out.setScene(layersRef.current, bibleRef.current, animRef.current, replayRef.current);
     outRef.current = out;
     setOn(true);
     setFlag(LS_ON, true);
@@ -175,13 +179,15 @@ export function useProgramBroadcast({
     setBusy(false);
   }
 
-  // Keep the compositor scene + on-air verse in sync (animNonce replays entrances).
+  // Keep the compositor scene + on-air verse in sync (animNonce replays entrances,
+  // filtered by replayOnCut).
   useEffect(() => {
     layersRef.current = layers;
     bibleRef.current = { verse: bibleVerse, style: bibleStyle };
     animRef.current = animNonce;
-    outRef.current?.setScene(layers, bibleRef.current, animNonce);
-  }, [layers, bibleVerse, bibleStyle, animNonce]);
+    replayRef.current = replayOnCut;
+    outRef.current?.setScene(layers, bibleRef.current, animNonce, replayOnCut);
+  }, [layers, bibleVerse, bibleStyle, animNonce, replayOnCut]);
 
   // On mount, resume a broadcast a page refresh interrupted (it lives in the tab).
   useEffect(() => {

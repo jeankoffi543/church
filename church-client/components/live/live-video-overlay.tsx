@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence, type Variants, type Easing } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 import { DEFAULT_STUDIO_SETTINGS, type ScripturePayload, type StudioSettings } from "@/lib/studio";
+// Animations come from the SHARED effect registry (CHR-56) — the same variants
+// the studio preview plays, so a viewer on /live sees the exact entrance the
+// operator rehearsed (per-source availability included).
+import { TypewriterText, domAnimVariants } from "@/lib/studio-animations";
 
 // The overlay is laid out in the SAME logical composition space the régie
 // authors in (see stage-monitor.tsx): a 1920×1080 stage contain-fitted onto the
@@ -12,111 +16,6 @@ import { DEFAULT_STUDIO_SETTINGS, type ScripturePayload, type StudioSettings } f
 // studio preview/canvas uses — identical on desktop, tablet and phone.
 const COMP_W = 1920;
 const COMP_H = 1080;
-
-/* ── Animation Easing Map ───────────────────────────────────────── */
-const EASING_MAP: Record<string, Easing> = {
-  linear: "linear",
-  "ease-in": "easeIn",
-  "ease-out": "easeOut",
-  "ease-in-out": "easeInOut",
-  bounce: [0.175, 0.885, 0.32, 1.275] as Easing, // elastic spring-like bounce curve
-};
-
-/* ── Modular Animation Plugins ──────────────────────────────────── */
-export type OverlayAnimationPlugin = {
-  name: string;
-  getVariants: (durationMs: number, ease: Easing) => Variants;
-};
-
-export const ANIMATION_PLUGINS: Record<string, OverlayAnimationPlugin> = {
-  fade_slide: {
-    name: "Fondu & Glissement",
-    getVariants: (dur, ease) => ({
-      initial: { opacity: 0, y: 30 },
-      animate: { opacity: 1, y: 0, transition: { duration: dur / 1000, ease } },
-      exit: { opacity: 0, y: 20, transition: { duration: dur / 1000, ease } },
-    }),
-  },
-  scale: {
-    name: "Zoom progressif",
-    getVariants: (dur, ease) => ({
-      initial: { opacity: 0, scale: 0.9 },
-      animate: { opacity: 1, scale: 1, transition: { duration: dur / 1000, ease } },
-      exit: { opacity: 0, scale: 0.93, transition: { duration: dur / 1000, ease } },
-    }),
-  },
-  slide_left: {
-    name: "Glissement Gauche",
-    getVariants: (dur, ease) => ({
-      initial: { opacity: 0, x: -100 },
-      animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
-      exit: { opacity: 0, x: -50, transition: { duration: dur / 1000, ease } },
-    }),
-  },
-  slide_right: {
-    name: "Glissement Droite",
-    getVariants: (dur, ease) => ({
-      initial: { opacity: 0, x: 100 },
-      animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
-      exit: { opacity: 0, x: 50, transition: { duration: dur / 1000, ease } },
-    }),
-  },
-  clip_reveal: {
-    name: "Déploiement (Clip-path)",
-    getVariants: (dur, ease) => ({
-      initial: { clipPath: "polygon(0 0, 0 0, 0 100%, 0% 100%)", opacity: 0.5 },
-      animate: { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)", opacity: 1, transition: { duration: dur / 1000, ease } },
-      exit: { clipPath: "polygon(100% 0, 100% 0, 100% 100%, 100% 100%)", opacity: 0, transition: { duration: dur / 1000, ease } },
-    }),
-  },
-  typewriter: {
-    name: "Machine à écrire (Stagger)",
-    getVariants: (dur, ease) => ({
-      initial: { opacity: 0 },
-      animate: { opacity: 1, transition: { duration: dur / 1000, ease } },
-      exit: { opacity: 0, transition: { duration: 0.3 } },
-    }),
-  },
-};
-
-/* ── Typewriter Animator ────────────────────────────────────────── */
-const typewriterContainer = {
-  hidden: {},
-  visible: {
-    transition: {
-      staggerChildren: 0.015,
-    },
-  },
-};
-
-const typewriterChar = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.04 },
-  },
-};
-
-function TypewriterText({ text }: { text: string }) {
-  const characters = Array.from(text);
-  return (
-    <motion.span variants={typewriterContainer} initial="hidden" animate="visible" className="inline">
-      {characters.map((char, index) => (
-        <motion.span key={index} variants={typewriterChar} className="inline">
-          {char}
-        </motion.span>
-      ))}
-      <motion.span
-        animate={{ opacity: [1, 1, 0, 0, 1] }}
-        transition={{ repeat: Infinity, duration: 0.8, times: [0, 0.5, 0.5, 1, 1], ease: "linear" }}
-        className="ml-0.5 inline-block w-[2px] bg-[#e2b85f] align-middle"
-        style={{ height: "1.2em" }}
-      >
-        &nbsp;
-      </motion.span>
-    </motion.span>
-  );
-}
 
 /* ── Helper: Typography Style generator ─────────────────────────── */
 const getElementStyle = (prefix: "fontRef" | "fontBody" | "fontVer", s: StudioSettings): React.CSSProperties => {
@@ -318,10 +217,8 @@ export function LiveVideoOverlay({ payload }: { payload: ScripturePayload | null
     textAlign: (s.textAlign as React.CSSProperties["textAlign"]) ?? "center",
   };
 
-  // Easing & Plugin
-  const animEase = EASING_MAP[s.animEasing || "ease-out"] || EASING_MAP["ease-out"];
-  const animPlugin = ANIMATION_PLUGINS[s.animation] || ANIMATION_PLUGINS.fade_slide;
-  const variants = animPlugin.getVariants(s.animDuration || 500, animEase);
+  // Easing + effect resolved by the shared registry (bible source kind).
+  const variants = domAnimVariants(s.animation, s.animDuration || 500, s.animEasing, "bible");
 
   const containerStyle = getContainerStyle(s);
 

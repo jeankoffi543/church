@@ -2,9 +2,14 @@
 
 import type React from "react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { motion, type Variants, type Easing } from "framer-motion";
+import { motion, useAnimationControls, type TargetAndTransition } from "framer-motion";
 
 import type { ScriptureVerse } from "@/lib/studio";
+import {
+  TypewriterText,
+  domAnimVariants,
+  type AnimSourceKind,
+} from "@/lib/studio-animations";
 import { cn } from "@/lib/utils";
 import { getContainerStyle, getElementStyle, getOverlayBoxStyle } from "./studio-style";
 import { isBackgroundLayer, imageHatch, type StudioLayer } from "./studio-layers";
@@ -31,117 +36,6 @@ import {
 } from "./studio-camera";
 import { MONO } from "./studio-tokens";
 
-const EASING_MAP: Record<string, Easing> = {
-  linear: "linear",
-  "ease-in": "easeIn",
-  "ease-out": "easeOut",
-  "ease-in-out": "easeInOut",
-  bounce: [0.175, 0.885, 0.32, 1.275] as Easing,
-};
-
-const ANIMATION_PLUGINS: Record<string, (dur: number, ease: Easing) => Variants> = {
-  none: () => ({
-    initial: {},
-    animate: {},
-    exit: {},
-  }),
-  fade_slide: (dur, ease) => ({
-    initial: { opacity: 0, y: 30 },
-    animate: { opacity: 1, y: 0, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, y: 20, transition: { duration: dur / 1000, ease } },
-  }),
-  scale: (dur, ease) => ({
-    initial: { opacity: 0, scale: 0.9 },
-    animate: { opacity: 1, scale: 1, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, scale: 0.93, transition: { duration: dur / 1000, ease } },
-  }),
-  slide_left: (dur, ease) => ({
-    initial: { opacity: 0, x: -100 },
-    animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, x: -50, transition: { duration: dur / 1000, ease } },
-  }),
-  slide_right: (dur, ease) => ({
-    initial: { opacity: 0, x: 100 },
-    animate: { opacity: 1, x: 0, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, x: 50, transition: { duration: dur / 1000, ease } },
-  }),
-  clip_reveal: (dur, ease) => ({
-    initial: { clipPath: "polygon(0 0, 0 0, 0 100%, 0% 100%)", opacity: 0.5 },
-    animate: { clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)", opacity: 1, transition: { duration: dur / 1000, ease } },
-    exit: { clipPath: "polygon(100% 0, 100% 0, 100% 100%, 100% 100%)", opacity: 0, transition: { duration: dur / 1000, ease } },
-  }),
-  neon_slide: (dur, ease) => ({
-    initial: { opacity: 0, x: -80, scale: 0.98 },
-    animate: { opacity: 1, x: 0, scale: 1, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, x: 40, scale: 0.98, transition: { duration: dur / 1000, ease } },
-  }),
-  typewriter: (dur, ease) => ({
-    initial: { opacity: 0 },
-    animate: { opacity: 1, transition: { duration: dur / 1000, ease } },
-    exit: { opacity: 0, transition: { duration: 0.3 } },
-  }),
-  scroll_left: (dur) => ({
-    initial: { x: "100%" },
-    animate: {
-      x: "-100%",
-      transition: {
-        x: {
-          repeat: Infinity,
-          repeatType: "loop",
-          duration: dur > 100 ? (dur * 12) / 1000 : 12,
-          ease: "linear",
-        },
-      },
-    },
-    exit: { opacity: 0 },
-  }),
-  scroll_right: (dur) => ({
-    initial: { x: "-100%" },
-    animate: {
-      x: "100%",
-      transition: {
-        x: {
-          repeat: Infinity,
-          repeatType: "loop",
-          duration: dur > 100 ? (dur * 12) / 1000 : 12,
-          ease: "linear",
-        },
-      },
-    },
-    exit: { opacity: 0 },
-  }),
-  scroll_up: (dur) => ({
-    initial: { y: "100%" },
-    animate: {
-      y: "-100%",
-      transition: {
-        y: {
-          repeat: Infinity,
-          repeatType: "loop",
-          duration: dur > 100 ? (dur * 12) / 1000 : 12,
-          ease: "linear",
-        },
-      },
-    },
-    exit: { opacity: 0 },
-  }),
-  scroll_down: (dur) => ({
-    initial: { y: "-100%" },
-    animate: {
-      y: "100%",
-      transition: {
-        y: {
-          repeat: Infinity,
-          repeatType: "loop",
-          duration: dur > 100 ? (dur * 12) / 1000 : 12,
-          ease: "linear",
-        },
-      },
-    },
-    exit: { opacity: 0 },
-  }),
-};
-
 const getImageUrl = (url: string | undefined | null): string => {
   if (!url) return "";
   if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("http:") || url.startsWith("https:")) {
@@ -151,44 +45,6 @@ const getImageUrl = (url: string | undefined | null): string => {
   const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
   return url.startsWith("/") ? `${backendUrl}${url}` : url;
 };
-
-const typewriterContainer = {
-  hidden: {},
-  visible: {
-    transition: {
-      staggerChildren: 0.015,
-    },
-  },
-};
-
-const typewriterChar = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { duration: 0.04 },
-  },
-};
-
-function TypewriterText({ text }: { text: string }) {
-  const characters = Array.from(text);
-  return (
-    <motion.span variants={typewriterContainer} initial="hidden" animate="visible" className="inline">
-      {characters.map((char, index) => (
-        <motion.span key={index} variants={typewriterChar} className="inline">
-          {char}
-        </motion.span>
-      ))}
-      <motion.span
-        animate={{ opacity: [1, 1, 0, 0, 1] }}
-        transition={{ repeat: Infinity, duration: 0.8, times: [0, 0.5, 0.5, 1, 1], ease: "linear" }}
-        className="ml-0.5 inline-block w-[2px] bg-[#e2b85f] align-middle"
-        style={{ height: "1.2em" }}
-      >
-        &nbsp;
-      </motion.span>
-    </motion.span>
-  );
-}
 
 export type ResizeCorner = "nw" | "ne" | "sw" | "se";
 
@@ -234,6 +90,8 @@ export function CompositeLayer({
   allLayers = [],
   selectedLayerId = null,
   uiScale = 1,
+  animNonce = 0,
+  replayOnNonce = true,
 }: {
   layer: StudioLayer;
   verse?: ScriptureVerse | null;
@@ -252,11 +110,55 @@ export function CompositeLayer({
    *  monitor renders in composition px, so selection rings / resize handles are
    *  multiplied by this to stay a usable on-screen size. Never broadcast. */
   uiScale?: number;
+  /** Entrance-replay signal for the STABLE-key media types (camera / video /
+   *  embed). Text/image/bible replay by remounting on a nonce-keyed React key;
+   *  media can't (that would re-`getUserMedia` / reload), so they replay
+   *  imperatively via animation controls when this changes. */
+  animNonce?: number;
+  /** When false, a nonce bump does NOT replay the stable-media entrance (the
+   *  operator's cut-replay filter) — they still animate on first mount. */
+  replayOnNonce?: boolean;
 }) {
   const isBg = isBackgroundLayer(layer);
-  const animEase = EASING_MAP[layer.style.animEasing || "ease-out"] || EASING_MAP["ease-out"];
-  const getVariants = ANIMATION_PLUGINS[layer.style.animation] || ANIMATION_PLUGINS.fade_slide;
-  const variants = getVariants(layer.style.animDuration || 500, animEase);
+  // Variants come from the SHARED effect registry (CHR-56): per-source
+  // availability is resolved there, so an effect the source doesn't support
+  // degrades to "none" here exactly like on the broadcast canvas.
+  const variants = domAnimVariants(
+    layer.style.animation,
+    layer.style.animDuration || 500,
+    layer.style.animEasing,
+    layer.type as AnimSourceKind,
+  );
+
+  // Camera / video / embed keep a stable React key so the media element is never
+  // torn down (no re-getUserMedia / reload). That also means a nonce-keyed
+  // remount can't replay their entrance — so we drive it imperatively: set the
+  // initial variant, then animate to the final one, whenever the effect or the
+  // replay nonce changes. The media element underneath stays mounted and live.
+  const isStableMedia =
+    layer.type === "camera" || layer.type === "video" || layer.type === "embed";
+  const mediaControls = useAnimationControls();
+  // The registry only emits object variants (never the TargetResolver form), so
+  // narrowing to TargetAndTransition here is safe.
+  const mediaInitial = (variants.initial ?? {}) as TargetAndTransition;
+  const mediaAnimate = (variants.animate ?? {}) as TargetAndTransition;
+  const mediaExit = (variants.exit ?? {}) as TargetAndTransition;
+  // The cut-replay filter: when off, a nonce bump must NOT replay — so the
+  // effect ignores animNonce (fires on mount + on genuine style changes only).
+  const replayKey = replayOnNonce ? animNonce : 0;
+  useEffect(() => {
+    if (!isStableMedia) return;
+    mediaControls.set(mediaInitial);
+    void mediaControls.start(mediaAnimate);
+    // Re-run on effect / timing / easing / replay-nonce changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isStableMedia,
+    layer.style.animation,
+    layer.style.animDuration,
+    layer.style.animEasing,
+    replayKey,
+  ]);
 
   const isSelectedChildsParent = selectedLayerId && allLayers.find((l) => l.id === selectedLayerId)?.parentId === layer.id;
   // Selection chrome as inline styles so it scales with `uiScale` (a class-based
@@ -290,7 +192,9 @@ export function CompositeLayer({
     movable && "cursor-move",
   );
 
-  const isScroll = layer.style.animation?.startsWith("scroll_");
+  // Inner marquee — text sources only (the registry's per-source condition:
+  // on other types a persisted scroll_* resolves to "none").
+  const isScroll = layer.type === "text" && !!layer.style.animation?.startsWith("scroll_");
   const outerVariants = isScroll ? undefined : variants;
   const innerVariants = isScroll ? variants : undefined;
 
@@ -398,10 +302,9 @@ export function CompositeLayer({
     return (
       <motion.div
         key={layer.id}
-        variants={variants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        initial={mediaInitial}
+        animate={mediaControls}
+        exit={mediaExit}
         data-layer
         {...dragProps}
         className={cn(
@@ -424,10 +327,9 @@ export function CompositeLayer({
     return (
       <motion.div
         key={layer.id}
-        variants={variants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        initial={mediaInitial}
+        animate={mediaControls}
+        exit={mediaExit}
         data-layer
         {...dragProps}
         className={cn(
@@ -450,10 +352,9 @@ export function CompositeLayer({
     return (
       <motion.div
         key={layer.id}
-        variants={variants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        initial={mediaInitial}
+        animate={mediaControls}
+        exit={mediaExit}
         data-layer
         {...dragProps}
         className={cn(
@@ -489,21 +390,51 @@ export function CompositeLayer({
       : {
           backgroundImage: imageHatch(layer.imageHue ?? 265),
         };
+    // CHR-56 P2 — "machine à écrire" on an image: a linear left→right sweep.
+    // The clip animates on an INNER wrapper (not the outer box) so the gold
+    // cursor bar at the reveal edge is never cut by its own clip — mirroring
+    // the canvas, which draws the bar after restoring the clip.
+    const isTypeSweep = layer.style.animation === "typewriter";
+    const sweepSec = Math.max(800, layer.style.animDuration || 500) / 1000;
+    const sweepInner = isTypeSweep ? (
+      <>
+        <motion.div
+          className="absolute inset-0"
+          style={bgStyle}
+          variants={variants}
+          initial="initial"
+          animate="animate"
+        />
+        <motion.div
+          className="pointer-events-none absolute inset-y-0 z-10 w-[3px] bg-[#e2b85f]"
+          initial={{ left: "0%", opacity: 0.9 }}
+          animate={{
+            left: "100%",
+            opacity: 0,
+            transition: {
+              left: { duration: sweepSec, ease: "linear" },
+              opacity: { duration: 0.15, delay: sweepSec },
+            },
+          }}
+        />
+      </>
+    ) : null;
     if (isBg) {
       return (
         <motion.div
           key={layer.id}
-          variants={variants}
-          initial="initial"
-          animate="animate"
-          exit="exit"
+          variants={isTypeSweep ? undefined : variants}
+          initial={isTypeSweep ? undefined : "initial"}
+          animate={isTypeSweep ? undefined : "animate"}
+          exit={isTypeSweep ? undefined : "exit"}
           {...selectProps}
           className={cn("absolute inset-0", draggable && "cursor-pointer")}
-          style={{ zIndex: z, ...bgStyle, ...editRingStyle }}
+          style={{ zIndex: z, ...(isTypeSweep ? {} : bgStyle), ...editRingStyle }}
         >
+          {sweepInner}
           <span
             className={cn(
-              "absolute bottom-2.5 left-2.5 rounded-md bg-black/45 px-2 py-1 text-[9.5px] tracking-[1px] text-white/55",
+              "absolute bottom-2.5 left-2.5 z-20 rounded-md bg-black/45 px-2 py-1 text-[9.5px] tracking-[1px] text-white/55",
               MONO,
             )}
           >
@@ -515,16 +446,23 @@ export function CompositeLayer({
     return (
       <motion.div
         key={layer.id}
-        variants={variants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        variants={isTypeSweep ? undefined : variants}
+        initial={isTypeSweep ? undefined : "initial"}
+        animate={isTypeSweep ? undefined : "animate"}
+        exit={isTypeSweep ? undefined : "exit"}
         data-layer
         {...dragProps}
         className={cn("absolute overflow-hidden", movable && "cursor-move")}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...bgStyle, ...editRingStyle }}
+        style={{
+          ...getContainerStyle(layer.style),
+          ...getOverlayBoxStyle(layer.style),
+          zIndex: z,
+          ...(isTypeSweep ? {} : bgStyle),
+          ...editRingStyle,
+        }}
       >
         {handles}
+        {sweepInner}
       </motion.div>
     );
   }

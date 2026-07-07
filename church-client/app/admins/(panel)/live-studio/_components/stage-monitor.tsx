@@ -41,6 +41,7 @@ export function StageMonitor({
   onFullscreen,
   black = false,
   animNonce = 0,
+  replayOnNonce = true,
   compositionWidth = 1920,
   compositionHeight = 1080,
   className,
@@ -60,6 +61,10 @@ export function StageMonitor({
   black?: boolean;
   /** Bumping this replays the entrance animations (remounts the layers). */
   animNonce?: number;
+  /** When false, a nonce bump (CUT) does NOT replay non-bible entrances — the
+   *  bible still re-animates on a verse change. The Preview passes true (the
+   *  operator's own replay); the Program passes the operator's cut filter. */
+  replayOnNonce?: boolean;
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
@@ -151,14 +156,23 @@ export function StageMonitor({
                 {visible.map((layer, idx) => {
                   const z = visible.length - idx;
                   const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
-                  // Camera/video keep a STABLE key so an animation replay (animNonce bump)
-                  // doesn't remount them — a camera remount re-runs getUserMedia (black
-                  // flash) and a video would reload. Images DO remount so they replay.
-                  const stableKey = layer.type === "camera" || layer.type === "video";
+                  // Camera/video/embed keep a STABLE key so an animation replay
+                  // (animNonce bump) doesn't remount them — a camera remount
+                  // re-runs getUserMedia (black flash), a video reloads and an
+                  // embed iframe reconnects. They replay their entrance
+                  // IMPERATIVELY instead (CompositeLayer's animNonce effect).
+                  // Text/image/bible DO remount so they replay declaratively.
+                  const stableKey =
+                    layer.type === "camera" || layer.type === "video" || layer.type === "embed";
+                  // Nonce-keyed remount = replay on CUT. The bible always keeps it
+                  // (verse-change replay); other non-stable layers keep it only
+                  // when the operator's cut-replay filter is on — otherwise a
+                  // stable key means they animate on appearance but not on re-CUT.
+                  const nonceKey = layer.type === "bible" || replayOnNonce;
 
                   return (
                     <CompositeLayer
-                      key={stableKey ? layer.id : `${layer.id}-${animNonce}`}
+                      key={stableKey || !nonceKey ? layer.id : `${layer.id}-${animNonce}`}
                       layer={effective}
                       verse={layer.type === "bible" ? bibleVerse : undefined}
                       z={z}
@@ -171,6 +185,8 @@ export function StageMonitor({
                       allLayers={layers}
                       selectedLayerId={selectedLayerId}
                       uiScale={k > 0 ? 1 / k : 1}
+                      animNonce={animNonce}
+                      replayOnNonce={replayOnNonce}
                     />
                   );
                 })}

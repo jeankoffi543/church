@@ -29,7 +29,8 @@ import {
   drawScrollLayer,
   drawVideoFrame,
 } from "./program-out-text";
-import { computeEntrance } from "./program-out-anim";
+import { computeEntrance, type AnimResult } from "./program-out-anim";
+import type { AnimSourceKind } from "@/lib/studio-animations";
 import { getVideoController } from "./studio-video";
 import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
@@ -121,27 +122,66 @@ function drawCover(
 
 const dbToLinear = (db: number): number => Math.pow(10, db / 20);
 
-/** Apply an entrance animation's transform to the context (caller wraps in
- *  save/restore). Shared by the image + video overlay draws. */
+/** Apply an animation's transform to the context (caller wraps in
+ *  save/restore). Shared by every layer draw — media AND text overlays. */
 function applyEntranceTransform(
   ctx: CanvasRenderingContext2D,
-  a: { alpha: number; tx: number; ty: number; scale: number; clipRevealX?: number },
+  a: AnimResult,
   box: { x: number; y: number; w: number; h: number },
 ): void {
   ctx.globalAlpha = a.alpha;
+  // ctx.filter participates in save/restore, so the blur ends with the layer.
+  if (a.blur && a.blur > 0.5) ctx.filter = `blur(${Math.round(a.blur)}px)`;
   if (a.tx || a.ty) ctx.translate(a.tx, a.ty);
-  if (a.scale !== 1) {
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-    ctx.translate(cx, cy);
-    ctx.scale(a.scale, a.scale);
-    ctx.translate(-cx, -cy);
+  const sx = (a.scaleX ?? 1) * a.scale;
+  const sy = (a.scaleY ?? 1) * a.scale;
+  if (sx !== 1 || sy !== 1 || a.rotate) {
+    // 3D flips hinge on an edge (origin left/top); everything else on center.
+    const ox = a.origin === "left" ? box.x : box.x + box.w / 2;
+    const oy = a.origin === "top" ? box.y : box.y + box.h / 2;
+    ctx.translate(ox, oy);
+    if (a.rotate) ctx.rotate(a.rotate);
+    if (sx !== 1 || sy !== 1) ctx.scale(sx, sy);
+    ctx.translate(-ox, -oy);
   }
-  if (a.clipRevealX !== undefined) {
+  if (a.clip) {
+    const p = Math.max(0, Math.min(1, a.clip.p));
     ctx.beginPath();
-    ctx.rect(box.x, box.y, box.w * a.clipRevealX, box.h);
+    if (a.clip.kind === "left") {
+      ctx.rect(box.x, box.y, box.w * p, box.h);
+    } else if (a.clip.kind === "right") {
+      ctx.rect(box.x + box.w * (1 - p), box.y, box.w * p, box.h);
+    } else if (a.clip.kind === "up") {
+      ctx.rect(box.x, box.y + box.h * (1 - p), box.w, box.h * p);
+    } else if (a.clip.kind === "down") {
+      ctx.rect(box.x, box.y, box.w, box.h * p);
+    } else if (a.clip.kind === "center") {
+      ctx.rect(box.x + (box.w * (1 - p)) / 2, box.y, box.w * p, box.h);
+    } else {
+      // iris — a circle growing from the box center to cover its diagonal.
+      const r = (Math.hypot(box.w, box.h) / 2) * p;
+      ctx.arc(box.x + box.w / 2, box.y + box.h / 2, Math.max(0.001, r), 0, Math.PI * 2);
+    }
     ctx.clip();
   }
+}
+
+/** The image-typewriter sweep bar (CHR-56 P2) — drawn AFTER the layer's
+ *  save/restore so the clip doesn't cut the cursor in half at the reveal edge. */
+function drawRevealCursor(
+  ctx: CanvasRenderingContext2D,
+  a: AnimResult,
+  box: { x: number; y: number; w: number; h: number },
+  scale: number,
+): void {
+  if (!a.clip?.cursor || a.clip.p >= 1) return;
+  const x = box.x + box.w * a.clip.p;
+  const w = Math.max(2, 3 * scale);
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = "#e2b85f";
+  ctx.fillRect(x - w / 2, box.y, w, box.h);
+  ctx.restore();
 }
 
 /* ── Per-layer render sources ────────────────────────────────────────────── */
@@ -192,8 +232,15 @@ export type ProgramOut = {
   readonly stream: MediaStream;
   /** The backing canvas (handy to mirror the outgoing feed in a preview). */
   readonly canvas: HTMLCanvasElement;
-  /** Update the composited scene (ordered bottom→top) + the on-air bible verse. */
-  setScene: (layers: StudioLayer[], bible?: BibleContext, animNonce?: number) => void;
+  /** Update the composited scene (ordered bottom→top) + the on-air bible verse.
+   *  `replayOnCut` (default true) gates whether a CUT (animNonce bump) replays
+   *  non-bible entrances — the bible always replays on a verse change. */
+  setScene: (
+    layers: StudioLayer[],
+    bible?: BibleContext,
+    animNonce?: number,
+    replayOnCut?: boolean,
+  ) => void;
   /** Tear down the loop, media elements and audio graph. */
   stop: () => void;
 };
@@ -382,7 +429,7 @@ export function startProgramOut(opts?: {
     sources.delete(id);
   }
 
-  function setScene(layers: StudioLayer[], bible?: BibleContext, animNonce = 0) {
+  function setScene(layers: StudioLayer[], bible?: BibleContext, animNonce = 0, replayOnCut = true) {
     scene = layers;
     bibleContext = bible ?? null;
     const live = new Set<string>();
@@ -414,13 +461,20 @@ export function startProgramOut(opts?: {
     // The bible is excluded: its on-air verse/style arrives a tick later (async
     // pushLive), so a nonce-driven replay would play the PREVIOUS verse first —
     // it re-triggers on the verse change (bibleSig) below instead.
-    if (animNonce !== lastAnimNonce) {
+    // `replayOnCut` (operator filter) gates the CUT-replay of non-bible
+    // entrances; when off, sources still animate on first APPEARANCE (animStart
+    // above) but a re-CUT of the same scene doesn't re-trigger them.
+    if (replayOnCut && animNonce !== lastAnimNonce) {
       lastAnimNonce = animNonce;
       for (const id of present) {
-        // Bible replays on verse change; media (camera/video) only on appearance
-        // (a re-CUT must not restart the video) — like the DOM's stable key.
+        // Camera/video now replay their entrance too (CHR-56 — parity with the
+        // DOM's imperative replay): the transform is purely visual and never
+        // touches el.currentTime, so playback is undisturbed. The bible is still
+        // excluded — its on-air verse/style arrives a tick later (async
+        // pushLive), so a nonce replay would flash the PREVIOUS verse; it
+        // re-triggers on the verse change (bibleSig) below instead.
         const t = layers.find((x) => x.id === id)?.type;
-        if (t === "bible" || t === "video" || t === "camera") continue;
+        if (t === "bible") continue;
         animStart.set(id, now);
       }
     }
@@ -472,6 +526,7 @@ export function startProgramOut(opts?: {
             layer.style.animDuration ?? 500,
             layer.style.animEasing ?? "ease-out",
             textScale,
+            layer.type as AnimSourceKind,
           );
           ctx.save();
           applyEntranceTransform(ctx, a, box);
@@ -490,12 +545,28 @@ export function startProgramOut(opts?: {
             drawVideoFrame(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box, textScale);
           }
           ctx.restore();
+          // Image typewriter (CHR-56): the sweep cursor sits ON the reveal edge,
+          // outside the clip — drawn after restore.
+          drawRevealCursor(ctx, a, box, textScale);
           continue;
         }
-        // Camera: drawn straight, WITHOUT an entrance transform — the default
-        // fade_slide made the camera vanish on every CUT.
+        // Camera: animated like the DOM preview (CHR-56). Safe on CUT: its
+        // animStart survives scene pushes (set on APPEARANCE only, and the
+        // nonce-driven replay skips cameras) — so a settled camera stays at
+        // identity instead of vanishing like the old per-CUT fade did.
         if (src.el instanceof HTMLVideoElement && src.el.readyState >= 2 && src.el.videoWidth > 0) {
+          const a = computeEntrance(
+            layer.style.animation,
+            now - (animStart.get(layer.id) ?? now),
+            layer.style.animDuration ?? 500,
+            layer.style.animEasing ?? "ease-out",
+            textScale,
+            "camera",
+          );
+          ctx.save();
+          applyEntranceTransform(ctx, a, box);
           drawCover(ctx, src.el, src.el.videoWidth, src.el.videoHeight, box.x, box.y, box.w, box.h);
+          ctx.restore();
         }
         continue;
       }
@@ -508,6 +579,7 @@ export function startProgramOut(opts?: {
           layer.style.animDuration ?? 500,
           layer.style.animEasing ?? "ease-out",
           textScale,
+          "group",
         );
         ctx.save();
         applyEntranceTransform(ctx, a, box);
@@ -526,8 +598,10 @@ export function startProgramOut(opts?: {
             ? layerSongText(layer)
             : (layer.content ?? "");
 
-      // Scroll ticker (continuous) — its own clip, no entrance transform.
-      if (variant.startsWith("scroll_")) {
+      // Scroll ticker (continuous) — its own clip, no entrance transform. Gated
+      // by the SAME per-source condition as the DOM (`resolveAnimation`): on a
+      // non-text layer a persisted scroll_* degrades to "none" on both sides.
+      if (variant.startsWith("scroll_") && layer.type === "text") {
         const dur = style?.animDuration ?? 500;
         const loopMs = dur > 100 ? dur * 12 : 12000;
         const phase = (now % loopMs) / loopMs;
@@ -535,29 +609,17 @@ export function startProgramOut(opts?: {
         continue;
       }
 
-      // Entrance animation transform (v3) — overlays only.
+      // Animation transform (entrances + continuous loops) — overlays only.
       const anim = computeEntrance(
         variant,
         now - (animStart.get(layer.id) ?? now),
         style?.animDuration ?? 500,
         style?.animEasing ?? "ease-out",
         textScale,
+        layer.type as AnimSourceKind,
       );
       ctx.save();
-      ctx.globalAlpha = anim.alpha;
-      if (anim.tx || anim.ty) ctx.translate(anim.tx, anim.ty);
-      if (anim.scale !== 1) {
-        const cx = box.x + box.w / 2;
-        const cy = box.y + box.h / 2;
-        ctx.translate(cx, cy);
-        ctx.scale(anim.scale, anim.scale);
-        ctx.translate(-cx, -cy);
-      }
-      if (anim.clipRevealX !== undefined) {
-        ctx.beginPath();
-        ctx.rect(box.x, box.y, box.w * anim.clipRevealX, box.h);
-        ctx.clip();
-      }
+      applyEntranceTransform(ctx, anim, box);
 
       if (layer.type === "bible" && bibleContext?.verse && style) {
         drawBibleLayer(ctx, box, style, bibleContext.verse, textScale, anim.reveal);

@@ -182,9 +182,11 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
   }
   if (type === "embed" || type === "video" || type === "camera") {
     // A movable / resizable video window (PiP-style); set it full-frame via the
-    // "Plein écran" layout preset.
+    // "Plein écran" layout preset. Default to NO entrance so a live camera never
+    // fades on a CUT — the operator opts into an effect in the Anim tab (CHR-56).
     return {
       ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
       containerShape: "transparent",
       positionMode: "custom",
       customX: 8,
