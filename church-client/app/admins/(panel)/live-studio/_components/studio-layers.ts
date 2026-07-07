@@ -51,6 +51,15 @@ export type StudioLayer = {
    *  source. A source always animates on its FIRST appearance regardless — this
    *  only governs replaying on a re-CUT of the same scene. */
   replayOnCut?: "auto" | "always" | "never";
+  /** Inter-source reaction (CHR-57): the id of the TRIGGER source. While that
+   *  trigger is on air, THIS (target) source smoothly transitions to `reactStyle`
+   *  (a captured geometry/shape/frame pose) and back when the trigger leaves. */
+  reactTo?: string;
+  /** The captured "reaction" pose — a subset of StudioSettings (REACTION_KEYS
+   *  only: position/size/shape/frame). Applied over `style` while `reactTo` is on air. */
+  reactStyle?: Partial<StudioSettings>;
+  /** Duration (ms) of the base⇄reaction transition (default 600). */
+  reactTransitionMs?: number;
   // song stanzas (feature/CHR-39)
   stanzas?: Array<{ name: string; content: string }>;
   activeStanzaIndex?: number;
@@ -88,6 +97,94 @@ export function replaysOnCut(l: StudioLayer, globalDefault: boolean): boolean {
   return mode === "always" ? true : mode === "never" ? false : globalDefault;
 }
 
+/* ── Inter-source reactions (CHR-57) ──────────────────────────────────────
+ * A "reaction" lets a target source adopt an alternate pose (geometry / shape /
+ * frame) while a chosen TRIGGER source is on air — e.g. the pastor's camera
+ * slides aside + shrinks when a bible verse airs. It is a subset of the
+ * target's own StudioSettings, so it flows through the SAME renderers (DOM box
+ * + canvas box) as any style.
+ */
+
+/** The StudioSettings keys a reaction pose captures/overrides (geometry + form
+ *  + frame). Deliberately excludes typography/colour-of-text/animation. */
+export const REACTION_KEYS: (keyof StudioSettings)[] = [
+  "positionMode",
+  "predefinedPosition",
+  "customX",
+  "customY",
+  "customWidth",
+  "customHeight",
+  "containerShape",
+  "containerBorderRadius",
+  "containerBorderWidth",
+  "containerBorderStyle",
+  "containerBorderColor",
+  "containerBg",
+  "containerPaddingX",
+  "containerPaddingY",
+  "shadowBlur",
+  "shadowSpread",
+  "shadowOffsetX",
+  "shadowOffsetY",
+  "shadowColor",
+];
+
+/** Numeric reaction keys SMOOTHLY interpolated base⇄reaction (identical on the
+ *  DOM and the canvas → no preview/broadcast drift). Discrete keys (shape enum,
+ *  colours, positionMode, borderStyle) switch abruptly on both sides. */
+export const REACTION_LERP_NUM: (keyof StudioSettings)[] = [
+  "customX",
+  "customY",
+  "customWidth",
+  "customHeight",
+  "containerBorderRadius",
+  "containerBorderWidth",
+  "containerPaddingX",
+  "containerPaddingY",
+  "shadowBlur",
+  "shadowSpread",
+  "shadowOffsetX",
+  "shadowOffsetY",
+];
+
+/** Capture the REACTION_KEYS subset of a style (the "reaction pose"). */
+export function pickReactionStyle(s: StudioSettings): Partial<StudioSettings> {
+  const out: Partial<StudioSettings> = {};
+  for (const k of REACTION_KEYS) (out as Record<string, unknown>)[k] = s[k];
+  return out;
+}
+
+/**
+ * Blend a `base` style with a captured `reactStyle` pose at factor `b`
+ * (0 = base, 1 = reaction). Numeric pose keys are lerped; discrete keys (shape,
+ * colours, positionMode) switch at the half-way point — identical rule on the
+ * DOM and the canvas. The DOM passes 0 or 1 (CSS animates the box between them);
+ * the canvas passes the eased progress so it interpolates the pose per frame.
+ */
+export function blendReactionStyles(
+  base: StudioSettings,
+  reactStyle: Partial<StudioSettings> | undefined,
+  b: number,
+): StudioSettings {
+  if (!reactStyle || b <= 0) return base;
+  const to = { ...base, ...reactStyle };
+  if (b >= 1) return to;
+  const out: StudioSettings = { ...(b < 0.5 ? base : to) };
+  for (const k of REACTION_LERP_NUM) {
+    const a = base[k] as number;
+    const c = to[k] as number;
+    if (typeof a === "number" && typeof c === "number") {
+      (out as unknown as Record<string, number>)[k as string] = a + (c - a) * b;
+    }
+  }
+  return out;
+}
+
+/** The effective style for a layer at reaction blend `b` (uses `layer.style`). */
+export function reactionStyle(l: StudioLayer, b: number): StudioSettings {
+  return blendReactionStyles(l.style, l.reactStyle, b);
+}
+
 /** Sources that carry an audio channel shown in the mixer. */
 export function hasAudio(l: StudioLayer): boolean {
   return l.type === "embed" || l.type === "video" || l.type === "audio" || l.type === "camera";
@@ -114,7 +211,7 @@ export type StudioScene = {
   layers: StudioLayer[];
 };
 
-export type InspTab = "contenu" | "layout" | "typo" | "container" | "anim" | "presets";
+export type InspTab = "contenu" | "layout" | "typo" | "container" | "anim" | "reaction" | "presets";
 
 export const LAYER_META: Record<
   StudioLayerType,
@@ -161,13 +258,13 @@ export function layerTabs(type: StudioLayerType): InspTab[] {
     case "text":
     case "song":
     case "group":
-      return ["contenu", "layout", "typo", "container", "anim", "presets"];
+      return ["contenu", "layout", "typo", "container", "anim", "reaction", "presets"];
     case "image":
-      return ["contenu", "layout", "container", "anim", "presets"];
+      return ["contenu", "layout", "container", "anim", "reaction", "presets"];
     case "camera":
     case "video":
     case "embed":
-      return ["contenu", "layout", "anim", "presets"];
+      return ["contenu", "layout", "anim", "reaction", "presets"];
     case "audio":
       return ["contenu"];
   }

@@ -64,6 +64,7 @@ export function useProgramBroadcast({
   bibleStyle,
   animNonce,
   replaySet = null,
+  activeTriggers = null,
   composition,
   output,
   autoResume = true,
@@ -75,6 +76,8 @@ export function useProgramBroadcast({
   animNonce: number;
   /** Layer ids that replay on a CUT (frozen at cut time); null = replay all. */
   replaySet?: ReadonlySet<string> | null;
+  /** Trigger source ids currently on air — drives CHR-57 reactions on the canvas. */
+  activeTriggers?: ReadonlySet<string> | null;
   /** Logical composition (OBS base canvas) the layer styles are authored in. */
   composition: { width: number; height: number };
   /** Broadcast canvas resolution + framerate (OBS output). */
@@ -95,6 +98,7 @@ export function useProgramBroadcast({
   const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
   const animRef = useRef(animNonce);
   const replayRef = useRef<ReadonlySet<string> | null>(replaySet);
+  const triggersRef = useRef<ReadonlySet<string> | null>(activeTriggers);
   const resumedRef = useRef(false);
 
   const broadcasting = whipState !== "idle";
@@ -109,7 +113,7 @@ export function useProgramBroadcast({
     if (outRef.current) return outRef.current;
     const scale = composition.height > 0 ? output.height / composition.height : 1;
     const out = startProgramOut({ width: output.width, height: output.height, fps: output.fps, scale });
-    out.setScene(layersRef.current, bibleRef.current, animRef.current, replayRef.current);
+    out.setScene(layersRef.current, bibleRef.current, animRef.current, replayRef.current, triggersRef.current);
     outRef.current = out;
     setOn(true);
     setFlag(LS_ON, true);
@@ -186,8 +190,9 @@ export function useProgramBroadcast({
     bibleRef.current = { verse: bibleVerse, style: bibleStyle };
     animRef.current = animNonce;
     replayRef.current = replaySet;
-    outRef.current?.setScene(layers, bibleRef.current, animNonce, replaySet);
-  }, [layers, bibleVerse, bibleStyle, animNonce, replaySet]);
+    triggersRef.current = activeTriggers;
+    outRef.current?.setScene(layers, bibleRef.current, animNonce, replaySet, activeTriggers);
+  }, [layers, bibleVerse, bibleStyle, animNonce, replaySet, activeTriggers]);
 
   // On mount, resume a broadcast a page refresh interrupted (it lives in the tab).
   useEffect(() => {

@@ -42,6 +42,7 @@ export function StageMonitor({
   black = false,
   animNonce = 0,
   tokens = null,
+  activeTriggers = null,
   compositionWidth = 1920,
   compositionHeight = 1080,
   className,
@@ -67,6 +68,9 @@ export function StageMonitor({
    *  CUT" setting), so a source that leaves the replay set keeps its token and is
    *  never spuriously re-triggered. `null` = every layer replays on `animNonce`. */
   tokens?: Record<string, number> | null;
+  /** Ids of TRIGGER sources active in THIS monitor (on-air for the Program, the
+   *  tested trigger for the Preview) — drives CHR-57 reactions. */
+  activeTriggers?: ReadonlySet<string> | null;
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
@@ -191,6 +195,7 @@ export function StageMonitor({
                       selectedLayerId={selectedLayerId}
                       uiScale={k > 0 ? 1 / k : 1}
                       replayToken={token}
+                      activeTriggers={activeTriggers}
                     />
                   );
                 })}

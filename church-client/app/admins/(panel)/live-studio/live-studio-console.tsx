@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle, AlertCircle, AlertTriangle, Square, Maximize } from "lucide-react";
 
@@ -1316,6 +1316,41 @@ export function LiveStudioConsole({
   // antenne). Assigned here, after the inputs' state exists.
   previewReplayInputs.current = { layers, sel: selectedLayerId, global: replayOnCut };
 
+  // CHR-57 — the TRIGGER sources currently on air. ANY source can be a trigger,
+  // each judged by its own "on air" condition: audio → diffused (audioLiveActive);
+  // bible → a diffused verse (`live` + `bibleOnAir`); every other (visual) source
+  // → simply visible in the program (and not blacked out). Memoised so the
+  // broadcast effect only re-runs when the on-air set actually changes.
+  const onAirTriggerIds = useMemo(() => {
+    const s = new Set<string>();
+    if (programBlack) return s;
+    for (const l of programLayers) {
+      if (l.type === "audio") {
+        if (l.audioLiveActive) s.add(l.id);
+        continue;
+      }
+      if (!l.visible) continue;
+      if (l.type === "bible") {
+        if (live && l.bibleOnAir !== false) s.add(l.id);
+      } else {
+        s.add(l.id);
+      }
+    }
+    return s;
+    // `live` presence (not identity) is what matters for the bible gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programLayers, programBlack, !!live]);
+
+  // Preview "Tester la réaction": the id of the layer whose reaction is being
+  // simulated in the Preview; the preview then treats that layer's trigger as
+  // active (no CUT required).
+  const [testReactionId, setTestReactionId] = useState<string | null>(null);
+  const previewTestTriggers = useMemo(() => {
+    if (!testReactionId) return null;
+    const l = layers.find((x) => x.id === testReactionId);
+    return l?.reactTo ? new Set([l.reactTo]) : new Set<string>();
+  }, [testReactionId, layers]);
+
   // Cameras whose getUserMedia stream must stay alive: the union of the on-air
   // (program) cameras and the current preview scene's cameras — program first so a
   // shared id keeps the antenne stream. Owned off-screen by <CameraKeepAlive> so an
@@ -1333,6 +1368,7 @@ export function LiveStudioConsole({
     bibleStyle: onAirSettings,
     animNonce: programAnimNonce,
     replaySet: programReplay,
+    activeTriggers: onAirTriggerIds,
     composition,
     output,
   });
@@ -1760,10 +1796,15 @@ export function LiveStudioConsole({
   const confirmDeleteLayer = () => {
     if (!pendingDeleteId) return;
     const removed = layers.find((l) => l.id === pendingDeleteId);
-    setLayers((ls) => ls.filter((l) => l.id !== pendingDeleteId));
+    // Drop the layer AND any reaction link pointing at it (CHR-57) so a dangling
+    // reactTo can't reference a gone trigger.
+    const dropReactLink = (l: StudioLayer): StudioLayer =>
+      l.reactTo === pendingDeleteId ? { ...l, reactTo: undefined } : l;
+    setLayers((ls) => ls.filter((l) => l.id !== pendingDeleteId).map(dropReactLink));
     // Also pull it OFF AIR: a source that was cut to the antenne must leave the
     // program snapshot too, otherwise it keeps being diffused after deletion.
-    setProgramLayers((pls) => pls.filter((l) => l.id !== pendingDeleteId));
+    setProgramLayers((pls) => pls.filter((l) => l.id !== pendingDeleteId).map(dropReactLink));
+    if (testReactionId === pendingDeleteId) setTestReactionId(null);
     setProgramReplay((set) => {
       if (!set.has(pendingDeleteId)) return set;
       const next = new Set(set);
@@ -2223,6 +2264,7 @@ export function LiveStudioConsole({
               onFullscreen={() => setShowFullscreenPreview(true)}
               animNonce={animNonce}
               tokens={previewTokens}
+              activeTriggers={previewTestTriggers}
               compositionWidth={composition.width}
               compositionHeight={composition.height}
             />
@@ -2255,6 +2297,7 @@ export function LiveStudioConsole({
           black={programBlack}
           animNonce={programAnimNonce}
           tokens={programTokens}
+          activeTriggers={onAirTriggerIds}
           compositionWidth={composition.width}
           compositionHeight={composition.height}
         />
@@ -2299,6 +2342,10 @@ export function LiveStudioConsole({
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
           replayOnCutGlobal={replayOnCut}
+          reactionTestActive={!!selectedLayerId && testReactionId === selectedLayerId}
+          onToggleReactionTest={() =>
+            setTestReactionId((id) => (id === selectedLayerId ? null : selectedLayerId))
+          }
           bible={bibleInspectorProps}
           presets={presets}
           newPresetName={newPresetName}

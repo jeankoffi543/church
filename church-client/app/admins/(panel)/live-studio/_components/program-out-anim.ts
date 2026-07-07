@@ -20,7 +20,7 @@ import {
 type Cubic = [number, number, number, number];
 
 /** Cubic-bezier easing evaluator (Newton-Raphson on x, like CSS timing). */
-function cubicBezier([x1, y1, x2, y2]: Cubic): (t: number) => number {
+export function cubicBezier([x1, y1, x2, y2]: Cubic): (t: number) => number {
   if (x1 === y1 && x2 === y2) return (t) => t; // linear
   const ax = 3 * x1 - 3 * x2 + 1;
   const bx = 3 * x2 - 6 * x1;

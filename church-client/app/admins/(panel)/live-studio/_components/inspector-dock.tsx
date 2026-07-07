@@ -36,6 +36,8 @@ import {
   Radio,
   Lock,
   Check,
+  Crosshair,
+  Link2,
 } from "lucide-react";
 
 import { importStudioMediaFromUrl } from "@/lib/admin-api";
@@ -73,7 +75,7 @@ import {
   type AnimEffect,
   type AnimSourceKind,
 } from "@/lib/studio-animations";
-import { LAYER_META, layerTabs, type InspTab, type StudioLayer, type StudioLayerType } from "./studio-layers";
+import { LAYER_META, layerTabs, pickReactionStyle, type InspTab, type StudioLayer, type StudioLayerType } from "./studio-layers";
 
 const TYPE_ICON: Record<StudioLayerType, typeof BookOpen> = {
   bible: BookOpen,
@@ -129,6 +131,7 @@ const TAB_LABELS: Record<InspTab, string> = {
   typo: "Typo",
   container: "Cadre",
   anim: "Anim",
+  reaction: "Réaction",
   presets: "Presets",
 };
 
@@ -175,6 +178,8 @@ export function InspectorDock({
   onRestoreDefaults,
   onPlayAnim,
   replayOnCutGlobal = true,
+  reactionTestActive = false,
+  onToggleReactionTest,
   allLayers,
   onAddChild,
   onSelectLayer,
@@ -199,6 +204,9 @@ export function InspectorDock({
   onPlayAnim?: () => void;
   /** Global "Animer à chaque CUT" default, shown as what "Auto" resolves to. */
   replayOnCutGlobal?: boolean;
+  /** CHR-57 — whether the preview is currently simulating this layer's reaction. */
+  reactionTestActive?: boolean;
+  onToggleReactionTest?: () => void;
   /** Full scene layer list — the group inspector derives its flat children. */
   allLayers?: StudioLayer[];
   onAddChild?: (type: StudioLayerType, parentId: string) => void;
@@ -332,6 +340,16 @@ export function InspectorDock({
                 replayMode={selectedLayer.replayOnCut ?? "auto"}
                 onReplayModeChange={(m) => patchLayerData({ replayOnCut: m })}
                 replayGlobalDefault={replayOnCutGlobal}
+              />
+            )}
+            {activeTab === "reaction" && (
+              <ReactionPanel
+                layer={selectedLayer}
+                effectiveStyle={effectiveStyle}
+                allLayers={allLayers ?? []}
+                patch={patchLayerData}
+                testActive={reactionTestActive}
+                onToggleTest={onToggleReactionTest}
               />
             )}
             {activeTab === "presets" && (
@@ -2737,6 +2755,147 @@ function AnimPanel({
         />
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
+    </>
+  );
+}
+
+/* ─────────────────────────── Réaction (CHR-57) ─────────────────────────── */
+
+/**
+ * Inter-source reaction: while a chosen TRIGGER source is on air, this (target)
+ * source transitions to a captured pose (position/size/shape/frame) and back.
+ * The pose is authored by "capturing" the source's current geometry.
+ */
+function ReactionPanel({
+  layer,
+  effectiveStyle,
+  allLayers,
+  patch,
+  testActive,
+  onToggleTest,
+}: {
+  layer: StudioLayer;
+  effectiveStyle: StudioSettings;
+  allLayers: StudioLayer[];
+  patch: Patch;
+  testActive: boolean;
+  onToggleTest?: () => void;
+}) {
+  // Candidate triggers: ANY other source in the scene (bible / camera / video /
+  // image / text / song / embed / group — and audio, which triggers on its
+  // "diffusé à l'antenne" state). Only itself is excluded.
+  const triggers = allLayers.filter((l) => l.id !== layer.id);
+  const trigger = allLayers.find((l) => l.id === layer.reactTo) ?? null;
+  const hasReaction = !!layer.reactStyle;
+
+  return (
+    <>
+      <StickyBar>
+        <Label className="mb-1.5 flex items-center gap-1.5">
+          <Link2 className="size-3.5 text-studio-purple" />
+          Réagir à une source (déclencheur)
+        </Label>
+        <Select
+          value={layer.reactTo ?? ""}
+          onValueChange={(v) => patch({ reactTo: v || undefined })}
+          className={FIELD}
+        >
+          <option value="" className="bg-studio-field">
+            Aucun déclencheur
+          </option>
+          {triggers.map((t) => (
+            <option key={t.id} value={t.id} className="bg-studio-field">
+              {t.name} · {LAYER_META[t.type].label}
+            </option>
+          ))}
+        </Select>
+      </StickyBar>
+
+      {!layer.reactTo ? (
+        <div className="rounded-[10px] border border-white/8 bg-black/[0.18] px-3 py-2.5 text-[11px] leading-relaxed text-white/55">
+          Choisis une source <b>déclencheur</b>. Quand elle passe à l&apos;antenne, cette source
+          basculera en douceur vers une <b>pose de réaction</b> (position, taille, forme, cadre),
+          puis reviendra à la normale quand le déclencheur quitte l&apos;antenne. Ex. : le verset
+          apparaît → la caméra du pasteur se décale et rétrécit.
+        </div>
+      ) : (
+        <>
+          <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-3 text-[11px] leading-relaxed text-white/55">
+            <p className="m-0 mb-1.5 font-bold text-white/70">Définir la pose de réaction</p>
+            <ol className="m-0 list-decimal space-y-1 pl-4">
+              <li>
+                Place / redimensionne cette source (dans l&apos;aperçu) là où elle doit aller quand
+                «&nbsp;{trigger?.name ?? "…"}&nbsp;» est à l&apos;antenne.
+              </li>
+              <li>Clique «&nbsp;Capturer l&apos;état réaction&nbsp;».</li>
+              <li>Remets-la à sa position normale (elle y restera par défaut).</li>
+            </ol>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => patch({ reactStyle: pickReactionStyle(effectiveStyle) })}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/35 bg-studio-purple/12 py-2.5 text-[11.5px] font-bold text-studio-purple transition hover:bg-studio-purple/25"
+          >
+            <Crosshair className="size-3.5" />
+            Capturer l&apos;état réaction (pose actuelle)
+          </button>
+
+          <div className="flex items-center justify-between rounded-[9px] border border-white/8 bg-black/[0.18] px-3 py-2 text-[11px]">
+            <span className="text-white/55">Pose de réaction</span>
+            <span
+              className={cn(
+                "font-bold",
+                hasReaction ? "text-studio-preview-bright" : "text-white/35",
+              )}
+            >
+              {hasReaction ? "définie ✓" : "non définie"}
+            </span>
+          </div>
+
+          {hasReaction && (
+            <>
+              <div>
+                <SliderLabel
+                  label="Durée de transition"
+                  value={`${layer.reactTransitionMs ?? 600}ms`}
+                />
+                <Slider
+                  min={100}
+                  max={2000}
+                  step={50}
+                  value={layer.reactTransitionMs ?? 600}
+                  onValueChange={(v) => patch({ reactTransitionMs: v })}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={onToggleTest}
+                title="Simuler la réaction dans l'aperçu (le déclencheur n'a pas besoin d'être à l'antenne)"
+                className={cn(
+                  "flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-[11.5px] font-bold transition",
+                  testActive
+                    ? "border-studio-preview/50 bg-studio-preview/15 text-studio-preview-bright"
+                    : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white",
+                )}
+              >
+                <Play className="size-3.5 fill-current" />
+                {testActive ? "Arrêter le test" : "Tester la réaction (aperçu)"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => patch({ reactStyle: undefined })}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] py-2 text-[11px] font-bold text-white/50 transition hover:text-white"
+              >
+                <Trash2 className="size-3.5" />
+                Effacer la pose de réaction
+              </button>
+            </>
+          )}
+        </>
+      )}
     </>
   );
 }
