@@ -174,6 +174,7 @@ export function InspectorDock({
   onDeletePreset,
   onRestoreDefaults,
   onPlayAnim,
+  replayOnCutGlobal = true,
   allLayers,
   onAddChild,
   onSelectLayer,
@@ -196,6 +197,8 @@ export function InspectorDock({
   onDeletePreset: (name: string) => void;
   onRestoreDefaults?: () => void;
   onPlayAnim?: () => void;
+  /** Global "Animer à chaque CUT" default, shown as what "Auto" resolves to. */
+  replayOnCutGlobal?: boolean;
   /** Full scene layer list — the group inspector derives its flat children. */
   allLayers?: StudioLayer[];
   onAddChild?: (type: StudioLayerType, parentId: string) => void;
@@ -326,6 +329,9 @@ export function InspectorDock({
                 setStudioField={patchStyleField}
                 onPlayAnim={onPlayAnim}
                 layerType={selectedLayer.type}
+                replayMode={selectedLayer.replayOnCut ?? "auto"}
+                onReplayModeChange={(m) => patchLayerData({ replayOnCut: m })}
+                replayGlobalDefault={replayOnCutGlobal}
               />
             )}
             {activeTab === "presets" && (
@@ -2550,11 +2556,19 @@ function AnimPanel({
   setStudioField,
   onPlayAnim,
   layerType,
+  replayMode,
+  onReplayModeChange,
+  replayGlobalDefault,
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
   onPlayAnim?: () => void;
   layerType: StudioLayerType;
+  /** This source's cut-replay override. */
+  replayMode: "auto" | "always" | "never";
+  onReplayModeChange: (m: "auto" | "always" | "never") => void;
+  /** What "Auto" currently resolves to (the global toggle). */
+  replayGlobalDefault: boolean;
 }) {
   const kind = layerType as AnimSourceKind; // "audio" never gets an Anim tab
   const [cat, setCat] = useState<"all" | AnimCategoryId>("all");
@@ -2562,6 +2576,14 @@ function AnimPanel({
   const current = getAnimEffect(settings.animation);
   const currentAvailable = current.availableFor(kind);
   const effects = ANIM_EFFECTS.filter((e) => cat === "all" || animInCategory(e, cat));
+  // The bible re-animates on a verse change, not on a plain re-CUT — the cut
+  // control is meaningless for it, so it's hidden there.
+  const showReplayControl = layerType !== "bible";
+  const replayModes: { id: "auto" | "always" | "never"; label: string }[] = [
+    { id: "auto", label: "Auto" },
+    { id: "always", label: "Toujours" },
+    { id: "never", label: "Jamais" },
+  ];
 
   return (
     <>
@@ -2625,6 +2647,40 @@ function AnimPanel({
           />
         ))}
       </div>
+
+      {showReplayControl && (
+        <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <Label className="mb-0">Rejouer à l&apos;antenne (CUT)</Label>
+          </div>
+          <div className="flex gap-1">
+            {replayModes.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onReplayModeChange(m.id)}
+                className={cn(
+                  "flex-1 rounded-[7px] border px-1 py-1.5 text-[10.5px] font-bold transition",
+                  replayMode === m.id
+                    ? "border-studio-purple/60 bg-studio-purple/15 text-studio-purple"
+                    : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[10px] leading-snug text-white/40">
+            {replayMode === "always"
+              ? "Rejoue l'animation à chaque passage à l'antenne."
+              : replayMode === "never"
+                ? "Ne rejoue jamais au CUT (s'anime seulement à la 1re apparition)."
+                : `Suit le réglage global « Animer à chaque CUT » (actuellement : ${
+                    replayGlobalDefault ? "activé — rejoue" : "désactivé — ne rejoue pas"
+                  }).`}
+          </div>
+        </div>
+      )}
 
       <div>
         <SliderLabel

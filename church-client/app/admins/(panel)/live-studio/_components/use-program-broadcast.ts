@@ -63,7 +63,7 @@ export function useProgramBroadcast({
   bibleVerse,
   bibleStyle,
   animNonce,
-  replayOnCut = true,
+  replaySet = null,
   composition,
   output,
   autoResume = true,
@@ -73,8 +73,8 @@ export function useProgramBroadcast({
   bibleStyle: StudioSettings;
   /** Program animation nonce — bumps on CUT / advance / on-air edit to replay entrances. */
   animNonce: number;
-  /** Operator filter: when false, a CUT doesn't replay non-bible entrances. */
-  replayOnCut?: boolean;
+  /** Layer ids that replay on a CUT (frozen at cut time); null = replay all. */
+  replaySet?: ReadonlySet<string> | null;
   /** Logical composition (OBS base canvas) the layer styles are authored in. */
   composition: { width: number; height: number };
   /** Broadcast canvas resolution + framerate (OBS output). */
@@ -94,7 +94,7 @@ export function useProgramBroadcast({
   const layersRef = useRef(layers);
   const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
   const animRef = useRef(animNonce);
-  const replayRef = useRef(replayOnCut);
+  const replayRef = useRef<ReadonlySet<string> | null>(replaySet);
   const resumedRef = useRef(false);
 
   const broadcasting = whipState !== "idle";
@@ -180,14 +180,14 @@ export function useProgramBroadcast({
   }
 
   // Keep the compositor scene + on-air verse in sync (animNonce replays entrances,
-  // filtered by replayOnCut).
+  // filtered by the frozen replaySet).
   useEffect(() => {
     layersRef.current = layers;
     bibleRef.current = { verse: bibleVerse, style: bibleStyle };
     animRef.current = animNonce;
-    replayRef.current = replayOnCut;
-    outRef.current?.setScene(layers, bibleRef.current, animNonce, replayOnCut);
-  }, [layers, bibleVerse, bibleStyle, animNonce, replayOnCut]);
+    replayRef.current = replaySet;
+    outRef.current?.setScene(layers, bibleRef.current, animNonce, replaySet);
+  }, [layers, bibleVerse, bibleStyle, animNonce, replaySet]);
 
   // On mount, resume a broadcast a page refresh interrupted (it lives in the tab).
   useEffect(() => {

@@ -41,7 +41,7 @@ export function StageMonitor({
   onFullscreen,
   black = false,
   animNonce = 0,
-  replayOnNonce = true,
+  replaySet = null,
   compositionWidth = 1920,
   compositionHeight = 1080,
   className,
@@ -61,10 +61,12 @@ export function StageMonitor({
   black?: boolean;
   /** Bumping this replays the entrance animations (remounts the layers). */
   animNonce?: number;
-  /** When false, a nonce bump (CUT) does NOT replay non-bible entrances — the
-   *  bible still re-animates on a verse change. The Preview passes true (the
-   *  operator's own replay); the Program passes the operator's cut filter. */
-  replayOnNonce?: boolean;
+  /** Which layer ids replay on a nonce bump (CUT). `null` = every layer replays
+   *  (the Preview, where the operator's own nonce drives replays). A Set = only
+   *  those ids replay (the Program: the cut-replay decision FROZEN at CUT time,
+   *  so toggling a setting between cuts can't retroactively re-trigger). The
+   *  bible always replays (verse-change), independent of this set. */
+  replaySet?: ReadonlySet<string> | null;
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
@@ -157,22 +159,27 @@ export function StageMonitor({
                   const z = visible.length - idx;
                   const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
                   // Camera/video/embed keep a STABLE key so an animation replay
-                  // (animNonce bump) doesn't remount them — a camera remount
+                  // (token change) doesn't remount them — a camera remount
                   // re-runs getUserMedia (black flash), a video reloads and an
                   // embed iframe reconnects. They replay their entrance
-                  // IMPERATIVELY instead (CompositeLayer's animNonce effect).
-                  // Text/image/bible DO remount so they replay declaratively.
+                  // IMPERATIVELY instead (CompositeLayer's replayToken effect).
+                  // Text/image/song/group DO remount so they replay declaratively.
                   const stableKey =
                     layer.type === "camera" || layer.type === "video" || layer.type === "embed";
-                  // Nonce-keyed remount = replay on CUT. The bible always keeps it
-                  // (verse-change replay); other non-stable layers keep it only
-                  // when the operator's cut-replay filter is on — otherwise a
-                  // stable key means they animate on appearance but not on re-CUT.
-                  const nonceKey = layer.type === "bible" || replayOnNonce;
+                  // The per-layer replay TOKEN: it advances (→ remount / imperative
+                  // replay) only when this layer should replay on the current nonce
+                  // — the bible always (verse-change), others per the frozen
+                  // replaySet (null = replay all, the Preview). A layer NOT due to
+                  // replay keeps token 0: it still animates on FIRST mount
+                  // (appearance) but a re-CUT (nonce bump) leaves the token
+                  // untouched, so nothing re-triggers.
+                  const replays =
+                    layer.type === "bible" || !replaySet || replaySet.has(layer.id);
+                  const token = replays ? animNonce : 0;
 
                   return (
                     <CompositeLayer
-                      key={stableKey || !nonceKey ? layer.id : `${layer.id}-${animNonce}`}
+                      key={stableKey ? layer.id : `${layer.id}-${token}`}
                       layer={effective}
                       verse={layer.type === "bible" ? bibleVerse : undefined}
                       z={z}
@@ -185,8 +192,7 @@ export function StageMonitor({
                       allLayers={layers}
                       selectedLayerId={selectedLayerId}
                       uiScale={k > 0 ? 1 / k : 1}
-                      animNonce={animNonce}
-                      replayOnNonce={replayOnNonce}
+                      replayToken={token}
                     />
                   );
                 })}

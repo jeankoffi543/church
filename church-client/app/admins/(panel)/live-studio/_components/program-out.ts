@@ -233,13 +233,14 @@ export type ProgramOut = {
   /** The backing canvas (handy to mirror the outgoing feed in a preview). */
   readonly canvas: HTMLCanvasElement;
   /** Update the composited scene (ordered bottom→top) + the on-air bible verse.
-   *  `replayOnCut` (default true) gates whether a CUT (animNonce bump) replays
-   *  non-bible entrances — the bible always replays on a verse change. */
+   *  `replaySet` (default null = replay all) is the set of layer ids that replay
+   *  their entrance on a CUT (animNonce bump); a layer outside it still animates
+   *  on first appearance. The bible always replays on a verse change. */
   setScene: (
     layers: StudioLayer[],
     bible?: BibleContext,
     animNonce?: number,
-    replayOnCut?: boolean,
+    replaySet?: ReadonlySet<string> | null,
   ) => void;
   /** Tear down the loop, media elements and audio graph. */
   stop: () => void;
@@ -429,7 +430,12 @@ export function startProgramOut(opts?: {
     sources.delete(id);
   }
 
-  function setScene(layers: StudioLayer[], bible?: BibleContext, animNonce = 0, replayOnCut = true) {
+  function setScene(
+    layers: StudioLayer[],
+    bible?: BibleContext,
+    animNonce = 0,
+    replaySet: ReadonlySet<string> | null = null,
+  ) {
     scene = layers;
     bibleContext = bible ?? null;
     const live = new Set<string>();
@@ -461,20 +467,21 @@ export function startProgramOut(opts?: {
     // The bible is excluded: its on-air verse/style arrives a tick later (async
     // pushLive), so a nonce-driven replay would play the PREVIOUS verse first —
     // it re-triggers on the verse change (bibleSig) below instead.
-    // `replayOnCut` (operator filter) gates the CUT-replay of non-bible
-    // entrances; when off, sources still animate on first APPEARANCE (animStart
-    // above) but a re-CUT of the same scene doesn't re-trigger them.
-    if (replayOnCut && animNonce !== lastAnimNonce) {
+    // On a CUT (nonce bump) replay the entrance ONLY for the layers in the frozen
+    // replaySet (null = all). Layers outside it still animate on first APPEARANCE
+    // (animStart above) but a re-CUT of the same scene doesn't re-trigger them.
+    if (animNonce !== lastAnimNonce) {
       lastAnimNonce = animNonce;
       for (const id of present) {
-        // Camera/video now replay their entrance too (CHR-56 — parity with the
-        // DOM's imperative replay): the transform is purely visual and never
-        // touches el.currentTime, so playback is undisturbed. The bible is still
-        // excluded — its on-air verse/style arrives a tick later (async
-        // pushLive), so a nonce replay would flash the PREVIOUS verse; it
-        // re-triggers on the verse change (bibleSig) below instead.
+        // Camera/video replay their entrance too (CHR-56 — parity with the DOM's
+        // imperative replay): the transform is purely visual and never touches
+        // el.currentTime, so playback is undisturbed. The bible is excluded — its
+        // on-air verse/style arrives a tick later (async pushLive), so a nonce
+        // replay would flash the PREVIOUS verse; it re-triggers on the verse
+        // change (bibleSig) below instead.
         const t = layers.find((x) => x.id === id)?.type;
         if (t === "bible") continue;
+        if (replaySet && !replaySet.has(id)) continue;
         animStart.set(id, now);
       }
     }

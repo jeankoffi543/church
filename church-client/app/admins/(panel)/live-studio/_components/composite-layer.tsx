@@ -90,8 +90,7 @@ export function CompositeLayer({
   allLayers = [],
   selectedLayerId = null,
   uiScale = 1,
-  animNonce = 0,
-  replayOnNonce = true,
+  replayToken = 0,
 }: {
   layer: StudioLayer;
   verse?: ScriptureVerse | null;
@@ -110,14 +109,13 @@ export function CompositeLayer({
    *  monitor renders in composition px, so selection rings / resize handles are
    *  multiplied by this to stay a usable on-screen size. Never broadcast. */
   uiScale?: number;
-  /** Entrance-replay signal for the STABLE-key media types (camera / video /
-   *  embed). Text/image/bible replay by remounting on a nonce-keyed React key;
+  /** Per-layer entrance-replay signal for the STABLE-key media types (camera /
+   *  video / embed). Text/image replay by remounting on a token-keyed React key;
    *  media can't (that would re-`getUserMedia` / reload), so they replay
-   *  imperatively via animation controls when this changes. */
-  animNonce?: number;
-  /** When false, a nonce bump does NOT replay the stable-media entrance (the
-   *  operator's cut-replay filter) — they still animate on first mount. */
-  replayOnNonce?: boolean;
+   *  imperatively via animation controls when this token changes. The token
+   *  advances only on a CUT/preview where this layer is due to replay — NOT when
+   *  its animation SETTING changes — so picking an effect never fires it on air. */
+  replayToken?: number;
 }) {
   const isBg = isBackgroundLayer(layer);
   // Variants come from the SHARED effect registry (CHR-56): per-source
@@ -143,22 +141,15 @@ export function CompositeLayer({
   const mediaInitial = (variants.initial ?? {}) as TargetAndTransition;
   const mediaAnimate = (variants.animate ?? {}) as TargetAndTransition;
   const mediaExit = (variants.exit ?? {}) as TargetAndTransition;
-  // The cut-replay filter: when off, a nonce bump must NOT replay — so the
-  // effect ignores animNonce (fires on mount + on genuine style changes only).
-  const replayKey = replayOnNonce ? animNonce : 0;
+  // Replay ONLY when the token advances (a CUT/preview where this layer is due):
+  // it deliberately excludes the animation SETTING deps, so changing a camera's
+  // effect doesn't fire it on air — the change is picked up at the next replay.
   useEffect(() => {
     if (!isStableMedia) return;
     mediaControls.set(mediaInitial);
     void mediaControls.start(mediaAnimate);
-    // Re-run on effect / timing / easing / replay-nonce changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isStableMedia,
-    layer.style.animation,
-    layer.style.animDuration,
-    layer.style.animEasing,
-    replayKey,
-  ]);
+  }, [isStableMedia, replayToken]);
 
   const isSelectedChildsParent = selectedLayerId && allLayers.find((l) => l.id === selectedLayerId)?.parentId === layer.id;
   // Selection chrome as inline styles so it scales with `uiScale` (a class-based

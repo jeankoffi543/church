@@ -48,6 +48,7 @@ import { SettingsModal } from "./_components/settings-modal";
 import {
   createLayer,
   hasAudio,
+  replaysOnCut,
   type StudioLayer,
   type StudioLayerType,
   type StudioScene,
@@ -1249,6 +1250,11 @@ export function LiveStudioConsole({
     { id: "bible", type: "bible", name: "Verset biblique", visible: true, style: DEFAULT_STUDIO_SETTINGS },
   ]);
   const [programAnimNonce, setProgramAnimNonce] = useState(0);
+  // The set of on-air layer ids that replay their entrance on the CURRENT nonce,
+  // FROZEN at CUT time (computed in sendToProgram). Freezing it here — rather than
+  // deriving it live from the settings — is what stops a settings toggle from
+  // retroactively re-triggering an animation (only a CUT recomputes it).
+  const [programReplay, setProgramReplay] = useState<ReadonlySet<string>>(new Set());
 
   // Operator filter (CHR-56): replay entrance animations on every CUT to the
   // antenne, or only when a source first appears. Off = calmer air (a re-CUT of
@@ -1290,7 +1296,7 @@ export function LiveStudioConsole({
     bibleVerse: programBlack ? null : live,
     bibleStyle: onAirSettings,
     animNonce: programAnimNonce,
-    replayOnCut,
+    replaySet: programReplay,
     composition,
     output,
   });
@@ -1985,6 +1991,9 @@ export function LiveStudioConsole({
       })),
     );
     setProgramSceneId(currentSceneId);
+    // Freeze which sources replay on THIS cut (per-source override, else the
+    // global default) so a later settings toggle can't retroactively re-trigger.
+    setProgramReplay(new Set(layers.filter((l) => replaysOnCut(l, replayOnCut)).map((l) => l.id)));
     setProgramAnimNonce((n) => n + 1);
     const bibleOnAir =
       layers.some((l) => l.type === "bible" && l.visible && l.bibleOnAir !== false) && !!preview;
@@ -2189,7 +2198,7 @@ export function LiveStudioConsole({
           sceneName={scenes.find((s) => s.id === programSceneId)?.name ?? "Antenne"}
           black={programBlack}
           animNonce={programAnimNonce}
-          replayOnNonce={replayOnCut}
+          replaySet={programReplay}
           compositionWidth={composition.width}
           compositionHeight={composition.height}
         />
@@ -2233,6 +2242,7 @@ export function LiveStudioConsole({
           onImageUrl={onImageUrl}
           onRestoreDefaults={restoreLayerDefaults}
           onPlayAnim={playAnim}
+          replayOnCutGlobal={replayOnCut}
           bible={bibleInspectorProps}
           presets={presets}
           newPresetName={newPresetName}

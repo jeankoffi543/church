@@ -155,8 +155,8 @@ export function ControlsDock({
           onClick={onToggleReplayOnCut}
           title={
             replayOnCut
-              ? "Chaque passage à l'antenne rejoue les animations d'apparition des sources."
-              : "Les sources s'animent seulement à leur première apparition — un nouveau CUT ne rejoue pas (la bible s'anime toujours au changement de verset)."
+              ? "Défaut : chaque CUT rejoue l'animation des sources réglées sur « Auto ». Réglable par source dans l'onglet Anim."
+              : "Défaut : les sources « Auto » s'animent seulement à leur première apparition. Une source peut forcer « Toujours » dans l'onglet Anim. La bible s'anime au changement de verset."
           }
           className="flex items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-colors hover:border-studio-purple/45"
         >
@@ -164,7 +164,7 @@ export function ControlsDock({
           <span className="flex-1">
             <span className="block text-[12px] font-bold text-white">Animer à chaque CUT</span>
             <span className="block text-[9.5px] text-white/45">
-              {replayOnCut ? "Rejoue les entrées à l'antenne" : "Seulement à la 1re apparition"}
+              {replayOnCut ? "Défaut : rejoue à l'antenne" : "Défaut : 1re apparition seule"}
             </span>
           </span>
           <span
