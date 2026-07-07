@@ -46,6 +46,11 @@ export type StudioLayer = {
   /** Bible only: when false the bible keeps showing in the PREVIEW but is
    *  excluded from the antenne/diffusion (CUT sends it hidden). Default true. */
   bibleOnAir?: boolean;
+  /** Per-source cut-replay override (CHR-56). "auto" (default) follows the
+   *  global "Animer à chaque CUT" toggle; "always"/"never" force it for this
+   *  source. A source always animates on its FIRST appearance regardless — this
+   *  only governs replaying on a re-CUT of the same scene. */
+  replayOnCut?: "auto" | "always" | "never";
   // song stanzas (feature/CHR-39)
   stanzas?: Array<{ name: string; content: string }>;
   activeStanzaIndex?: number;
@@ -70,6 +75,18 @@ export type StudioLayer = {
   // video transport (video source)
   loop?: boolean;
 };
+
+/**
+ * Whether a source replays its entrance on a re-CUT (CHR-56). Per-source
+ * override wins; "auto" follows the global default. The bible is never in this
+ * set — it re-animates on a VERSE change, not on a plain re-CUT. First-appearance
+ * animations are unaffected (a source always animates when it first goes on air).
+ */
+export function replaysOnCut(l: StudioLayer, globalDefault: boolean): boolean {
+  if (l.type === "bible") return false;
+  const mode = l.replayOnCut ?? "auto";
+  return mode === "always" ? true : mode === "never" ? false : globalDefault;
+}
 
 /** Sources that carry an audio channel shown in the mixer. */
 export function hasAudio(l: StudioLayer): boolean {
@@ -182,9 +199,11 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
   }
   if (type === "embed" || type === "video" || type === "camera") {
     // A movable / resizable video window (PiP-style); set it full-frame via the
-    // "Plein écran" layout preset.
+    // "Plein écran" layout preset. Default to NO entrance so a live camera never
+    // fades on a CUT — the operator opts into an effect in the Anim tab (CHR-56).
     return {
       ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
       containerShape: "transparent",
       positionMode: "custom",
       customX: 8,

@@ -41,6 +41,7 @@ export function StageMonitor({
   onFullscreen,
   black = false,
   animNonce = 0,
+  tokens = null,
   compositionWidth = 1920,
   compositionHeight = 1080,
   className,
@@ -58,8 +59,14 @@ export function StageMonitor({
   onLayerSelect?: (id: string) => void;
   onFullscreen?: () => void;
   black?: boolean;
-  /** Bumping this replays the entrance animations (remounts the layers). */
+  /** Replays the bible's entrance (verse-change); non-bible layers use `tokens`. */
   animNonce?: number;
+  /** Per-source replay tokens: a layer replays (remounts / imperative-replay)
+   *  exactly when ITS token changes. The console advances a source's token only
+   *  when that source is due to replay (a CUT/preview action AND its "Rejouer au
+   *  CUT" setting), so a source that leaves the replay set keeps its token and is
+   *  never spuriously re-triggered. `null` = every layer replays on `animNonce`. */
+  tokens?: Record<string, number> | null;
   /** Logical composition (OBS base canvas) the layers are laid out in. */
   compositionWidth?: number;
   compositionHeight?: number;
@@ -151,14 +158,26 @@ export function StageMonitor({
                 {visible.map((layer, idx) => {
                   const z = visible.length - idx;
                   const effective = layer.type === "bible" ? { ...layer, style: bibleStyle } : layer;
-                  // Camera/video keep a STABLE key so an animation replay (animNonce bump)
-                  // doesn't remount them — a camera remount re-runs getUserMedia (black
-                  // flash) and a video would reload. Images DO remount so they replay.
-                  const stableKey = layer.type === "camera" || layer.type === "video";
+                  // Camera/video/embed keep a STABLE key so an animation replay
+                  // (token change) doesn't remount them — a camera remount
+                  // re-runs getUserMedia (black flash), a video reloads and an
+                  // embed iframe reconnects. They replay their entrance
+                  // IMPERATIVELY instead (CompositeLayer's replayToken effect).
+                  // Text/image/song/group DO remount so they replay declaratively.
+                  const stableKey =
+                    layer.type === "camera" || layer.type === "video" || layer.type === "embed";
+                  // The per-layer replay TOKEN: the bible tracks animNonce
+                  // (verse-change); every other layer uses its own token, which
+                  // the console advances only when that source is actually due to
+                  // replay. `tokens == null` means "replay all on animNonce" (the
+                  // Preview fallback). A layer still animates on FIRST mount
+                  // regardless; the token only governs RE-triggers.
+                  const token =
+                    layer.type === "bible" || !tokens ? animNonce : (tokens[layer.id] ?? 0);
 
                   return (
                     <CompositeLayer
-                      key={stableKey ? layer.id : `${layer.id}-${animNonce}`}
+                      key={stableKey ? layer.id : `${layer.id}-${token}`}
                       layer={effective}
                       verse={layer.type === "bible" ? bibleVerse : undefined}
                       z={z}
@@ -171,6 +190,7 @@ export function StageMonitor({
                       allLayers={layers}
                       selectedLayerId={selectedLayerId}
                       uiScale={k > 0 ? 1 / k : 1}
+                      replayToken={token}
                     />
                   );
                 })}

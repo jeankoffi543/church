@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import {
   Sparkles,
   Search,
@@ -33,6 +34,8 @@ import {
   Film,
   Folder,
   Radio,
+  Lock,
+  Check,
 } from "lucide-react";
 
 import { importStudioMediaFromUrl } from "@/lib/admin-api";
@@ -56,10 +59,20 @@ import {
   PREDEFINED_POSITIONS,
   CONTAINER_SHAPES,
   BORDER_STYLES,
-  ANIM_OPTIONS,
-  EASING_OPTIONS,
   TYPO_ELEMENTS,
 } from "./studio-tokens";
+import {
+  ANIM_CATEGORIES,
+  ANIM_EFFECTS,
+  animInCategory,
+  EASING_BEZIER,
+  EASING_MAP,
+  EASING_OPTIONS,
+  getAnimEffect,
+  type AnimCategoryId,
+  type AnimEffect,
+  type AnimSourceKind,
+} from "@/lib/studio-animations";
 import { LAYER_META, layerTabs, type InspTab, type StudioLayer, type StudioLayerType } from "./studio-layers";
 
 const TYPE_ICON: Record<StudioLayerType, typeof BookOpen> = {
@@ -161,6 +174,7 @@ export function InspectorDock({
   onDeletePreset,
   onRestoreDefaults,
   onPlayAnim,
+  replayOnCutGlobal = true,
   allLayers,
   onAddChild,
   onSelectLayer,
@@ -183,6 +197,8 @@ export function InspectorDock({
   onDeletePreset: (name: string) => void;
   onRestoreDefaults?: () => void;
   onPlayAnim?: () => void;
+  /** Global "Animer à chaque CUT" default, shown as what "Auto" resolves to. */
+  replayOnCutGlobal?: boolean;
   /** Full scene layer list — the group inspector derives its flat children. */
   allLayers?: StudioLayer[];
   onAddChild?: (type: StudioLayerType, parentId: string) => void;
@@ -308,7 +324,15 @@ export function InspectorDock({
               <ContainerPanel settings={effectiveStyle} setStudioField={patchStyleField} />
             )}
             {activeTab === "anim" && (
-              <AnimPanel settings={effectiveStyle} setStudioField={patchStyleField} onPlayAnim={onPlayAnim} />
+              <AnimPanel
+                settings={effectiveStyle}
+                setStudioField={patchStyleField}
+                onPlayAnim={onPlayAnim}
+                layerType={selectedLayer.type}
+                replayMode={selectedLayer.replayOnCut ?? "auto"}
+                onReplayModeChange={(m) => patchLayerData({ replayOnCut: m })}
+                replayGlobalDefault={replayOnCutGlobal}
+              />
             )}
             {activeTab === "presets" && (
               <PresetsPanel
@@ -2417,40 +2441,252 @@ function ContainerPanel({
   );
 }
 
-/* ─────────────────────────── Anim ─────────────────────────── */
+/* ─────────────────────────── Anim (CHR-56) ─────────────────────────── */
 
+/**
+ * One gallery card. The thumbnail is STATIC at rest (CHR-53 lesson: nothing may
+ * animate idly in the console) — hovering (re)mounts a motion glyph that plays
+ * the effect's REAL registry variants once; loop effects run only while
+ * hovered and unmount on leave. Unavailable effects (per-source condition) are
+ * greyed out with the reason.
+ */
+function EffectCard({
+  fx,
+  kind,
+  selected,
+  onSelect,
+}: {
+  fx: AnimEffect;
+  kind: AnimSourceKind;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const available = fx.availableFor(kind);
+  const [nonce, setNonce] = useState(0);
+  const [hover, setHover] = useState(false);
+
+  // The glyph previews with the variants a TEXT source would get — except the
+  // typewriter, shown as its image sweep (the char stagger lives in the layer).
+  const thumbKind: AnimSourceKind = fx.id === "typewriter" ? "image" : "text";
+  const glyphClass =
+    "flex h-7 w-12 items-center justify-center rounded-[6px] bg-gradient-to-br from-gold/80 to-studio-purple/80 text-[11px] font-extrabold text-[#160f33]";
+  const playing = hover && available && fx.id !== "none";
+
+  return (
+    <button
+      type="button"
+      disabled={!available}
+      onClick={onSelect}
+      onMouseEnter={() => {
+        setHover(true);
+        setNonce((n) => n + 1);
+      }}
+      onMouseLeave={() => setHover(false)}
+      title={available ? fx.hint : fx.unavailableHint || "Indisponible pour cette source."}
+      className={cn(
+        "group relative flex flex-col gap-1.5 rounded-[10px] border p-1.5 text-left transition",
+        selected
+          ? "border-studio-purple/70 bg-studio-purple/12"
+          : "border-white/8 bg-white/[0.03] hover:border-white/20",
+        !available && "cursor-not-allowed opacity-40 grayscale",
+      )}
+    >
+      <div className="relative grid h-12 place-items-center overflow-hidden rounded-[7px] bg-[#0a0613]">
+        {playing ? (
+          <motion.div
+            key={nonce}
+            variants={fx.dom(900, EASING_MAP["ease-out"], thumbKind)}
+            initial="initial"
+            animate="animate"
+            className={glyphClass}
+          >
+            Aa
+          </motion.div>
+        ) : (
+          <div className={glyphClass}>Aa</div>
+        )}
+        {fx.loop && (
+          <Repeat className="absolute right-1 bottom-1 size-2.5 text-white/40" strokeWidth={2.2} />
+        )}
+        {!available && (
+          <Lock className="absolute top-1 right-1 size-2.5 text-white/50" strokeWidth={2.2} />
+        )}
+        {selected && (
+          <span className="absolute top-1 left-1 grid size-3.5 place-items-center rounded-full bg-studio-purple">
+            <Check className="size-2.5 text-white" strokeWidth={3} />
+          </span>
+        )}
+      </div>
+      <span
+        className={cn(
+          "truncate text-[10px] leading-tight font-bold",
+          selected ? "text-studio-purple" : "text-white/75",
+        )}
+      >
+        {fx.label}
+      </span>
+    </button>
+  );
+}
+
+/** Mini SVG preview of the selected easing's cubic-bezier curve. */
+function EasingCurve({ easing }: { easing: string }) {
+  const [x1, y1, x2, y2] = EASING_BEZIER[easing] ?? EASING_BEZIER["ease-out"];
+  // Progress 0→1 maps to y 40→0 (overshoot curves like bounce exceed the top).
+  const d = `M 0 40 C ${x1 * 60} ${40 - y1 * 40}, ${x2 * 60} ${40 - y2 * 40}, 60 0`;
+  return (
+    <svg
+      viewBox="-3 -14 66 58"
+      className="h-[38px] w-[56px] shrink-0 rounded-md border border-white/8 bg-[#0a0613]"
+      aria-hidden
+    >
+      <line x1="0" y1="40" x2="60" y2="40" stroke="rgba(255,255,255,.12)" strokeWidth="1" />
+      <path d={d} fill="none" stroke="#e2b85f" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Anim tab v2 (CHR-56): a categorised effect gallery driven by the SHARED
+ * registry — what a card previews is literally what airs, and the per-source
+ * conditions grey out what the selected source can't do.
+ */
 function AnimPanel({
   settings,
   setStudioField,
   onPlayAnim,
+  layerType,
+  replayMode,
+  onReplayModeChange,
+  replayGlobalDefault,
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
   onPlayAnim?: () => void;
+  layerType: StudioLayerType;
+  /** This source's cut-replay override. */
+  replayMode: "auto" | "always" | "never";
+  onReplayModeChange: (m: "auto" | "always" | "never") => void;
+  /** What "Auto" currently resolves to (the global toggle). */
+  replayGlobalDefault: boolean;
 }) {
+  const kind = layerType as AnimSourceKind; // "audio" never gets an Anim tab
+  const [cat, setCat] = useState<"all" | AnimCategoryId>("all");
   const durLabel = settings.duration === 0 ? "Manuel" : `${settings.duration}s`;
+  const current = getAnimEffect(settings.animation);
+  const currentAvailable = current.availableFor(kind);
+  const effects = ANIM_EFFECTS.filter((e) => cat === "all" || animInCategory(e, cat));
+  // The bible re-animates on a verse change, not on a plain re-CUT — the cut
+  // control is meaningless for it, so it's hidden there.
+  const showReplayControl = layerType !== "bible";
+  const replayModes: { id: "auto" | "always" | "never"; label: string }[] = [
+    { id: "auto", label: "Auto" },
+    { id: "always", label: "Toujours" },
+    { id: "never", label: "Jamais" },
+  ];
+
   return (
     <>
       <StickyBar>
-        <Label className="mb-1.5">Effet d&apos;apparition</Label>
-        <Select
-          value={settings.animation}
-          onValueChange={(v) => {
-            setStudioField("animation", v as StudioSettings["animation"]);
-            setTimeout(() => onPlayAnim?.(), 50);
-          }}
-          className={FIELD}
-        >
-          {ANIM_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value} className="bg-studio-field">
-              {o.label}
-            </option>
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <Label className="mb-1.5">Effet d&apos;apparition</Label>
+            <div className="flex h-[30px] items-center gap-1.5 truncate rounded-lg border border-white/10 bg-studio-field px-2 text-[11.5px] font-bold text-white">
+              <span className="truncate">{current.label}</span>
+              {current.loop && <Repeat className="size-3 shrink-0 text-white/45" />}
+            </div>
+          </div>
+          {onPlayAnim && (
+            <button
+              type="button"
+              onClick={onPlayAnim}
+              title="Rejouer l'animation dans l'aperçu"
+              className="flex size-[30px] shrink-0 items-center justify-center rounded-lg border border-studio-purple/35 bg-studio-purple/12 text-studio-purple transition hover:bg-studio-purple/25"
+            >
+              <Play className="size-3.5 fill-current" />
+            </button>
+          )}
+        </div>
+        <div className="scrollbar-none -mx-1 mt-2 flex gap-1 overflow-x-auto px-1 pb-0.5">
+          {[{ id: "all" as const, label: "Tous" }, ...ANIM_CATEGORIES].map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCat(c.id as "all" | AnimCategoryId)}
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-[3px] text-[9.5px] font-bold whitespace-nowrap transition",
+                cat === c.id
+                  ? "border-studio-purple/50 bg-studio-purple/15 text-studio-purple"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:text-white",
+              )}
+            >
+              {c.label}
+            </button>
           ))}
-        </Select>
+        </div>
       </StickyBar>
 
+      {!currentAvailable && (
+        <div className="rounded-[9px] border border-studio-sandbox/30 bg-studio-sandbox/[0.08] px-2.5 py-2 text-[10.5px] leading-snug text-white/65">
+          « {current.label} » n&apos;est pas disponible pour cette source — elle s&apos;affiche
+          sans animation à l&apos;antenne. {current.unavailableHint}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {effects.map((fx) => (
+          <EffectCard
+            key={fx.id}
+            fx={fx}
+            kind={kind}
+            selected={settings.animation === fx.id}
+            onSelect={() => {
+              setStudioField("animation", fx.id);
+              setTimeout(() => onPlayAnim?.(), 50);
+            }}
+          />
+        ))}
+      </div>
+
+      {showReplayControl && (
+        <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <Label className="mb-0">Rejouer à l&apos;antenne (CUT)</Label>
+          </div>
+          <div className="flex gap-1">
+            {replayModes.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onReplayModeChange(m.id)}
+                className={cn(
+                  "flex-1 rounded-[7px] border px-1 py-1.5 text-[10.5px] font-bold transition",
+                  replayMode === m.id
+                    ? "border-studio-purple/60 bg-studio-purple/15 text-studio-purple"
+                    : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[10px] leading-snug text-white/40">
+            {replayMode === "always"
+              ? "Rejoue l'animation à chaque passage à l'antenne."
+              : replayMode === "never"
+                ? "Ne rejoue jamais au CUT (s'anime seulement à la 1re apparition)."
+                : `Suit le réglage global « Animer à chaque CUT » (actuellement : ${
+                    replayGlobalDefault ? "activé — rejoue" : "désactivé — ne rejoue pas"
+                  }).`}
+          </div>
+        </div>
+      )}
+
       <div>
-        <SliderLabel label="Durée de transition" value={`${settings.animDuration}ms`} />
+        <SliderLabel
+          label={current.loop ? "Vitesse du cycle" : "Durée de transition"}
+          value={`${settings.animDuration}ms`}
+        />
         <Slider
           min={100}
           max={2000}
@@ -2462,24 +2698,32 @@ function AnimPanel({
           onMouseUp={() => setTimeout(() => onPlayAnim?.(), 50)}
           onTouchEnd={() => setTimeout(() => onPlayAnim?.(), 50)}
         />
+        {current.loop && (
+          <div className="mt-1 text-[10px] text-white/35">
+            Effet en boucle : la durée règle la vitesse du cycle (période proportionnelle).
+          </div>
+        )}
       </div>
 
       <div>
         <Label className="mb-1.5">Courbe (easing)</Label>
-        <Select
-          value={settings.animEasing}
-          onValueChange={(v) => {
-            setStudioField("animEasing", v as StudioSettings["animEasing"]);
-            setTimeout(() => onPlayAnim?.(), 50);
-          }}
-          className={FIELD}
-        >
-          {EASING_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value} className="bg-studio-field">
-              {o.label}
-            </option>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={settings.animEasing}
+            onValueChange={(v) => {
+              setStudioField("animEasing", v as StudioSettings["animEasing"]);
+              setTimeout(() => onPlayAnim?.(), 50);
+            }}
+            className={FIELD}
+          >
+            {EASING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value} className="bg-studio-field">
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <EasingCurve easing={settings.animEasing} />
+        </div>
       </div>
 
       <div>
@@ -2493,17 +2737,6 @@ function AnimPanel({
         />
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
-
-      {onPlayAnim && (
-        <button
-          type="button"
-          onClick={onPlayAnim}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2.5 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
-        >
-          <Play className="size-3.5 fill-current" />
-          Aperçu de l&apos;animation
-        </button>
-      )}
     </>
   );
 }

@@ -80,28 +80,8 @@ export const BORDER_STYLES: {
   { value: "none", label: "Aucun" },
 ];
 
-export const ANIM_OPTIONS: { value: StudioSettings["animation"]; label: string }[] = [
-  { value: "none", label: "Aucune animation" },
-  { value: "clip_reveal", label: "Déploiement (clip)" },
-  { value: "fade_slide", label: "Fondu & glissement" },
-  { value: "scale", label: "Zoom" },
-  { value: "slide_left", label: "Glissement gauche" },
-  { value: "slide_right", label: "Glissement droite" },
-  { value: "neon_slide", label: "Néon glissé" },
-  { value: "typewriter", label: "Machine à écrire" },
-  { value: "scroll_left", label: "Défil. Horizontal (← Gauche)" },
-  { value: "scroll_right", label: "Défil. Horizontal (→ Droite)" },
-  { value: "scroll_up", label: "Défil. Vertical (↑ Haut)" },
-  { value: "scroll_down", label: "Défil. Vertical (↓ Bas)" },
-];
-
-export const EASING_OPTIONS: { value: StudioSettings["animEasing"]; label: string }[] = [
-  { value: "ease-out", label: "Ease-out" },
-  { value: "ease-in", label: "Ease-in" },
-  { value: "ease-in-out", label: "Ease-in-out" },
-  { value: "linear", label: "Linéaire" },
-  { value: "bounce", label: "Rebond" },
-];
+// The animation effects + easing options moved to the shared registry
+// (`lib/studio-animations.tsx`) — the Anim tab reads them from there (CHR-56).
 
 /** The inspector "Style Pro" tab ids, matching the orchestrator's `styleTab`. */
 export const STYLE_TABS: { id: "layout" | "typo" | "container" | "anim" | "presets"; label: string }[] = [

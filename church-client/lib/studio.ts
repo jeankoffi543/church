@@ -20,7 +20,63 @@ export type ScriptureVerse = {
 };
 
 export type StudioLayout = "lower_third" | "full_screen" | "sidebar";
-export type StudioAnimation = "none" | "fade_slide" | "typewriter" | "scale" | "neon_slide" | "slide_left" | "slide_right" | "clip_reveal" | "scroll_left" | "scroll_right" | "scroll_up" | "scroll_down";
+
+/**
+ * Every entrance/transition effect id. The single source of truth for labels,
+ * per-source availability and the DOM/canvas implementations is the registry in
+ * `lib/studio-animations.tsx` — add new ids HERE first, then register them there.
+ */
+export type StudioAnimation =
+  // Essentiels
+  | "none"
+  | "fade"
+  | "fade_slide"
+  | "scale"
+  | "zoom_out"
+  | "pop"
+  | "blur_in"
+  | "ripple"
+  // Glissements
+  | "slide_left"
+  | "slide_right"
+  | "slide_up"
+  | "slide_down"
+  | "drop_in"
+  | "neon_slide"
+  | "slide_blur_up"
+  | "roll_in_left"
+  // Rotations 2D / 360°
+  | "rotate_in"
+  | "spin_in"
+  | "swirl_in"
+  // 3D
+  | "flip_x"
+  | "flip_y"
+  | "door"
+  | "swing_in"
+  | "tilt_in"
+  | "spin3d_loop"
+  | "window_loop"
+  // Révélations
+  | "clip_reveal"
+  | "reveal_up"
+  | "reveal_down"
+  | "split_center"
+  | "wipe_left"
+  | "iris"
+  // Texte
+  | "typewriter"
+  | "scroll_left"
+  | "scroll_right"
+  | "scroll_up"
+  | "scroll_down"
+  // Boucles continues
+  | "rotate_loop"
+  | "pulse_loop"
+  | "float_loop"
+  | "sway_loop"
+  | "ripple_loop"
+  | "heartbeat_loop";
 
 export type StudioSettings = {
   layout: StudioLayout;
@@ -102,7 +158,7 @@ export type StudioSettings = {
 
   // Animations & Transitions
   animDuration: number; // ms
-  animEasing: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "bounce";
+  animEasing: "linear" | "ease-in" | "ease-out" | "ease-in-out" | "bounce" | "back-out";
 
   // Alignements
   textAlign?: "left" | "center" | "right";
