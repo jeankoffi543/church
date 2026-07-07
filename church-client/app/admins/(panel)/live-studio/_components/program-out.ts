@@ -29,10 +29,15 @@ import {
   drawScrollLayer,
   drawVideoFrame,
 } from "./program-out-text";
-import { computeEntrance, type AnimResult } from "./program-out-anim";
-import type { AnimSourceKind } from "@/lib/studio-animations";
+import { computeEntrance, cubicBezier, type AnimResult } from "./program-out-anim";
+import { EASING_BEZIER, type AnimSourceKind } from "@/lib/studio-animations";
 import { getVideoController } from "./studio-video";
-import { isBackgroundLayer, type ScriptureVerse, type StudioLayer } from "./studio-layers";
+import {
+  blendReactionStyles,
+  isBackgroundLayer,
+  type ScriptureVerse,
+  type StudioLayer,
+} from "./studio-layers";
 import type { StudioSettings } from "@/lib/studio";
 
 /** On-air bible verse + its style (owned by the console, not the layer). */
@@ -241,6 +246,7 @@ export type ProgramOut = {
     bible?: BibleContext,
     animNonce?: number,
     replaySet?: ReadonlySet<string> | null,
+    activeTriggers?: ReadonlySet<string> | null,
   ) => void;
   /** Tear down the loop, media elements and audio graph. */
   stop: () => void;
@@ -289,6 +295,11 @@ export function startProgramOut(opts?: {
   // The scene, ordered bottom→top, kept between frames.
   let scene: StudioLayer[] = [];
   let bibleContext: BibleContext = null;
+  // CHR-57 — the trigger ids currently on air, and each reacting layer's
+  // transition phase (target 0/1 + the blend value it started from) so the pose
+  // interpolates smoothly, even when the trigger flips mid-transition.
+  let activeTriggerIds: ReadonlySet<string> | null = null;
+  const reactPhase = new Map<string, { active: boolean; at: number; from: number }>();
   // When each layer entered the scene, to time its entrance animation.
   const animStart = new Map<string, number>();
   // The last on-air verse, so a new verse re-triggers the bible's entrance.
@@ -435,9 +446,11 @@ export function startProgramOut(opts?: {
     bible?: BibleContext,
     animNonce = 0,
     replaySet: ReadonlySet<string> | null = null,
+    activeTriggers: ReadonlySet<string> | null = null,
   ) {
     scene = layers;
     bibleContext = bible ?? null;
+    activeTriggerIds = activeTriggers;
     const live = new Set<string>();
     for (const layer of layers) {
       const d = drawableKey(layer);
@@ -496,6 +509,33 @@ export function startProgramOut(opts?: {
     lastBibleSig = bibleSig;
   }
 
+  // CHR-57 — the reaction blend (0 = base pose, 1 = reaction pose) for a layer,
+  // eased like the DOM CSS transition. Tracks each layer's phase so a trigger
+  // flip mid-transition continues smoothly from the current blend.
+  const easeReact = cubicBezier(EASING_BEZIER["ease-out"]);
+  function reactionBlend(layer: StudioLayer, now: number): number {
+    if (!layer.reactStyle) return 0;
+    const active = !!(layer.reactTo && activeTriggerIds?.has(layer.reactTo));
+    let ph = reactPhase.get(layer.id);
+    if (!ph) {
+      ph = { active, at: now, from: active ? 1 : 0 };
+      reactPhase.set(layer.id, ph);
+    }
+    const dur = Math.max(1, layer.reactTransitionMs ?? 600);
+    const cur = () => {
+      const p = easeReact(Math.min(1, (now - ph!.at) / dur));
+      const target = ph!.active ? 1 : 0;
+      return ph!.from + (target - ph!.from) * p;
+    };
+    if (ph.active !== active) {
+      const from = cur();
+      ph.active = active;
+      ph.at = now;
+      ph.from = from;
+    }
+    return cur();
+  }
+
   function drawFrame() {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
@@ -511,8 +551,17 @@ export function startProgramOut(opts?: {
       if (layer.parentId && hiddenGroups.has(layer.parentId)) continue;
 
       // The bible's real geometry + style is the on-air one, not the snapshot's.
-      const style = layer.type === "bible" ? bibleContext?.style : layer.style;
-      const b = layer.type === "bible" && style ? boxFromStyle(style) : layerBox(layer);
+      // CHR-57: blend in the reaction pose (position/size/shape/frame) if this
+      // layer reacts to a trigger that is on air — same easing as the DOM.
+      const rb = reactionBlend(layer, now);
+      const baseStyle = layer.type === "bible" ? bibleContext?.style : layer.style;
+      const style = baseStyle ? blendReactionStyles(baseStyle, layer.reactStyle, rb) : baseStyle;
+      const b =
+        layer.type === "bible" && style
+          ? boxFromStyle(style)
+          : isBackgroundLayer(layer)
+            ? { x: 0, y: 0, w: 1, h: 1 }
+            : boxFromStyle(style ?? layer.style);
       const box = { x: b.x * width, y: b.y * height, w: b.w * width, h: b.h * height };
 
       const src = sources.get(layer.id);
@@ -544,7 +593,7 @@ export function startProgramOut(opts?: {
               src.el.naturalWidth,
               src.el.naturalHeight,
               box,
-              layer.style,
+              style ?? layer.style,
               textScale,
               !isBackgroundLayer(layer),
             );
@@ -590,7 +639,7 @@ export function startProgramOut(opts?: {
         );
         ctx.save();
         applyEntranceTransform(ctx, a, box);
-        drawContainerBox(ctx, box, layer.style, textScale);
+        drawContainerBox(ctx, box, style ?? layer.style, textScale);
         ctx.restore();
         continue;
       }
@@ -631,9 +680,9 @@ export function startProgramOut(opts?: {
       if (layer.type === "bible" && bibleContext?.verse && style) {
         drawBibleLayer(ctx, box, style, bibleContext.verse, textScale, anim.reveal);
       } else if (layer.type === "text") {
-        drawContentLayer(ctx, box, layer.style, content, textScale, layer.sub, anim.reveal);
+        drawContentLayer(ctx, box, style ?? layer.style, content, textScale, layer.sub, anim.reveal);
       } else if (layer.type === "song") {
-        drawContentLayer(ctx, box, layer.style, content, textScale, undefined, anim.reveal);
+        drawContentLayer(ctx, box, style ?? layer.style, content, textScale, undefined, anim.reveal);
       }
 
       ctx.restore();

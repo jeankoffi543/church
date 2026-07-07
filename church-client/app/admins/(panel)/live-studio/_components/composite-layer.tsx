@@ -13,7 +13,7 @@ import {
 } from "@/lib/studio-animations";
 import { cn } from "@/lib/utils";
 import { getContainerStyle, getElementStyle, getOverlayBoxStyle } from "./studio-style";
-import { isBackgroundLayer, imageHatch, type StudioLayer } from "./studio-layers";
+import { isBackgroundLayer, imageHatch, reactionStyle, type StudioLayer } from "./studio-layers";
 import { resolveEmbed } from "./embed";
 import {
   attachMediaMeter,
@@ -112,6 +112,7 @@ export function CompositeLayer({
   selectedLayerId = null,
   uiScale = 1,
   replayToken = 0,
+  activeTriggers = null,
 }: {
   layer: StudioLayer;
   verse?: ScriptureVerse | null;
@@ -137,8 +138,34 @@ export function CompositeLayer({
    *  advances only on a CUT/preview where this layer is due to replay — NOT when
    *  its animation SETTING changes — so picking an effect never fires it on air. */
   replayToken?: number;
+  /** Ids of TRIGGER sources currently on air (or being tested). If this layer's
+   *  `reactTo` is in the set, it renders its reaction pose (CHR-57). */
+  activeTriggers?: ReadonlySet<string> | null;
 }) {
   const isBg = isBackgroundLayer(layer);
+  // CHR-57 reaction: while the trigger is active, use the reaction pose. The DOM
+  // animates the box via a CSS transition, so the blend is a hard 0/1 here — the
+  // easing/duration below matches the canvas interpolation for parity.
+  const reactActive = !!layer.reactTo && !!activeTriggers?.has(layer.reactTo);
+  const effStyle = reactionStyle(layer, reactActive ? 1 : 0);
+  const reactCss: React.CSSProperties = layer.reactStyle
+    ? {
+        transition: [
+          "left",
+          "top",
+          "width",
+          "height",
+          "border-radius",
+          "border-width",
+          "padding",
+          "box-shadow",
+          "background-color",
+          "border-color",
+        ]
+          .map((p) => `${p} ${layer.reactTransitionMs ?? 600}ms cubic-bezier(0,0,0.58,1)`)
+          .join(", "),
+      }
+    : {};
   // Variants come from the SHARED effect registry (CHR-56): per-source
   // availability is resolved there, so an effect the source doesn't support
   // degrades to "none" here exactly like on the broadcast canvas.
@@ -289,7 +316,7 @@ export function CompositeLayer({
           dir === "up" ? "justify-end" : dir === "center" ? "justify-center" : "justify-start",
           movable && "cursor-move",
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
         <div
@@ -310,7 +337,7 @@ export function CompositeLayer({
                 ? "justify-end"
                 : "justify-center",
           )}
-          style={{ ...getContainerStyle(layer.style), minHeight: "100%" }}
+          style={{ ...getContainerStyle(effStyle), minHeight: "100%" }}
         >
           {verse ? (
             <>
@@ -352,7 +379,7 @@ export function CompositeLayer({
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
         <EmbedMedia layer={layer} audioOwner={audioOwner} />
@@ -377,7 +404,7 @@ export function CompositeLayer({
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
         <VideoMedia layer={layer} audioOwner={audioOwner} />
@@ -402,7 +429,7 @@ export function CompositeLayer({
           "absolute overflow-hidden rounded-xl bg-black",
           movable && "cursor-move",
         )}
-        style={{ ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
         {/* Monitors are always camera CONSUMERS — the getUserMedia stream is owned
@@ -470,7 +497,7 @@ export function CompositeLayer({
           exit={isTypeSweep ? undefined : "exit"}
           {...selectProps}
           className={cn("absolute inset-0", draggable && "cursor-pointer")}
-          style={{ zIndex: z, ...(isTypeSweep ? {} : bgStyle), ...editRingStyle }}
+          style={{ zIndex: z, ...(isTypeSweep ? {} : bgStyle), ...editRingStyle, ...reactCss }}
         >
           {sweepInner}
           <span
@@ -495,8 +522,8 @@ export function CompositeLayer({
         {...dragProps}
         className={cn("absolute overflow-hidden", movable && "cursor-move")}
         style={{
-          ...getContainerStyle(layer.style),
-          ...getOverlayBoxStyle(layer.style),
+          ...getContainerStyle(effStyle),
+          ...getOverlayBoxStyle(effStyle),
           zIndex: z,
           ...(isTypeSweep ? {} : bgStyle),
           ...editRingStyle,
@@ -523,7 +550,7 @@ export function CompositeLayer({
         data-layer
         {...dragProps}
         className={alignClass}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getContainerStyle(effStyle), ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
         {lines.map((line, i) => (
@@ -551,7 +578,7 @@ export function CompositeLayer({
         data-layer
         {...dragProps}
         className={cn("absolute inset-0 select-none")}
-        style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+        style={{ ...getContainerStyle(effStyle), ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
       >
         {handles}
       </motion.div>
@@ -569,7 +596,7 @@ export function CompositeLayer({
       data-layer
       {...dragProps}
       className={alignClass}
-      style={{ ...getContainerStyle(layer.style), ...getOverlayBoxStyle(layer.style), zIndex: z, ...editRingStyle }}
+      style={{ ...getContainerStyle(effStyle), ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
     >
       {handles}
       {isScroll ? (
