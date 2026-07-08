@@ -49,6 +49,12 @@ fn current_capabilities() -> Capabilities {
     {
         caps.encoders = studio_media::probe_encoders();
     }
+    #[cfg(feature = "screen")]
+    {
+        if mod_screen_capture::is_available() {
+            caps.sources.push(studio_core::LayerKind::Screen);
+        }
+    }
     caps
 }
 
@@ -77,11 +83,24 @@ mod media {
         pub frames: u64,
     }
 
+    /// Start the engine, preferring a real screen-capture source when the module
+    /// is present and available; otherwise the built-in test pattern.
+    fn start_engine() -> Result<MediaEngine, String> {
+        #[cfg(feature = "screen")]
+        {
+            if mod_screen_capture::is_available() {
+                return MediaEngine::start_with_source(Box::new(mod_screen_capture::add_source))
+                    .map_err(|e| e.to_string());
+            }
+        }
+        MediaEngine::start().map_err(|e| e.to_string())
+    }
+
     #[tauri::command]
     pub fn start_preview(state: tauri::State<'_, MediaState>) -> Result<(), String> {
         let mut guard = state.0.lock().map_err(|_| "media state poisoned")?;
         if guard.is_none() {
-            *guard = Some(MediaEngine::start().map_err(|e| e.to_string())?);
+            *guard = Some(start_engine()?);
         }
         Ok(())
     }

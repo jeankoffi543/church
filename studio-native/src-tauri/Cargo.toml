@@ -17,8 +17,10 @@ tauri-build = { version = "2", features = [] }
 # The media plane is a REMOVABLE module. With it off, the shell still runs and
 # reports zero encoders (CHR-101 behaviour) — the modular guarantee, at the
 # compile level.
-default = ["media"]
+default = ["media", "screen"]
 media = ["dep:studio-media", "dep:base64"]
+# Screen capture is its own removable module; it needs the media plane.
+screen = ["media", "dep:mod-screen-capture"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -28,5 +30,7 @@ serde_json = "1"
 studio-core = { path = "../crates/studio-core" }
 # The media plane — optional, behind the `media` feature.
 studio-media = { path = "../crates/studio-media", optional = true }
+# Screen-capture source module — optional, behind the `screen` feature.
+mod-screen-capture = { path = "../crates/mod-screen-capture", optional = true }
 # Preview frames are shipped to the webview as base64 data-URLs.
 base64 = { version = "0.22", optional = true }

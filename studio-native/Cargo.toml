@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/studio-core", "crates/studio-media", "crates/poc-pipeline", "src-tauri"]
+members = [
+    "crates/studio-core",
+    "crates/studio-media",
+    "crates/mod-screen-capture",
+    "crates/poc-pipeline",
+    "src-tauri",
+]
 # `cargo test` / `cargo build` with no -p target builds ONLY studio-core, so the
 # "pure core compiles with nothing but a Rust toolchain" guarantee holds at the
 # workspace level. The media POC is opt-in: `cargo run -p poc-pipeline`.

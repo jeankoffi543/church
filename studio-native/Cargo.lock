@@ -2004,6 +2004,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-screen-capture"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gstreamer",
+ "studio-media",
+]
+
+[[package]]
 name = "muda"
 version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3157,6 +3166,7 @@ name = "studio-native-app"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "mod-screen-capture",
  "serde",
  "serde_json",
  "studio-core",
