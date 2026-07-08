@@ -880,11 +880,30 @@ export function LiveStudioConsole({
       const seen = new Set<string>();
       const merged = [res.match, ...res.suggestions]
         .filter((v): v is ScriptureVerse => !!v)
-        .filter((v) => {
-          const seenKey = `${v.reference}-${v.translation || ""}`;
-          return seen.has(seenKey) ? false : (seen.add(seenKey), true);
-        });
-      setSuggestions(merged);
+        .filter((v) => (seen.has(v.reference) ? false : (seen.add(v.reference), true)));
+      // Bug 2 (CHR-58): expand each reference into ONE suggestion per selected
+      // version — "Jean 1 (LSG)", "Jean 1 (BSD)", "Jean 1 (KVG)" — using the
+      // per-version `texts` the API already returns. With no version explicitly
+      // selected, keep a single entry (base version), just labelled.
+      const expandVersions =
+        currentVisible.length > 0
+          ? [baseVersion, ...currentVisible.filter((v) => v !== baseVersion)]
+          : [baseVersion];
+      const expanded: ScriptureVerse[] = [];
+      for (const v of merged) {
+        const texts = v.texts ?? {};
+        const present = expandVersions.filter((ver) => texts[ver] != null);
+        const list = present.length > 0 ? present : [v.translation || baseVersion];
+        for (const ver of list) {
+          expanded.push({
+            ...v,
+            translation: ver,
+            text: texts[ver] ?? v.text,
+            texts: { [ver]: texts[ver] ?? v.text },
+          });
+        }
+      }
+      setSuggestions(expanded);
     } catch {
       if (signal?.aborted) return;
       setSearching(false);
@@ -944,6 +963,18 @@ export function LiveStudioConsole({
       setBusy(false);
     }
   }, []);
+
+  // Load a verse from the search / prepared list. It always stages it in the
+  // preview; when the bible is currently ON AIR (`live`), it ALSO goes straight
+  // to the antenne — same behaviour as advancing verses (prev/next), so the
+  // operator doesn't have to CUT again for every verse while on air.
+  const loadVerse = useCallback(
+    (verse: ScriptureVerse) => {
+      setPreview(verse);
+      if (live) void pushLive(verse, settings);
+    },
+    [live, settings, pushLive],
+  );
 
   const advance = useCallback(
     async (direction: NavigateDirection) => {
@@ -1022,7 +1053,11 @@ export function LiveStudioConsole({
 
   const addToPrepared = useCallback(
     (verse: ScriptureVerse) => {
-      if (prepared.some((v) => v.reference === verse.reference)) return;
+      // Identity is reference + version (CHR-58): the same verse can be prepared
+      // in several versions (e.g. Jean 1 in LSG and in BSD).
+      const same = (a: ScriptureVerse, b: ScriptureVerse) =>
+        a.reference === b.reference && (a.translation || "") === (b.translation || "");
+      if (prepared.some((v) => same(v, verse))) return;
       void persistPrepared([...prepared, verse]);
     },
     [prepared, persistPrepared],
@@ -2121,10 +2156,14 @@ export function LiveStudioConsole({
     suggestions,
     searching,
     prepared,
-    onLoadVerse: setPreview,
+    onLoadVerse: loadVerse,
     onPrepare: addToPrepared,
     onRemovePrepared: (v: ScriptureVerse) =>
-      void persistPrepared(prepared.filter((p) => p.reference !== v.reference)),
+      void persistPrepared(
+        prepared.filter(
+          (p) => !(p.reference === v.reference && (p.translation || "") === (v.translation || "")),
+        ),
+      ),
     visibleVersions,
     defaultVersion,
     onToggleVersion: toggleVersionVisibility,

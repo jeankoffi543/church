@@ -1932,13 +1932,20 @@ function BibleContent({
         {bible.suggestions.length > 0 && (
           <ScrollArea className="mt-1.5 flex max-h-36 flex-col gap-1">
             {bible.suggestions.map((r, idx) => (
-              <div key={`${r.reference}-${idx}`} className="flex items-stretch gap-1.5">
+              <div key={`${r.reference}-${r.translation ?? ""}-${idx}`} className="flex items-stretch gap-1.5">
                 <button
                   type="button"
                   onClick={() => bible.onLoadVerse(r)}
                   className="flex-1 rounded-[7px] border border-white/6 bg-white/[0.03] px-2.5 py-2 text-left transition-colors hover:border-gold/40"
                 >
-                  <span className="block text-[10.5px] font-extrabold text-gold">{r.reference}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[10.5px] font-extrabold text-gold">{r.reference}</span>
+                    {r.translation && (
+                      <span className="rounded bg-gold/15 px-1 py-[1px] text-[8.5px] font-bold tracking-wide text-gold/80">
+                        {r.translation}
+                      </span>
+                    )}
+                  </span>
                   <span className="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-white/55">
                     {r.text}
                   </span>
@@ -1970,15 +1977,20 @@ function BibleContent({
           <div className="flex flex-col gap-1">
             {bible.prepared.map((p, idx) => (
               <div
-                key={`${p.reference}-${idx}`}
+                key={`${p.reference}-${p.translation ?? ""}-${idx}`}
                 className="flex items-center gap-1.5 rounded-[7px] border border-white/6 bg-white/[0.03] px-2.5 py-1.5"
               >
                 <button
                   type="button"
                   onClick={() => bible.onLoadVerse(p)}
-                  className="flex-1 text-left text-[11.5px] font-bold text-white"
+                  className="flex flex-1 items-center gap-1.5 text-left text-[11.5px] font-bold text-white"
                 >
-                  {p.reference}
+                  <span>{p.reference}</span>
+                  {p.translation && (
+                    <span className="rounded bg-gold/15 px-1 py-[1px] text-[8.5px] font-bold tracking-wide text-gold/80">
+                      {p.translation}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
