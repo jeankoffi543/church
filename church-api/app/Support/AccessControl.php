@@ -89,6 +89,10 @@ final class AccessControl
                 ['name' => 'view_members', 'label' => 'Consulter le registre des fidèles'],
                 ['name' => 'manage_members', 'label' => 'Créer, modifier et supprimer des fidèles'],
             ],
+            'Évangélisation' => [
+                ['name' => 'view_evangelism', 'label' => 'Consulter les campagnes et les nouvelles âmes'],
+                ['name' => 'manage_evangelism', 'label' => 'Créer des campagnes et enregistrer des nouvelles âmes'],
+            ],
             'Communication' => [
                 ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
                 ['name' => 'manage_announcements', 'label' => 'Gérer les annonces et le bulletin'],
@@ -190,6 +194,8 @@ final class AccessControl
                 'manage_members',
                 'view_attendance',
                 'manage_attendance',
+                'view_evangelism',
+                'manage_evangelism',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

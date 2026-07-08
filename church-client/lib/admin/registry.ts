@@ -25,6 +25,7 @@ import {
   Coins,
   CalendarClock,
   UserRound,
+  Flame,
   type LucideIcon,
 } from "lucide-react";
 
@@ -82,6 +83,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   // Vie de l'Église
   { key: "services", path: "/admins/services", label: "Cultes", icon: CalendarClock, permission: [PERMISSIONS.viewServices, PERMISSIONS.manageServices], group: "church-life" },
   { key: "members", path: "/admins/members", label: "Fidèles", icon: UserRound, permission: [PERMISSIONS.viewMembers, PERMISSIONS.manageMembers], group: "church-life" },
+  { key: "evangelism", path: "/admins/evangelism", label: "Évangélisation", icon: Flame, permission: [PERMISSIONS.viewEvangelism, PERMISSIONS.manageEvangelism], group: "church-life" },
 
   // Finances
   { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },

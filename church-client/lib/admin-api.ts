@@ -1908,3 +1908,111 @@ export async function getAdminMemberCounts(): Promise<{ total: number; active: n
   return { total: allResponse.meta.total, active: activeResponse.meta.total };
 }
 
+/* ── Évangélisation & Nouvelles âmes ──────────────────────────────── */
+
+export type AdminEvangelismCampaign = {
+  id: number;
+  title: string;
+  date: string;
+  location: string | null;
+  notes: string | null;
+  converts_count: number | null;
+};
+
+export type ConvertDecisionType = "nouvelle_conversion" | "reengagement";
+export type ConvertStatus = "nouveau" | "en_cours_de_suivi" | "integre" | "perdu_de_vue";
+
+export type AdminConvert = {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  decision_type: ConvertDecisionType;
+  decision_date: string;
+  service_id: number | null;
+  evangelism_campaign_id: number | null;
+  evangelism_campaign_title: string | null;
+  assigned_counselor_id: number | null;
+  assigned_counselor_name: string | null;
+  status: ConvertStatus;
+  notes: string | null;
+  created_at: string | null;
+};
+
+export type AdminConvertPayload = {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  decision_type?: ConvertDecisionType;
+  decision_date: string;
+  service_id?: number | null;
+  evangelism_campaign_id?: number | null;
+  assigned_counselor_id?: number | null;
+  status?: ConvertStatus;
+  notes?: string | null;
+};
+
+export async function getAdminEvangelismCampaigns(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminEvangelismCampaign>> {
+  return adminFetch<AdminListResult<AdminEvangelismCampaign>>(
+    buildAdminListPath("/evangelism-campaigns", params)
+  );
+}
+
+export async function createAdminEvangelismCampaign(data: {
+  title: string;
+  date: string;
+  location?: string | null;
+  notes?: string | null;
+}): Promise<AdminEvangelismCampaign> {
+  const response = await adminFetch<{ data: AdminEvangelismCampaign }>("/evangelism-campaigns", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminEvangelismCampaign(id: number, data: {
+  title?: string;
+  date?: string;
+  location?: string | null;
+  notes?: string | null;
+}): Promise<AdminEvangelismCampaign> {
+  const response = await adminFetch<{ data: AdminEvangelismCampaign }>(`/evangelism-campaigns/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminEvangelismCampaign(id: number): Promise<void> {
+  await adminFetch<void>(`/evangelism-campaigns/${id}`, { method: "DELETE" });
+}
+
+export async function getAdminConverts(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminConvert>> {
+  return adminFetch<AdminListResult<AdminConvert>>(buildAdminListPath("/converts", params));
+}
+
+export async function createAdminConvert(data: AdminConvertPayload): Promise<AdminConvert> {
+  const response = await adminFetch<{ data: AdminConvert }>("/converts", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminConvert(id: number, data: Partial<AdminConvertPayload>): Promise<AdminConvert> {
+  const response = await adminFetch<{ data: AdminConvert }>(`/converts/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminConvert(id: number): Promise<void> {
+  await adminFetch<void>(`/converts/${id}`, { method: "DELETE" });
+}
+
