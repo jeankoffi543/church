@@ -19,6 +19,7 @@ export default async function AdminServicesPage() {
       initialData={initial.data}
       initialMeta={initial.meta}
       canManage={hasAnyPermission(me, [PERMISSIONS.manageServices])}
+      canRecordAttendance={hasAnyPermission(me, [PERMISSIONS.manageAttendance])}
     />
   );
 }

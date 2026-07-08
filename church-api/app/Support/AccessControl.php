@@ -81,6 +81,10 @@ final class AccessControl
                 ['name' => 'view_services', 'label' => 'Consulter le planning des cultes'],
                 ['name' => 'manage_services', 'label' => 'Créer et planifier les cultes'],
             ],
+            'Présences' => [
+                ['name' => 'view_attendance', 'label' => 'Consulter les statistiques de présence'],
+                ['name' => 'manage_attendance', 'label' => 'Saisir le comptage des présences par culte'],
+            ],
             'Fidèles' => [
                 ['name' => 'view_members', 'label' => 'Consulter le registre des fidèles'],
                 ['name' => 'manage_members', 'label' => 'Créer, modifier et supprimer des fidèles'],
@@ -184,6 +188,8 @@ final class AccessControl
                 'manage_services',
                 'view_members',
                 'manage_members',
+                'view_attendance',
+                'manage_attendance',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
@@ -208,6 +214,8 @@ final class AccessControl
             'Huissier' => [
                 'view_cells',
                 'view_dashboard',
+                'view_services',
+                'manage_attendance',
             ],
             'Responsables de cellule' => [
                 'view_cells',

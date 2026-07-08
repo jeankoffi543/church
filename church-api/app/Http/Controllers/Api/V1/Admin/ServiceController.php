@@ -15,7 +15,7 @@ class ServiceController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Service::query()->with('offeringCollections')->orderByDesc('date');
+        $query = Service::query()->with(['offeringCollections', 'attendances'])->orderByDesc('date');
 
         $query->searchOnRequest()->filterOnRequest()->sortOnRequest();
 
@@ -33,14 +33,14 @@ class ServiceController extends Controller
 
     public function show(Service $service): ServiceResource
     {
-        return new ServiceResource($service->load('offeringCollections'));
+        return new ServiceResource($service->load(['offeringCollections', 'attendances']));
     }
 
     public function update(ServiceRequest $request, Service $service): ServiceResource
     {
         $service->update($request->validated());
 
-        return new ServiceResource($service->load('offeringCollections'));
+        return new ServiceResource($service->load(['offeringCollections', 'attendances']));
     }
 
     public function destroy(Service $service): JsonResponse
@@ -49,7 +49,7 @@ class ServiceController extends Controller
             $service->delete();
         } catch (QueryException) {
             return response()->json([
-                'message' => 'Impossible de supprimer ce culte : des collectes y sont déjà rattachées.',
+                'message' => 'Impossible de supprimer ce culte : des collectes ou des présences y sont déjà rattachées.',
             ], 422);
         }
 

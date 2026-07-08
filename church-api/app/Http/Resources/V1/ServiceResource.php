@@ -24,6 +24,7 @@ class ServiceResource extends JsonResource
             'start_time' => $this->start_time,
             'notes' => $this->notes,
             'offering_collections' => OfferingCollectionResource::collection($this->whenLoaded('offeringCollections')),
+            'attendances' => AttendanceResource::collection($this->whenLoaded('attendances')),
             'created_at' => $this->created_at,
         ];
     }
