@@ -29,6 +29,12 @@ use gstreamer_app as gst_app;
 /// callback (streaming thread) and the reader (Tauri command thread).
 type FrameSlot = Arc<Mutex<Option<Vec<u8>>>>;
 
+/// A pluggable video source. Given the pipeline, it adds its own elements and
+/// returns the tail element whose `src` pad feeds a compositor layer. This is the
+/// seam every source module (CHR-103 screen, CHR-104 camera, …) plugs into — the
+/// engine never hardcodes what produces the pixels. Runs on the media thread.
+pub type SourceBuilder = Box<dyn FnOnce(&gst::Pipeline) -> Result<gst::Element> + Send>;
+
 /// Preview downscale target — small + cheap; a monitor, not the program feed.
 const PREVIEW_W: i32 = 640;
 const PREVIEW_H: i32 = 360;
@@ -86,15 +92,21 @@ pub struct MediaEngine {
 }
 
 impl MediaEngine {
-    /// Start the engine. Blocks only until the media thread has the pipeline in
-    /// `Playing` (or errors during setup), then returns while frames flow.
+    /// Start with the built-in test-pattern source.
     pub fn start() -> Result<MediaEngine> {
+        Self::start_with_source(Box::new(default_source))
+    }
+
+    /// Start with a pluggable [`SourceBuilder`] (e.g. screen capture). Blocks only
+    /// until the media thread has the pipeline in `Playing` (or errors during
+    /// setup), then returns while frames flow.
+    pub fn start_with_source(source: SourceBuilder) -> Result<MediaEngine> {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<Ready, String>>();
 
         let thread = std::thread::Builder::new()
             .name("studio-media".into())
             .spawn(move || {
-                if let Err(e) = run_media_thread(&ready_tx) {
+                if let Err(e) = run_media_thread(&ready_tx, source) {
                     // If we failed before signalling ready, report it back.
                     let _ = ready_tx.send(Err(e.to_string()));
                 }
@@ -144,7 +156,10 @@ impl Drop for MediaEngine {
 
 /// Runs entirely on the dedicated media thread: build the pipeline, attach the
 /// glib bus watch, go `Playing`, signal ready, then run the loop until quit.
-fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
+fn run_media_thread(
+    ready: &mpsc::Sender<Result<Ready, String>>,
+    source: SourceBuilder,
+) -> Result<()> {
     ensure_init()?;
 
     // Own a MainContext for THIS thread so the bus watch and the MainLoop share it
@@ -157,7 +172,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
 
         let frames = Arc::new(AtomicU64::new(0));
         let latest: FrameSlot = Arc::new(Mutex::new(None));
-        let pipeline = build_preview_pipeline(&frames, &latest)?;
+        let pipeline = build_preview_pipeline(source, &frames, &latest)?;
 
         let bus = pipeline
             .bus()
@@ -197,12 +212,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
     .map_err(|e| anyhow!("with_thread_default: {e}"))?
 }
 
-/// videotestsrc → compositor → convert → scale → jpegenc → appsink.
-/// The appsink callback stores each JPEG frame in `latest` and bumps `frames`.
-/// One source for now; CHR-103+ request/release compositor pads per scene layer.
-fn build_preview_pipeline(frames: &Arc<AtomicU64>, latest: &FrameSlot) -> Result<gst::Pipeline> {
-    let pipeline = gst::Pipeline::with_name("studio-preview");
-
+/// The built-in test-pattern source (used when no module provides one). Adds its
+/// elements to `pipeline` and returns the tail element feeding the compositor.
+fn default_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
     let src = gst::ElementFactory::make("videotestsrc")
         .property("is-live", true)
         .property_from_str("pattern", "smpte")
@@ -218,6 +230,24 @@ fn build_preview_pipeline(frames: &Arc<AtomicU64>, latest: &FrameSlot) -> Result
                 .build(),
         )
         .build()?;
+    pipeline.add_many([&src, &caps_in])?;
+    gst::Element::link_many([&src, &caps_in])?;
+    Ok(caps_in)
+}
+
+/// <source> → compositor → convert → scale → jpegenc → appsink.
+/// The appsink callback stores each JPEG frame in `latest` and bumps `frames`.
+/// One source for now; CHR-104+ request/release compositor pads per scene layer.
+fn build_preview_pipeline(
+    source: SourceBuilder,
+    frames: &Arc<AtomicU64>,
+    latest: &FrameSlot,
+) -> Result<gst::Pipeline> {
+    let pipeline = gst::Pipeline::with_name("studio-preview");
+
+    // The pluggable source adds its own elements and hands back its tail.
+    let source_tail = source(&pipeline).context("build source")?;
+
     let compositor = gst::ElementFactory::make("compositor")
         .property_from_str("background", "black")
         .build()
@@ -245,28 +275,19 @@ fn build_preview_pipeline(frames: &Arc<AtomicU64>, latest: &FrameSlot) -> Result
         .sync(true)
         .build();
 
-    pipeline.add_many([
-        &src,
-        &caps_in,
-        &compositor,
-        &convert,
-        &scale,
-        &caps_out,
-        &jpeg,
-    ])?;
+    pipeline.add_many([&compositor, &convert, &scale, &caps_out, &jpeg])?;
     pipeline.add(&appsink).context("add appsink")?;
-    gst::Element::link_many([&src, &caps_in])?;
     gst::Element::link_many([&compositor, &convert, &scale, &caps_out, &jpeg])?;
     jpeg.link(&appsink).context("link jpegenc → appsink")?;
 
-    // Request a compositor pad and link the source layer to it (the same API the
-    // scene→graph mapping drives in CHR-103+).
+    // Request a compositor pad and link the source's tail to it (the same API the
+    // scene→graph mapping drives per layer).
     let comp_pad = compositor
         .request_pad_simple("sink_%u")
         .ok_or_else(|| anyhow!("compositor request pad failed"))?;
-    caps_in
+    source_tail
         .static_pad("src")
-        .ok_or_else(|| anyhow!("caps_in src pad"))?
+        .ok_or_else(|| anyhow!("source tail src pad"))?
         .link(&comp_pad)
         .context("link source → compositor")?;
 

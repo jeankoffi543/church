@@ -42,7 +42,7 @@ studio-native/
 │   ├── poc-pipeline/      ✅ LIVRÉ  — spike média headless (CHR-100)
 │   ├── studio-media/      ✅ LIVRÉ  — runtime GStreamer, glib MainLoop (thread dédié)
 │   │   · MediaEngine (compositor → frames comptées) + probe_encoders réel
-│   ├── mod-screen-capture/⏳  Source (getDisplayMedia → WGC/SCK/PipeWire)
+│   ├── mod-screen-capture/✅ LIVRÉ  — Source écran (ximagesrc/PipeWire/WGC/SCK)
 │   ├── mod-camera/        ⏳  Source
 │   ├── mod-overlays/      ⏳  Source (image/text/bible/song, sans DOM)
 │   ├── mod-audio-mixer/   ⏳  AudioNode (remplace AudioContext/mixDest)
@@ -65,7 +65,7 @@ utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 | **CHR-100** ✅ | POC média headless (2 sources → compositor GPU → x264 → mp4mux, durée relue) | spike de dé-risquage |
 | **CHR-101** ✅ | Bootstrap Tauri + `src-tauri` + `ui` + contrat IPC `get_capabilities` | — (fondation) |
 | **CHR-102** ✅ | `studio-media` : compositor + glib loop + sonde encodeurs + **preview JPEG embarquée** dans le webview | feature `media` off ⇒ app tourne, 0 encodeur |
-| CHR-103 | `mod-screen-capture` | source « écran » disparaît du menu |
+| **CHR-103** ✅ | `mod-screen-capture` (1re vraie source, `SourceBuilder` enfichable) | source « écran » disparaît du menu |
 | CHR-104 | `mod-camera` | source « caméra » disparaît |
 | CHR-105 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
 | CHR-106 | `mod-audio-mixer` + VU réels | diffusion muette, reste OK |
@@ -91,7 +91,10 @@ cargo test                       # 19 tests (easing / reaction / model)
 cargo run -p poc-pipeline        # 2 sources → compositor → x264 → mp4mux, durée relue
 
 # Moteur média (CHR-102) : glib loop + compositor + sonde encodeurs.
-cargo test -p studio-media       # 2 tests (frames comptées, encodeurs sondés)
+cargo test -p studio-media       # 2 tests (frames JPEG, encodeurs sondés)
+
+# Source écran (CHR-103) — la capture réelle a besoin d'un affichage :
+xvfb-run -a cargo test -p mod-screen-capture   # capture ximagesrc → JPEG prouvée
 
 # Shell Tauri (CHR-101/102).
 pnpm --dir ui install && pnpm --dir ui build           # frontend → ui/dist
@@ -128,6 +131,10 @@ native, cross-platform. Le flux *program* vers l'encodeur/WHIP restera GPU
 zéro-copie (concern séparé, CHR-108). Un overlay GPU natif haute-fréquence pour la
 preview reste une optimisation possible plus tard.
 
-Prochaine étape : **CHR-103**, `mod-screen-capture` — la 1re vraie source
-(getDisplayMedia → PipeWire/WGC/ScreenCaptureKit), branchée sur un request pad du
-compositor.
+CHR-103 complet : `mod-screen-capture` — 1re vraie source, via le seam
+`SourceBuilder` enfichable de studio-media. Capture réelle prouvée sous Xvfb
+(ximagesrc → compositor → JPEG). Garantie modulaire vérifiée à 2 niveaux (app
+sans média ; app média mais screen retiré).
+
+Prochaine étape : **CHR-104**, `mod-camera` (getUserMedia → v4l2/avf/mf), même
+seam `SourceBuilder` ; puis compositor multi-sources (add/remove pad à chaud).

@@ -1,0 +1,17 @@
+[package]
+name = "mod-screen-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-103 — screen-capture Source module (OBS-style). Platform capture element → compositor layer. Removable: absent ⇒ the source just doesn't appear."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"
+
+[dev-dependencies]
+# Reuse the proven engine (compositor → jpegenc → appsink + frame counting) to
+# verify capture end-to-end under a display (xvfb). No cycle: studio-media does
+# not depend on this crate.
+studio-media = { path = "../studio-media" }
