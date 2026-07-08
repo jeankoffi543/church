@@ -3113,12 +3113,21 @@ name = "studio-core"
 version = "0.1.0"
 
 [[package]]
+name = "studio-media"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gstreamer",
+]
+
+[[package]]
 name = "studio-native-app"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "studio-core",
+ "studio-media",
  "tauri",
  "tauri-build",
 ]

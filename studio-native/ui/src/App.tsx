@@ -8,9 +8,13 @@ type Capabilities = {
   encoders: string[];
 };
 
-/** French labels for known source kinds. Unknown kinds still render (by id), so a
- *  future module the frontend has never heard of still shows up — the negotiation
- *  is data-driven, not hardcoded. */
+/** Mirror of the Rust `MediaStatus`. */
+type MediaStatus = {
+  running: boolean;
+  frames: number;
+};
+
+/** French labels for known source kinds. Unknown ids still render (by id). */
 const SOURCE_LABELS: Record<string, string> = {
   bible: "Bible",
   text: "Texte",
@@ -27,6 +31,7 @@ const SOURCE_LABELS: Record<string, string> = {
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [media, setMedia] = useState<MediaStatus | null>(null);
 
   useEffect(() => {
     invoke<Capabilities>("get_capabilities")
@@ -34,7 +39,19 @@ export function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  const hasMedia = !!caps && caps.sources.length + caps.outputs.length > 0;
+  // Poll the media engine's frame counter while it runs — the live proof the
+  // compositor pipeline is producing frames on its glib thread.
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke<MediaStatus>("media_status")
+        .then(setMedia)
+        .catch(() => {});
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const hasMedia =
+    !!caps && caps.sources.length + caps.outputs.length + caps.encoders.length > 0;
 
   return (
     <div className="shell">
@@ -48,15 +65,15 @@ export function App() {
           <h1>Négociation des capacités</h1>
           <p className="muted">
             L&apos;interface se construit à partir de ce que le backend annonce —
-            aucun module n&apos;est câblé en dur. Retirez un module, il
-            disparaît d&apos;ici.
+            aucun module n&apos;est câblé en dur. Retirez un module, il disparaît
+            d&apos;ici.
           </p>
 
           {error && (
             <div className="banner err">
               IPC indisponible : {error}
               <div className="hint">
-                (normal hors du webview Tauri — lancez via <code>pnpm tauri dev</code>)
+                (normal hors du webview Tauri — lancez via <code>cargo tauri dev</code>)
               </div>
             </div>
           )}
@@ -78,13 +95,17 @@ export function App() {
                 <span className="v">{caps.encoders.length}</span>
               </div>
 
-              {!hasMedia ? (
-                <div className="banner empty">
-                  Aucun module média chargé (CHR-101). L&apos;app tourne : c&apos;est
-                  la garantie modulaire à vide. Les modules CHR-102+ apparaîtront
-                  ici automatiquement.
-                </div>
-              ) : (
+              {caps.encoders.length > 0 && (
+                <ul className="chips">
+                  {caps.encoders.map((e) => (
+                    <li key={e} className="chip">
+                      {e}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {caps.sources.length > 0 && (
                 <ul className="chips">
                   {caps.sources.map((s) => (
                     <li key={s} className="chip">
@@ -93,8 +114,43 @@ export function App() {
                   ))}
                 </ul>
               )}
+
+              {!hasMedia && (
+                <div className="banner empty">
+                  Aucun module média chargé. L&apos;app tourne : garantie modulaire à
+                  vide. Les modules apparaîtront ici automatiquement.
+                </div>
+              )}
             </>
           )}
+        </section>
+
+        <section className="panel">
+          <h1>Moteur média (CHR-102)</h1>
+          <p className="muted">
+            Compositeur GStreamer piloté par une boucle glib sur son propre thread.
+          </p>
+
+          <div className="preview">
+            <div className="dot" data-on={media?.running ? "1" : "0"} />
+            <span>{media?.running ? "En cours" : "Arrêté"}</span>
+            <span className="frames">{media?.frames ?? 0} frames</span>
+          </div>
+
+          <div className="btnrow">
+            <button
+              className="btn"
+              onClick={() => invoke("start_preview").catch((e) => setError(String(e)))}
+            >
+              Démarrer l&apos;aperçu
+            </button>
+            <button
+              className="btn ghost"
+              onClick={() => invoke("stop_preview").catch(() => {})}
+            >
+              Arrêter
+            </button>
+          </div>
         </section>
       </main>
     </div>
