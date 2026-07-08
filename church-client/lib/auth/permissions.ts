@@ -37,6 +37,8 @@ export const PERMISSIONS = {
   manageAttendance: "manage_attendance",
   viewEvangelism: "view_evangelism",
   manageEvangelism: "manage_evangelism",
+  viewFollowups: "view_followups",
+  manageFollowups: "manage_followups",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
