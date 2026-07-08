@@ -1717,3 +1717,94 @@ export async function setDefaultAdminCurrency(id: number): Promise<AdminCurrency
   return response.data;
 }
 
+/* ── Cultes (Services) & collecte en espèces ─────────────────────── */
+
+export type AdminOfferingCollection = {
+  id: number;
+  service_id: number;
+  nature: string;
+  amount: number;
+  currency: string;
+  counted_by_id: number | null;
+  counted_by: string | null;
+  notes: string | null;
+};
+
+export type AdminService = {
+  id: number;
+  title: string | null;
+  type: string;
+  date: string;
+  start_time: string | null;
+  notes: string | null;
+  offering_collections: AdminOfferingCollection[];
+  created_at: string | null;
+};
+
+export async function getAdminServices(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminService>> {
+  return adminFetch<AdminListResult<AdminService>>(buildAdminListPath("/services", params));
+}
+
+export async function createAdminService(data: {
+  title?: string | null;
+  type: string;
+  date: string;
+  start_time?: string | null;
+  notes?: string | null;
+}): Promise<AdminService> {
+  const response = await adminFetch<{ data: AdminService }>("/services", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminService(id: number, data: {
+  title?: string | null;
+  type?: string;
+  date?: string;
+  start_time?: string | null;
+  notes?: string | null;
+}): Promise<AdminService> {
+  const response = await adminFetch<{ data: AdminService }>(`/services/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminService(id: number): Promise<void> {
+  await adminFetch<void>(`/services/${id}`, { method: "DELETE" });
+}
+
+/** Save every "collecte du culte" line at once (one per nature). */
+export async function upsertOfferingCollections(
+  serviceId: number,
+  lines: { nature: string; amount: number; currency?: string; notes?: string | null }[]
+): Promise<AdminOfferingCollection[]> {
+  const response = await adminFetch<{ data: AdminOfferingCollection[] }>(
+    `/services/${serviceId}/offering-collections`,
+    { method: "POST", body: JSON.stringify({ lines }) }
+  );
+  return response.data;
+}
+
+/* ── Générosité combinée (en ligne + espèces) — KPI par période ──── */
+
+export type GivingNatureBreakdown = { en_ligne: number; especes: number; total: number };
+
+export type GivingStats = {
+  total: number;
+  by_channel: { en_ligne: number; especes: number };
+  by_nature: Record<string, GivingNatureBreakdown>;
+};
+
+export async function getGivingStats(from: string, to: string): Promise<GivingStats> {
+  const response = await adminFetch<{ data: GivingStats }>(
+    `/giving/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
+  return response.data;
+}
+

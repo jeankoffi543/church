@@ -23,6 +23,7 @@ import {
   UsersRound,
   TrendingUp,
   Coins,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,7 +35,7 @@ import { PERMISSIONS } from "@/lib/auth/permissions";
  * titles / breadcrumbs. Add a screen here once — never re-declare it in the nav.
  */
 
-export type AdminNavGroupId = "overview" | "content" | "community" | "finance" | "boutique" | "church" | "admin";
+export type AdminNavGroupId = "overview" | "content" | "community" | "church-life" | "finance" | "boutique" | "church" | "admin";
 
 export type AdminPage = {
   key: string;
@@ -54,6 +55,7 @@ export const ADMIN_NAV_GROUPS: { id: AdminNavGroupId; label: string; short: stri
   { id: "overview", label: "Vue d'ensemble", short: "Accueil", icon: LayoutDashboard },
   { id: "content", label: "Contenu & Diffusion", short: "Contenu", icon: Clapperboard },
   { id: "community", label: "Communauté", short: "Communauté", icon: Users },
+  { id: "church-life", label: "Vie de l'Église", short: "Vie d'Église", icon: CalendarClock },
   { id: "finance", label: "Finances", short: "Finances", icon: Wallet },
   { id: "boutique", label: "Boutique", short: "Boutique", icon: ShoppingBag },
   { id: "church", label: "Église & Présentation", short: "Église", icon: Church },
@@ -75,6 +77,9 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "prayers", path: "/admins/prayers", label: "Requêtes de prière", icon: HandHeart, permission: [PERMISSIONS.viewPrayers, PERMISSIONS.processPrayers], group: "community" },
   { key: "contacts", path: "/admins/contacts", label: "Messages de contact", icon: Inbox, permission: [PERMISSIONS.viewContacts], group: "community" },
   { key: "ministries", path: "/admins/ministries", label: "Ministères", icon: Users, permission: [PERMISSIONS.manageSettings], group: "community" },
+
+  // Vie de l'Église
+  { key: "services", path: "/admins/services", label: "Cultes", icon: CalendarClock, permission: [PERMISSIONS.viewServices, PERMISSIONS.manageServices], group: "church-life" },
 
   // Finances
   { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },

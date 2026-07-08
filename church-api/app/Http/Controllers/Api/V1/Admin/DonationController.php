@@ -162,7 +162,11 @@ class DonationController extends Controller
     }
 
     /**
-     * Apply the shared list/stat filters (status, purpose, search, month/year).
+     * Apply the shared list/stat filters (status, purpose, search, date range).
+     *
+     * `from`/`to` (Y-m-d) take priority when present — the free custom-range
+     * picker in the admin UI. `year`/`month` are kept for backward
+     * compatibility with any existing bookmarked filter state.
      *
      * @return Builder<Donation>
      */
@@ -171,8 +175,10 @@ class DonationController extends Controller
         return Donation::query()
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('purpose_key'), fn ($q) => $q->where('purpose_key', $request->string('purpose_key')))
-            ->when($request->filled('year'), fn ($q) => $q->whereYear('created_at', $request->integer('year')))
-            ->when($request->filled('month'), fn ($q) => $q->whereMonth('created_at', $request->integer('month')))
+            ->when($request->filled('from'), fn ($q) => $q->whereDate('created_at', '>=', $request->string('from')))
+            ->when($request->filled('to'), fn ($q) => $q->whereDate('created_at', '<=', $request->string('to')))
+            ->when(! $request->filled('from') && ! $request->filled('to') && $request->filled('year'), fn ($q) => $q->whereYear('created_at', $request->integer('year')))
+            ->when(! $request->filled('from') && ! $request->filled('to') && $request->filled('month'), fn ($q) => $q->whereMonth('created_at', $request->integer('month')))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $term = '%'.$request->string('search').'%';
                 $q->where(fn ($w) => $w

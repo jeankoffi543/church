@@ -188,6 +188,22 @@ Route::prefix('v1')->group(function (): void {
 
                 Route::get('webhook-events', [Admin\WebhookEventController::class, 'index'])->name('webhook-events.index');
                 Route::post('webhook-events/{webhookEvent}/replay', [Admin\WebhookEventController::class, 'replay'])->name('webhook-events.replay');
+
+                // Générosité combinée (en ligne + espèces collectées en culte) — KPI par période.
+                Route::get('giving/stats', [Admin\GivingController::class, 'stats'])->name('giving.stats');
+                // Collecte en espèces d'un culte donné (dîme/offrande/... comptées sur place).
+                Route::post('services/{service}/offering-collections', [Admin\OfferingCollectionController::class, 'upsert'])->name('services.offering-collections.upsert');
+            });
+
+            // Cultes — planification des occurrences (culte dominical, veillée, étude biblique…).
+            Route::middleware('permission:view_services|manage_services')->group(function (): void {
+                Route::get('services', [Admin\ServiceController::class, 'index'])->name('services.index');
+                Route::get('services/{service}', [Admin\ServiceController::class, 'show'])->name('services.show');
+            });
+            Route::middleware('permission:manage_services')->group(function (): void {
+                Route::post('services', [Admin\ServiceController::class, 'store'])->name('services.store');
+                Route::match(['put', 'patch'], 'services/{service}', [Admin\ServiceController::class, 'update'])->name('services.update');
+                Route::delete('services/{service}', [Admin\ServiceController::class, 'destroy'])->name('services.destroy');
             });
 
             // Agenda / événements

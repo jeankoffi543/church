@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Search, Download, Wallet, HandCoins, PiggyBank, TrendingUp, Loader2, RefreshCw, ShieldCheck, ShieldX, Webhook, ListChecks, RotateCw } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { Search, Download, Wallet, HandCoins, PiggyBank, TrendingUp, Loader2, RefreshCw, ShieldCheck, ShieldX, Webhook, ListChecks, RotateCw, Landmark, Smartphone } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatFcfa } from "@/lib/data";
@@ -11,15 +11,22 @@ import {
   replayWebhookEvent,
   getAdminDonations,
   getAdminWebhookEvents,
+  getGivingStats,
   type AdminDonation,
   type AdminWebhookEvent,
   type DonationStatus,
+  type GivingStats,
 } from "@/lib/admin-api";
 import { PageShell, PageHeader } from "@/components/admin/data/page-shell";
 import { DataTable } from "@/components/admin/data/data-table";
 import { useDataTable, type Column } from "@/components/admin/data/use-data-table";
 import { Button } from "@/components/admin/ui/button";
 import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
+import { KpiCard as SharedKpiCard } from "@/components/admin/data/kpi-card";
+import { PeriodPicker, periodPresets, type Period } from "@/components/admin/data/period-picker";
+import { DonutChart } from "@/components/admin/charts/donut-chart";
+import { GroupedBarChart } from "@/components/admin/charts/grouped-bar-chart";
+import { CHANNEL_COLORS, CHANNEL_LABELS, colorForNature, labelForNature } from "@/components/admin/charts/palette";
 
 const PURPOSE_LABELS: Record<string, string> = {
   dime: "Dîme",
@@ -29,7 +36,6 @@ const PURPOSE_LABELS: Record<string, string> = {
 };
 const purposeLabel = (key: string) => PURPOSE_LABELS[key] ?? key;
 
-const MONTHS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const STATUS_META: Record<DonationStatus, { label: string; className: string }> = {
   success: { label: "Réussi", className: "bg-online/10 text-online" },
   pending: { label: "En attente", className: "bg-gold/15 text-gold-dark" },
@@ -43,8 +49,6 @@ const HOOK_STATUS_META: Record<string, string> = {
   failed: "bg-live/10 text-live",
 };
 
-const yearOf = (iso: string | null) => (iso ? iso.slice(0, 4) : "");
-const monthOf = (iso: string | null) => (iso ? Number(iso.slice(5, 7)) : 0);
 const uniq = (arr: string[]) => [...new Set(arr.filter(Boolean))];
 
 export function FinancesManager({
@@ -65,11 +69,9 @@ export function FinancesManager({
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | DonationStatus>("");
   const [purpose, setPurpose] = useState("");
-  const [year, setYear] = useState("");
-  const [month, setMonth] = useState("");
+  const [period, setPeriod] = useState<Period>(() => periodPresets()[2]); // "Ce mois"
   const [exporting, setExporting] = useState(false);
 
-  const years = useMemo(() => uniq(donations.map((d) => yearOf(d.created_at))).sort((a, b) => b.localeCompare(a)), [donations]);
   const purposes = useMemo(() => uniq(donations.map((d) => d.purpose_key)), [donations]);
 
   const filtered = useMemo(() => {
@@ -78,11 +80,39 @@ export function FinancesManager({
       const matchesSearch = !q || [d.reference, d.donor_name, d.donor_email].some((v) => v?.toLowerCase().includes(q));
       const matchesStatus = !status || d.status === status;
       const matchesPurpose = !purpose || d.purpose_key === purpose;
-      const matchesYear = !year || yearOf(d.created_at) === year;
-      const matchesMonth = !month || monthOf(d.created_at) === Number(month);
-      return matchesSearch && matchesStatus && matchesPurpose && matchesYear && matchesMonth;
+      const day = d.created_at?.slice(0, 10) ?? "";
+      const matchesPeriod = (!period.from || day >= period.from) && (!period.to || day <= period.to);
+      return matchesSearch && matchesStatus && matchesPurpose && matchesPeriod;
     });
-  }, [donations, search, status, purpose, year, month]);
+  }, [donations, search, status, purpose, period]);
+
+  // Combined generosity KPI (online + in-person culte collections) for the period.
+  const [givingStats, setGivingStats] = useState<GivingStats | null>(null);
+  const [givingLoading, setGivingLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Deferred a tick so the loading flag isn't set synchronously within the
+    // effect body (react-hooks/set-state-in-effect) — mirrors useServerList's
+    // debounce mechanism, just without an actual delay.
+    const timer = setTimeout(() => {
+      setGivingLoading(true);
+      getGivingStats(period.from, period.to)
+        .then((data) => {
+          if (!cancelled) setGivingStats(data);
+        })
+        .catch(() => {
+          if (!cancelled) setGivingStats(null);
+        })
+        .finally(() => {
+          if (!cancelled) setGivingLoading(false);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [period]);
 
   const kpis = useMemo(() => {
     const success = filtered.filter((d) => d.status === "success");
@@ -214,8 +244,8 @@ export function FinancesManager({
       const params: Record<string, string> = {};
       if (status) params.status = status;
       if (purpose) params.purpose_key = purpose;
-      if (year) params.year = year;
-      if (month) params.month = month;
+      if (period.from) params.from = period.from;
+      if (period.to) params.to = period.to;
       if (search.trim()) params.search = search.trim();
       const csv = await exportDonationsCsv(params);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -260,11 +290,69 @@ export function FinancesManager({
 
       {tab === "donations" ? (
         <>
-          {/* KPI cards */}
+          {/* Générosité combinée — dons en ligne + collecte en espèces des cultes */}
+          <div className="mb-7 rounded-[18px] border border-[rgba(40,25,80,0.08)] bg-white p-5 shadow-[0_1px_3px_rgba(22,15,51,0.04)]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-bold text-indigo italic">Générosité combinée</h2>
+                <p className="text-xs text-body">Dons en ligne + collecte en espèces des cultes, sur la période.</p>
+              </div>
+              <PeriodPicker value={period} onChange={setPeriod} />
+            </div>
+
+            {givingLoading && !givingStats ? (
+              <div className="flex h-[220px] items-center justify-center text-sm text-faint">Chargement…</div>
+            ) : givingStats ? (
+              <>
+                <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <SharedKpiCard label="Total combiné" value={formatFcfa(givingStats.total)} icon={Wallet} />
+                  <SharedKpiCard label="En ligne" value={formatFcfa(givingStats.by_channel.en_ligne)} icon={Smartphone} />
+                  <SharedKpiCard label="Espèces (culte)" value={formatFcfa(givingStats.by_channel.especes)} icon={Landmark} />
+                </div>
+
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <div>
+                    <h3 className="mb-3 text-[13px] font-bold text-body-strong">Répartition par nature</h3>
+                    <DonutChart
+                      data={Object.entries(givingStats.by_nature).map(([nature, v]) => ({
+                        key: nature,
+                        label: labelForNature(nature),
+                        value: v.total,
+                        color: colorForNature(nature),
+                      }))}
+                      formatValue={formatFcfa}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="mb-3 text-[13px] font-bold text-body-strong">En ligne vs espèces, par nature</h3>
+                    <GroupedBarChart
+                      data={Object.entries(givingStats.by_nature).map(([nature, v]) => ({
+                        label: labelForNature(nature),
+                        en_ligne: v.en_ligne,
+                        especes: v.especes,
+                      }))}
+                      series={[
+                        { key: "en_ligne", label: CHANNEL_LABELS.en_ligne, color: CHANNEL_COLORS.en_ligne },
+                        { key: "especes", label: CHANNEL_LABELS.especes, color: CHANNEL_COLORS.especes },
+                      ]}
+                      formatValue={formatFcfa}
+                      height={220}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-[100px] items-center justify-center text-sm text-faint">
+                Impossible de charger les statistiques combinées.
+              </div>
+            )}
+          </div>
+
+          {/* Ledger KPI cards (online donations only — see combined card above for the full picture) */}
           <div className="mb-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard icon={<Wallet className="size-5" />} label="Total récolté" value={formatFcfa(kpis.total)} highlight />
-            <KpiCard icon={<HandCoins className="size-5" />} label="Dîmes" value={formatFcfa(kpis.dime)} />
-            <KpiCard icon={<PiggyBank className="size-5" />} label="Offrandes" value={formatFcfa(kpis.offrande)} />
+            <KpiCard icon={<Wallet className="size-5" />} label="Total récolté (en ligne)" value={formatFcfa(kpis.total)} highlight />
+            <KpiCard icon={<HandCoins className="size-5" />} label="Dîmes (en ligne)" value={formatFcfa(kpis.dime)} />
+            <KpiCard icon={<PiggyBank className="size-5" />} label="Offrandes (en ligne)" value={formatFcfa(kpis.offrande)} />
             <KpiCard icon={<TrendingUp className="size-5" />} label="Taux de réussite" value={`${kpis.successRate}%`} sub={`${kpis.successCount} / ${filtered.length} transactions`} />
           </div>
 
@@ -276,8 +364,6 @@ export function FinancesManager({
             </div>
             <Select value={status} onChange={(v) => resetPage(setStatus)(v as "" | DonationStatus)} options={[["", "Tous statuts"], ["success", "Réussi"], ["pending", "En attente"], ["failed", "Échoué"]]} />
             <Select value={purpose} onChange={resetPage(setPurpose)} options={[["", "Toutes affectations"], ...purposes.map((p) => [p, purposeLabel(p)] as [string, string])]} />
-            <Select value={month} onChange={resetPage(setMonth)} options={[["", "Tous mois"], ...MONTHS.map((m, i) => [String(i + 1), m] as [string, string])]} />
-            <Select value={year} onChange={resetPage(setYear)} options={[["", "Toutes années"], ...years.map((y) => [y, y] as [string, string])]} />
           </div>
 
           <DataTable

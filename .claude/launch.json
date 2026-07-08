@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "church-api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd church-api && php artisan serve --port=8000"],
+      "port": 8000
+    },
+    {
+      "name": "church-client",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd church-client && pnpm dev"],
+      "port": 3000
+    }
+  ]
+}

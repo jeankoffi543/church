@@ -227,3 +227,18 @@ it('lists, aggregates and exports the ledger for finance admins', function () {
         ->assertOk()
         ->assertHeader('content-type', 'text/csv; charset=UTF-8');
 });
+
+it('filters the ledger with a custom from/to date range', function () {
+    actingAsAdminWith(['view_finances']);
+    Donation::factory()->successful()->create(['amount' => 10000, 'created_at' => '2026-06-15']);
+    Donation::factory()->successful()->create(['amount' => 20000, 'created_at' => '2026-07-15']);
+
+    $this->getJson('/api/v1/admin/donations/stats?from=2026-06-01&to=2026-06-30')
+        ->assertOk()
+        ->assertJsonPath('data.total_raised', 10000);
+
+    // A from/to range takes priority over an incidentally-present year/month.
+    $this->getJson('/api/v1/admin/donations/stats?from=2026-07-01&to=2026-07-31&year=2026&month=6')
+        ->assertOk()
+        ->assertJsonPath('data.total_raised', 20000);
+});

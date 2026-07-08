@@ -77,6 +77,10 @@ final class AccessControl
                 ['name' => 'view_offerings', 'label' => 'Consulter les dons et offrandes'],
                 ['name' => 'manage_offerings', 'label' => 'Gérer les dons, dîmes et reçus'],
             ],
+            'Cultes' => [
+                ['name' => 'view_services', 'label' => 'Consulter le planning des cultes'],
+                ['name' => 'manage_services', 'label' => 'Créer et planifier les cultes'],
+            ],
             'Communication' => [
                 ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
                 ['name' => 'manage_announcements', 'label' => 'Gérer les annonces et le bulletin'],
@@ -172,6 +176,8 @@ final class AccessControl
                 'view_branches',
                 'manage_branches',
                 'manage_store',
+                'view_services',
+                'manage_services',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
@@ -217,6 +223,7 @@ final class AccessControl
                 'view_finances',
                 'export_finances',
                 'view_dashboard',
+                'view_services',
             ],
         ];
     }
