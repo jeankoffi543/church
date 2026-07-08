@@ -6,6 +6,7 @@ use App\Support\QueryFilters;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Keky\QueryMaster\Concerns\HasFilters;
 use Keky\QueryMaster\Concerns\IsSearchable;
@@ -101,5 +102,13 @@ class Convert extends Model
     public function assignedCounselor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_counselor_id');
+    }
+
+    /**
+     * @return MorphMany<FollowUp, $this>
+     */
+    public function followUps(): MorphMany
+    {
+        return $this->morphMany(FollowUp::class, 'followable');
     }
 }

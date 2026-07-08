@@ -6,6 +6,7 @@ use App\Support\QueryFilters;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Keky\QueryMaster\Concerns\HasFilters;
 use Keky\QueryMaster\Concerns\IsSearchable;
@@ -93,5 +94,13 @@ class Member extends Model
     public function homeGroup(): BelongsTo
     {
         return $this->belongsTo(HomeGroup::class);
+    }
+
+    /**
+     * @return MorphMany<FollowUp, $this>
+     */
+    public function followUps(): MorphMany
+    {
+        return $this->morphMany(FollowUp::class, 'followable');
     }
 }

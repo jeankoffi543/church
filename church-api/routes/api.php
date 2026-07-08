@@ -239,6 +239,19 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('converts/{convert}', [Admin\ConvertController::class, 'destroy'])->name('converts.destroy');
             });
 
+            // Suivi des âmes — dossiers de discipulat (données pastorales sensibles,
+            // scopées au conseiller assigné à l'intérieur des contrôleurs).
+            Route::middleware('permission:view_followups|manage_followups')->group(function (): void {
+                Route::get('follow-ups', [Admin\FollowUpController::class, 'index'])->name('follow-ups.index');
+                Route::get('follow-ups/{followUp}', [Admin\FollowUpController::class, 'show'])->name('follow-ups.show');
+            });
+            Route::middleware('permission:manage_followups')->group(function (): void {
+                Route::post('follow-ups', [Admin\FollowUpController::class, 'store'])->name('follow-ups.store');
+                Route::match(['put', 'patch'], 'follow-ups/{followUp}', [Admin\FollowUpController::class, 'update'])->name('follow-ups.update');
+                Route::delete('follow-ups/{followUp}', [Admin\FollowUpController::class, 'destroy'])->name('follow-ups.destroy');
+                Route::post('follow-ups/{followUp}/notes', [Admin\FollowUpNoteController::class, 'store'])->name('follow-ups.notes.store');
+            });
+
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
                 ->middleware('permission:manage_events');
