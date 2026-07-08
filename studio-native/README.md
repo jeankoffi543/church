@@ -52,26 +52,27 @@ studio-native/
 
 ## Roadmap (branches `feature/CHR-*`)
 
-Numérotation alignée sur le tracker (suite de CHR-60 du web app). Le projet natif
-vit dans le **même repo git que church-clone**, sous `studio-native/`.
+Le projet natif vit dans le **même repo git que church-clone**, sous
+`studio-native/`. CHR-62..99 étant réservées à d'autres travaux, l'épic natif
+utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 
 | Branche | Livrable | Si le module est retiré |
 |---|---|---|
 | **CHR-61** ✅ | `studio-core` : logique pure portée + tests | — (cœur, 0 dép) |
-| CHR-62 | POC média headless (capture → compositor GPU → x264 → fichier) | spike de dé-risquage |
-| CHR-63 | Bootstrap Tauri + `src-tauri` + contrat IPC + glib↔tokio | — (fondation) |
-| CHR-64 | Compositeur GPU + surface preview native | UI tourne, preview « média indispo » |
-| CHR-65 | `mod-screen-capture` | source « écran » disparaît du menu |
-| CHR-66 | `mod-camera` | source « caméra » disparaît |
-| CHR-67 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
-| CHR-68 | `mod-audio-mixer` + VU réels | diffusion muette, reste OK |
-| CHR-69 | `mod-output-record` | bouton REC absent |
-| CHR-70 | `mod-output-whip` → Facebook | plus de diffusion externe |
-| CHR-71 | Animations + réactions sur GPU | overlays sans anim |
-| CHR-72 | `mod-encoder` (sélection HW + fallback) | x264 par défaut |
-| CHR-73 | Stats encodeur réelles + mode sandbox | — |
-| CHR-74 | Groupes, scènes multiples, transitions | — |
-| CHR-75 | Packaging, signature, CI 3-OS, notarization | — |
+| **CHR-100** ✅ | POC média headless (2 sources → compositor GPU → x264 → mp4mux, durée relue) | spike de dé-risquage |
+| CHR-101 | Bootstrap Tauri + `src-tauri` + contrat IPC + glib↔tokio | — (fondation) |
+| CHR-102 | Compositeur GPU + surface preview native | UI tourne, preview « média indispo » |
+| CHR-103 | `mod-screen-capture` | source « écran » disparaît du menu |
+| CHR-104 | `mod-camera` | source « caméra » disparaît |
+| CHR-105 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
+| CHR-106 | `mod-audio-mixer` + VU réels | diffusion muette, reste OK |
+| CHR-107 | `mod-output-record` | bouton REC absent |
+| CHR-108 | `mod-output-whip` → Facebook | plus de diffusion externe |
+| CHR-109 | Animations + réactions sur GPU | overlays sans anim |
+| CHR-110 | `mod-encoder` (sélection HW + fallback) | x264 par défaut |
+| CHR-111 | Stats encodeur réelles + mode sandbox | — |
+| CHR-112 | Groupes, scènes multiples, transitions | — |
+| CHR-113 | Packaging, signature, CI 3-OS, notarization | — |
 
 > `studio-core` (CHR-61) est livrable en premier parce que le cœur ne dépend ni
 > du shell Tauri ni du média : il se construit et se teste seul (c'est justement
@@ -97,4 +98,4 @@ build source via `cargo-c` le moment venu. `gstreamer1.0-tools` (CLI `gst-launch
 non installé — non requis : `gstreamer-rs` lie les libs, pas le CLI ; les POC sont
 prouvés par de vrais binaires Rust.
 
-Prochaine étape : **CHR-62**, POC média headless.
+POC média (CHR-100) validé. Prochaine étape : **CHR-101**, bootstrap Tauri + IPC.

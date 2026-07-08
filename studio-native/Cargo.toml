@@ -1,12 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["crates/studio-core"]
+members = ["crates/studio-core", "crates/poc-pipeline"]
+# `cargo test` / `cargo build` with no -p target builds ONLY studio-core, so the
+# "pure core compiles with nothing but a Rust toolchain" guarantee holds at the
+# workspace level. The media POC is opt-in: `cargo run -p poc-pipeline`.
+default-members = ["crates/studio-core"]
 
 # Media crates (studio-media, mod-*) and src-tauri are added in later CHR-*
-# branches — they require the GStreamer / Tauri dev toolchain (see README).
-# studio-core has ZERO media dependencies on purpose: it compiles and its tests
-# run with nothing but a Rust toolchain, which is the whole point of the modular
-# architecture (the app's pure logic never depends on the media plane).
+# branches. studio-core has ZERO media dependencies on purpose: it compiles and
+# its tests run with nothing but a Rust toolchain, which is the whole point of
+# the modular architecture (the app's pure logic never depends on the media plane).
 
 [workspace.package]
 version = "0.1.0"
