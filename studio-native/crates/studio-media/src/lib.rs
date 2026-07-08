@@ -4,19 +4,19 @@
 //! `MainLoop` on a dedicated thread** — the concrete realisation of the glib↔tokio
 //! split we designed: Tauri keeps the main thread for its own event loop, the
 //! media plane lives entirely here, and the two talk through channels + shared
-//! atomics (never a shared `&mut`).
+//! state (never a shared `&mut`).
 //!
 //! CHR-102 scope:
 //!   * [`probe_encoders`] — real capability probe (which H.264 encoder elements
 //!     actually exist on this machine), feeding the module-agnostic UI negotiation.
-//!   * [`MediaEngine`] — starts a `compositor` pipeline on the media thread and
-//!     proves it produces frames (buffer count via a pad probe). The pixels are
-//!     currently consumed by a `fakesink` so the engine is verifiable head-less;
-//!     docking a real video sink into the Tauri window (raw-window-handle / GTK)
-//!     is the display-dependent follow-up.
+//!   * [`MediaEngine`] — starts a `compositor` pipeline and exposes its output as
+//!     **JPEG preview frames** (compositor → downscale → `jpegenc` → `appsink`).
+//!     The frames are pushed to the webview as a data-URL — an embedded,
+//!     cross-platform preview that needs no native-window surgery. (The zero-copy
+//!     GPU path to the *encoder/WHIP* is a later, program-feed concern.)
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -35,9 +35,25 @@ type FrameSlot = Arc<Mutex<Option<Vec<u8>>>>;
 /// engine never hardcodes what produces the pixels. Runs on the media thread.
 pub type SourceBuilder = Box<dyn FnOnce(&gst::Pipeline) -> Result<gst::Element> + Send>;
 
+/// The compositor's own canvas — this is the "programme" resolution the CHR-103
+/// acceptance criteria target (mire/couleur 1080p60 stable). Layer pads
+/// (xpos/ypos/width/height) are positioned in THIS coordinate space.
+const OUTPUT_W: i32 = 1920;
+const OUTPUT_H: i32 = 1080;
+const OUTPUT_FPS: i32 = 60;
+
 /// Preview downscale target — small + cheap; a monitor, not the program feed.
-const PREVIEW_W: i32 = 640;
-const PREVIEW_H: i32 = 360;
+/// Independent of `OUTPUT_W`/`OUTPUT_H`: the compositor always runs at full
+/// programme resolution, only the JPEG shipped to the webview is shrunk.
+const PREVIEW_W: i32 = 960;
+const PREVIEW_H: i32 = 540;
+
+/// The programme canvas resolution — the coordinate space `MediaEngine::
+/// set_layer_transform` positions layers in. Exposed so callers (the Tauri
+/// shell, tests) never have to hardcode `OUTPUT_W`/`OUTPUT_H` themselves.
+pub fn canvas_size() -> (u32, u32) {
+    (OUTPUT_W as u32, OUTPUT_H as u32)
+}
 
 /// Ensure GStreamer is initialised (idempotent — safe to call repeatedly).
 fn ensure_init() -> Result<()> {
@@ -79,6 +95,7 @@ struct Ready {
     main_loop: glib::MainLoop,
     frames: Arc<AtomicU64>,
     latest: FrameSlot,
+    layer_pad: gst::Pad,
 }
 
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
@@ -88,6 +105,11 @@ pub struct MediaEngine {
     main_loop: glib::MainLoop,
     frames: Arc<AtomicU64>,
     latest: FrameSlot,
+    /// The compositor's request pad for the (single, for now) source layer.
+    /// `xpos`/`ypos`/`width`/`height` are plain GObject properties on this pad —
+    /// GStreamer applies them to the next buffer with no PAUSED round-trip, which
+    /// is what lets the UI move/resize a layer live while the pipeline runs.
+    layer_pad: gst::Pad,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -101,8 +123,7 @@ impl MediaEngine {
     /// until the media thread has the pipeline in `Playing` (or errors during
     /// setup), then returns while frames flow.
     pub fn start_with_source(source: SourceBuilder) -> Result<MediaEngine> {
-        let (ready_tx, ready_rx) =
-            mpsc::channel::<Result<(glib::MainLoop, Arc<AtomicU64>), String>>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<Ready, String>>();
 
         let thread = std::thread::Builder::new()
             .name("studio-media".into())
@@ -119,6 +140,7 @@ impl MediaEngine {
                 main_loop: r.main_loop,
                 frames: r.frames,
                 latest: r.latest,
+                layer_pad: r.layer_pad,
                 thread: Some(thread),
             }),
             Ok(Err(e)) => bail!("media engine setup: {e}"),
@@ -134,6 +156,21 @@ impl MediaEngine {
     /// The most recent preview frame as JPEG bytes, if one has been produced.
     pub fn latest_frame(&self) -> Option<Vec<u8>> {
         self.latest.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Move/resize the (single, for now) source layer within the `OUTPUT_W` ×
+    /// `OUTPUT_H` programme canvas, live, while the pipeline is `Playing`. This is
+    /// the runtime pad manipulation the CHR-103 acceptance criteria call for —
+    /// distinct from (harder) dynamic pad add/remove, which stays a later concern.
+    pub fn set_layer_transform(&self, xpos: i32, ypos: i32, width: i32, height: i32) -> Result<()> {
+        if width <= 0 || height <= 0 {
+            bail!("layer width/height must be positive, got {width}x{height}");
+        }
+        self.layer_pad.set_property("xpos", xpos);
+        self.layer_pad.set_property("ypos", ypos);
+        self.layer_pad.set_property("width", width);
+        self.layer_pad.set_property("height", height);
+        Ok(())
     }
 
     /// Stop the loop and join the media thread. Safe to call once.
@@ -173,7 +210,7 @@ fn run_media_thread(
 
         let frames = Arc::new(AtomicU64::new(0));
         let latest: FrameSlot = Arc::new(Mutex::new(None));
-        let pipeline = build_preview_pipeline(source, &frames, &latest)?;
+        let (pipeline, layer_pad) = build_preview_pipeline(source, &frames, &latest)?;
 
         let bus = pipeline
             .bus()
@@ -202,6 +239,7 @@ fn run_media_thread(
                 main_loop: main_loop.clone(),
                 frames: frames.clone(),
                 latest: latest.clone(),
+                layer_pad,
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
@@ -225,9 +263,9 @@ fn default_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
         .property(
             "caps",
             gst::Caps::builder("video/x-raw")
-                .field("width", 1280i32)
-                .field("height", 720i32)
-                .field("framerate", gst::Fraction::new(30, 1))
+                .field("width", OUTPUT_W)
+                .field("height", OUTPUT_H)
+                .field("framerate", gst::Fraction::new(OUTPUT_FPS, 1))
                 .build(),
         )
         .build()?;
@@ -236,14 +274,18 @@ fn default_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
     Ok(caps_in)
 }
 
-/// <source> → compositor → convert → scale → jpegenc → appsink.
-/// The appsink callback stores each JPEG frame in `latest` and bumps `frames`.
-/// One source for now; CHR-104+ request/release compositor pads per scene layer.
+/// <source> → compositor(1080p60 canvas) → caps → convert → scale(preview) →
+/// jpegenc → appsink. The compositor always runs at the full `OUTPUT_W` ×
+/// `OUTPUT_H` programme resolution — the JPEG shrink is a separate, later stage,
+/// so moving/resizing the layer pad is expressed in real programme coordinates
+/// regardless of how small the webview preview is. The appsink callback stores
+/// each JPEG frame in `latest` and bumps `frames`. One source for now; CHR-104+
+/// request/release additional compositor pads per scene layer.
 fn build_preview_pipeline(
     source: SourceBuilder,
     frames: &Arc<AtomicU64>,
     latest: &FrameSlot,
-) -> Result<gst::Pipeline> {
+) -> Result<(gst::Pipeline, gst::Pad)> {
     let pipeline = gst::Pipeline::with_name("studio-preview");
 
     // The pluggable source adds its own elements and hands back its tail.
@@ -253,9 +295,21 @@ fn build_preview_pipeline(
         .property_from_str("background", "black")
         .build()
         .context("make compositor")?;
+    // Forces the aggregator's own output to the programme canvas — otherwise it
+    // would just inherit whatever size the sink pads negotiate.
+    let caps_canvas = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("width", OUTPUT_W)
+                .field("height", OUTPUT_H)
+                .field("framerate", gst::Fraction::new(OUTPUT_FPS, 1))
+                .build(),
+        )
+        .build()?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
     let scale = gst::ElementFactory::make("videoscale").build()?;
-    let caps_out = gst::ElementFactory::make("capsfilter")
+    let caps_preview = gst::ElementFactory::make("capsfilter")
         .property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -276,16 +330,36 @@ fn build_preview_pipeline(
         .sync(true)
         .build();
 
-    pipeline.add_many([&compositor, &convert, &scale, &caps_out, &jpeg])?;
+    pipeline.add_many([
+        &compositor,
+        &caps_canvas,
+        &convert,
+        &scale,
+        &caps_preview,
+        &jpeg,
+    ])?;
     pipeline.add(&appsink).context("add appsink")?;
-    gst::Element::link_many([&compositor, &convert, &scale, &caps_out, &jpeg])?;
+    gst::Element::link_many([
+        &compositor,
+        &caps_canvas,
+        &convert,
+        &scale,
+        &caps_preview,
+        &jpeg,
+    ])?;
     jpeg.link(&appsink).context("link jpegenc → appsink")?;
 
     // Request a compositor pad and link the source's tail to it (the same API the
-    // scene→graph mapping drives per layer).
+    // scene→graph mapping drives per layer). Default: full-canvas, matching the
+    // programme size, so a freshly-added source fills the frame until the UI
+    // moves/resizes it.
     let comp_pad = compositor
         .request_pad_simple("sink_%u")
         .ok_or_else(|| anyhow!("compositor request pad failed"))?;
+    comp_pad.set_property("xpos", 0i32);
+    comp_pad.set_property("ypos", 0i32);
+    comp_pad.set_property("width", OUTPUT_W);
+    comp_pad.set_property("height", OUTPUT_H);
     source_tail
         .static_pad("src")
         .ok_or_else(|| anyhow!("source tail src pad"))?
@@ -311,7 +385,8 @@ fn build_preview_pipeline(
             })
             .build(),
     );
-    Ok(pipeline)
+
+    Ok((pipeline, comp_pad))
 }
 
 #[cfg(test)]
@@ -349,5 +424,58 @@ mod tests {
         assert!(n > 0, "no frames counted");
         // JPEG SOI marker — proves the compositor→jpegenc→appsink path is real.
         assert_eq!(&frame[..2], &[0xFF, 0xD8], "not a JPEG (bad magic bytes)");
+    }
+
+    #[test]
+    fn compositor_canvas_sustains_1080p60_without_stalling() {
+        // CHR-103 acceptance: "mire/couleur 1080p60 stable dans la preview". We
+        // can't observe the compositor's internal resolution from here (only the
+        // downscaled JPEG leaves the pipeline), but a stalled/misnegotiated 1080p60
+        // canvas would starve the appsink — so a sustained frame rate over a
+        // longer window is the observable proxy for "stable".
+        let engine = MediaEngine::start().expect("engine start");
+        std::thread::sleep(Duration::from_millis(900));
+        let n = engine.frames();
+        engine.stop();
+
+        // Generous floor (well under 60fps × 0.9s) to absorb CI/dev-box jitter
+        // while still failing loudly on an actually-stalled pipeline.
+        assert!(
+            n >= 15,
+            "expected a sustained frame rate, got {n} frames in 900ms"
+        );
+    }
+
+    #[test]
+    fn set_layer_transform_moves_the_live_compositor_pad() {
+        let engine = MediaEngine::start().expect("engine start");
+        // Wait for at least one frame so the pad is actually flowing, not just
+        // requested.
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+
+        engine
+            .set_layer_transform(100, 50, 800, 450)
+            .expect("set_layer_transform while Playing");
+
+        let xpos = engine.layer_pad.property::<i32>("xpos");
+        let ypos = engine.layer_pad.property::<i32>("ypos");
+        let width = engine.layer_pad.property::<i32>("width");
+        let height = engine.layer_pad.property::<i32>("height");
+        engine.stop();
+
+        assert_eq!((xpos, ypos, width, height), (100, 50, 800, 450));
+    }
+
+    #[test]
+    fn set_layer_transform_rejects_non_positive_size() {
+        let engine = MediaEngine::start().expect("engine start");
+        let err = engine.set_layer_transform(0, 0, 0, 100);
+        engine.stop();
+        assert!(err.is_err(), "expected zero width to be rejected");
     }
 }

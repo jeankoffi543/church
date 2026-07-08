@@ -5,7 +5,7 @@
 //! platform screen-capture element into a compositor layer:
 //!
 //! ```text
-//!   <platform capture> → videoconvert → videoscale → videorate → caps(1280x720)
+//!   <platform capture> → videoconvert → videoscale → videorate → caps(1920x1080@60)
 //! ```
 //!
 //! It is a **removable module**: if the crate (feature) is absent, or no capture
@@ -63,9 +63,9 @@ pub fn add_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
         .property(
             "caps",
             gst::Caps::builder("video/x-raw")
-                .field("width", 1280i32)
-                .field("height", 720i32)
-                .field("framerate", gst::Fraction::new(30, 1))
+                .field("width", 1920i32)
+                .field("height", 1080i32)
+                .field("framerate", gst::Fraction::new(60, 1))
                 .build(),
         )
         .build()?;

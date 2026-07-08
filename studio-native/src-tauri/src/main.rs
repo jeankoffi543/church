@@ -142,6 +142,33 @@ mod media {
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
         Some(format!("data:image/jpeg;base64,{b64}"))
     }
+
+    /// Move/resize the source layer live, in programme-canvas pixels (see
+    /// `studio_media::MediaEngine::set_layer_transform`). The frontend expresses
+    /// drags/resizes as fractions of the canvas so it never needs to know the
+    /// exact resolution; it multiplies by `canvas_size` before calling this.
+    #[tauri::command]
+    pub fn set_layer_transform(
+        state: tauri::State<'_, MediaState>,
+        xpos: i32,
+        ypos: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .set_layer_transform(xpos, ypos, width, height)
+            .map_err(|e| e.to_string())
+    }
+
+    /// The programme canvas resolution (1920×1080 today) — the frontend maps its
+    /// draggable overlay's fractional coordinates through this before calling
+    /// `set_layer_transform`, instead of hardcoding the resolution twice.
+    #[tauri::command]
+    pub fn canvas_size() -> (u32, u32) {
+        studio_media::canvas_size()
+    }
 }
 
 fn main() {
@@ -156,7 +183,9 @@ fn main() {
                 media::start_preview,
                 media::stop_preview,
                 media::media_status,
-                media::preview_frame
+                media::preview_frame,
+                media::set_layer_transform,
+                media::canvas_size
             ]);
 
     #[cfg(not(feature = "media"))]
