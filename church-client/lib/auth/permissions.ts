@@ -33,6 +33,8 @@ export const PERMISSIONS = {
   manageServices: "manage_services",
   viewMembers: "view_members",
   manageMembers: "manage_members",
+  viewAttendance: "view_attendance",
+  manageAttendance: "manage_attendance",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

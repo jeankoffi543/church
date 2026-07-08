@@ -206,6 +206,11 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('services/{service}', [Admin\ServiceController::class, 'destroy'])->name('services.destroy');
             });
 
+            // Présences — comptage agrégé par catégorie pour un culte donné.
+            Route::post('services/{service}/attendances', [Admin\AttendanceController::class, 'upsert'])
+                ->middleware('permission:manage_attendance')
+                ->name('services.attendances.upsert');
+
             // Fidèles — registre de la congrégation.
             Route::middleware('permission:view_members|manage_members')->group(function (): void {
                 Route::get('members', [Admin\MemberController::class, 'index'])->name('members.index');

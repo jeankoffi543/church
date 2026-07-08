@@ -1730,6 +1730,15 @@ export type AdminOfferingCollection = {
   notes: string | null;
 };
 
+export type AdminAttendance = {
+  id: number;
+  service_id: number;
+  category: string;
+  count: number;
+  recorded_by_id: number | null;
+  recorded_by: string | null;
+};
+
 export type AdminService = {
   id: number;
   title: string | null;
@@ -1738,6 +1747,7 @@ export type AdminService = {
   start_time: string | null;
   notes: string | null;
   offering_collections: AdminOfferingCollection[];
+  attendances: AdminAttendance[];
   created_at: string | null;
 };
 
@@ -1786,6 +1796,18 @@ export async function upsertOfferingCollections(
 ): Promise<AdminOfferingCollection[]> {
   const response = await adminFetch<{ data: AdminOfferingCollection[] }>(
     `/services/${serviceId}/offering-collections`,
+    { method: "POST", body: JSON.stringify({ lines }) }
+  );
+  return response.data;
+}
+
+/** Save every "présences du culte" line at once (one per catégorie). */
+export async function upsertAttendances(
+  serviceId: number,
+  lines: { category: string; count: number }[]
+): Promise<AdminAttendance[]> {
+  const response = await adminFetch<{ data: AdminAttendance[] }>(
+    `/services/${serviceId}/attendances`,
     { method: "POST", body: JSON.stringify({ lines }) }
   );
   return response.data;

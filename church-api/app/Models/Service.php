@@ -14,9 +14,8 @@ use Keky\QueryMaster\Enums\SearchOperator;
 
 /**
  * A single dated occurrence of a church gathering (culte dominical, étude
- * biblique, veillée, culte spécial…). Minimal shell for now — the future
- * attendance/présences module extends this with preacher/theme without
- * touching this table's existing columns.
+ * biblique, veillée, culte spécial…). Anchors {@see OfferingCollection}
+ * (cash collected in person) and {@see Attendance} (headcount by category).
  *
  * @property int $id
  * @property string|null $title
@@ -70,5 +69,13 @@ class Service extends Model
     public function offeringCollections(): HasMany
     {
         return $this->hasMany(OfferingCollection::class);
+    }
+
+    /**
+     * @return HasMany<Attendance, $this>
+     */
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
     }
 }

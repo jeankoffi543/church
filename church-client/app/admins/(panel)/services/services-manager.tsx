@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Calendar, Coins, Pencil, Plus, Save, Search, Trash2 } from "lucide-react";
+import { Calendar, Coins, Pencil, Plus, Save, Search, Trash2, Users } from "lucide-react";
 
 import type { AdminListMeta, AdminService } from "@/lib/admin-api";
 import {
@@ -9,6 +9,7 @@ import {
   deleteAdminService,
   getAdminServices,
   updateAdminService,
+  upsertAttendances,
   upsertOfferingCollections,
 } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -37,16 +38,25 @@ const NATURES = [
   { key: "missions", label: "Missions" },
 ];
 
+const ATTENDANCE_CATEGORIES = [
+  { key: "hommes", label: "Hommes" },
+  { key: "femmes", label: "Femmes" },
+  { key: "enfants", label: "Enfants" },
+  { key: "visiteurs", label: "Visiteurs" },
+];
+
 const emptyForm = { title: "", type: "culte_dominical", date: "", start_time: "" };
 
 export function ServicesManager({
   initialData,
   initialMeta,
   canManage,
+  canRecordAttendance,
 }: {
   initialData: AdminService[];
   initialMeta: AdminListMeta;
   canManage: boolean;
+  canRecordAttendance: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -78,10 +88,18 @@ export function ServicesManager({
   const [collecteAmounts, setCollecteAmounts] = useState<Record<string, string>>({});
   const [savingCollecte, setSavingCollecte] = useState(false);
 
+  // Présences modal
+  const [presenceFor, setPresenceFor] = useState<AdminService | null>(null);
+  const [presenceCounts, setPresenceCounts] = useState<Record<string, string>>({});
+  const [savingPresence, setSavingPresence] = useState(false);
+
   const [deleteTarget, setDeleteTarget] = useState<AdminService | null>(null);
 
   const totalCollected = (s: AdminService) =>
     s.offering_collections.reduce((acc, c) => acc + c.amount, 0);
+
+  const totalAttendance = (s: AdminService) =>
+    s.attendances.reduce((acc, a) => acc + a.count, 0);
 
   const openCreate = () => {
     setEditing(null);
@@ -162,6 +180,43 @@ export function ServicesManager({
     });
   };
 
+  const openPresence = (s: AdminService) => {
+    setPresenceFor(s);
+    const counts: Record<string, string> = {};
+    for (const c of ATTENDANCE_CATEGORIES) {
+      const existing = s.attendances.find((a) => a.category === c.key);
+      counts[c.key] = existing ? String(existing.count) : "";
+    }
+    setPresenceCounts(counts);
+    setStatus(null);
+  };
+
+  const handleSavePresence = () => {
+    if (!presenceFor) return;
+    const lines = ATTENDANCE_CATEGORIES
+      .map((c) => ({ category: c.key, count: Number(presenceCounts[c.key] || 0) }))
+      .filter((l) => l.count > 0);
+
+    if (lines.length === 0) {
+      setStatus({ type: "error", message: "Renseigne au moins un effectif." });
+      return;
+    }
+
+    setSavingPresence(true);
+    startTransition(async () => {
+      try {
+        await upsertAttendances(presenceFor.id, lines);
+        setStatus({ type: "success", message: `Présences enregistrées pour le ${presenceFor.date}.` });
+        setPresenceFor(null);
+        await refresh();
+      } catch (err) {
+        setStatus({ type: "error", message: (err as Error).message || "Enregistrement impossible." });
+      } finally {
+        setSavingPresence(false);
+      }
+    });
+  };
+
   const confirmDelete = () => {
     const service = deleteTarget;
     if (!service) return;
@@ -218,18 +273,19 @@ export function ServicesManager({
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Type</th>
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Titre</th>
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Collecte</th>
+              <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Présences</th>
               <th className="px-6 py-3.5 text-right text-[11px] font-bold tracking-wider text-body uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-6 py-10 text-center text-sm text-faint">Chargement…</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-sm text-faint">Chargement…</td>
               </tr>
             )}
             {!isLoading && services.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-10 text-center text-sm text-faint">Aucun culte enregistré.</td>
+                <td colSpan={6} className="px-6 py-10 text-center text-sm text-faint">Aucun culte enregistré.</td>
               </tr>
             )}
             {!isLoading && services.map((s) => (
@@ -254,8 +310,23 @@ export function ServicesManager({
                     ? `${totalCollected(s).toLocaleString("fr-FR")} F CFA`
                     : <span className="font-normal text-faint">Non saisie</span>}
                 </td>
+                <td className="px-4 py-3.5 font-bold text-indigo">
+                  {totalAttendance(s) > 0
+                    ? `${totalAttendance(s).toLocaleString("fr-FR")} pers.`
+                    : <span className="font-normal text-faint">Non saisies</span>}
+                </td>
                 <td className="px-6 py-3.5">
                   <div className="flex items-center justify-end gap-2">
+                    {canRecordAttendance && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Users className="size-3.5" />}
+                        onClick={() => openPresence(s)}
+                      >
+                        Présences
+                      </Button>
+                    )}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -399,6 +470,45 @@ export function ServicesManager({
             onClick={handleSaveCollecte}
           >
             Enregistrer la collecte
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Présences modal */}
+      <Modal
+        open={presenceFor !== null}
+        onOpenChange={(o) => !o && setPresenceFor(null)}
+        title="Saisir les présences du culte"
+        description={presenceFor ? `${typeLabel(presenceFor.type)} · ${presenceFor.date}` : undefined}
+        size="sm"
+      >
+        <div className="space-y-3.5 px-6 py-6">
+          {ATTENDANCE_CATEGORIES.map((c) => (
+            <Field key={c.key} label={c.label}>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={presenceCounts[c.key] ?? ""}
+                onChange={(e) => setPresenceCounts((prev) => ({ ...prev, [c.key]: e.target.value }))}
+                placeholder="0"
+                className={inputClass}
+              />
+            </Field>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setPresenceFor(null)}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            icon={<Save className="size-3.5" />}
+            loading={savingPresence && isPending}
+            onClick={handleSavePresence}
+          >
+            Enregistrer les présences
           </Button>
         </div>
       </Modal>
