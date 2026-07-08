@@ -6,6 +6,8 @@ use App\Support\QueryFilters;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Keky\QueryMaster\Concerns\HasFilters;
@@ -102,5 +104,21 @@ class Member extends Model
     public function followUps(): MorphMany
     {
         return $this->morphMany(FollowUp::class, 'followable');
+    }
+
+    /**
+     * @return BelongsToMany<Team, $this>
+     */
+    public function teams(): BelongsToMany
+    {
+        return $this->belongsToMany(Team::class, 'team_member');
+    }
+
+    /**
+     * @return HasMany<ServiceAssignment, $this>
+     */
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(ServiceAssignment::class);
     }
 }
