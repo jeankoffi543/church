@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { startFacebookBroadcast, stopFacebookBroadcast } from "@/lib/admin-api";
+import { fixWebmDuration } from "./webm-duration-fix";
 import { startProgramOut, type BibleContext, type ProgramOut } from "./program-out";
 import { publishWhip, type WhipPublisher, type WhipState } from "./whip-publisher";
 import type { ScriptureVerse, StudioLayer } from "./studio-layers";
@@ -119,6 +120,7 @@ export function useProgramBroadcast({
   const broadcastStreamRef = useRef<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordingStartedAtRef = useRef(0);
   /** Recording started the compositor itself (no broadcast was running) — so
    *  stopping recording should tear it back down, unless a real broadcast has
    *  since started using it too. */
@@ -260,6 +262,7 @@ export function useProgramBroadcast({
       };
       mr.start(1000); // 1s timeslice — flush periodically, resilient to a crash
       recorderRef.current = mr;
+      recordingStartedAtRef.current = Date.now();
       setRecording(true);
       return true;
     } catch (e) {
@@ -279,9 +282,19 @@ export function useProgramBroadcast({
     });
     recorderRef.current = null;
     setRecording(false);
-    const blob = new Blob(recordedChunksRef.current, { type: mr.mimeType || "video/webm" });
+    const durationMs = Date.now() - recordingStartedAtRef.current;
+    const raw = new Blob(recordedChunksRef.current, { type: mr.mimeType || "video/webm" });
     recordedChunksRef.current = [];
-    if (blob.size > 0) downloadRecording(blob);
+    if (raw.size > 0) {
+      // Chrome's MediaRecorder never writes a Duration for a live capture
+      // (confirmed: Segment→Info only has TimecodeScale/MuxingApp/WritingApp)
+      // — the file plays in Chrome/VLC but many stricter players refuse a
+      // duration-less webm outright ("impossible de lire la vidéo"). Patch it
+      // in before offering the download; falls back to the raw blob if the
+      // bytes don't match the expected structure.
+      const blob = await fixWebmDuration(raw, durationMs);
+      downloadRecording(blob);
+    }
     // Only recording's OWN compositor comes down — never a live broadcast's.
     if (compositorOwnedByRecordingRef.current && !publisherRef.current) {
       compositorOwnedByRecordingRef.current = false;
@@ -334,7 +347,17 @@ export function useProgramBroadcast({
     [],
   );
 
-  const getStats = () => publisherRef.current?.getStats() ?? Promise.resolve(null);
+  // Stable identities (read only from refs) — CHR-59 fix: these used to be
+  // recreated inline on every render. `getStats` is a dependency of
+  // `useEncoderStats`'s effect, so a fresh function every render tore that
+  // effect down and re-ran it (→ `setStats` → re-render → new `getStats` →
+  // repeat), pinning a tight loop that made the status bar flicker/blink
+  // almost too fast to read.
+  const getStats = useCallback(() => publisherRef.current?.getStats() ?? Promise.resolve(null), []);
+  const ensureCompositor = useCallback(() => {
+    startCompositor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     on,
@@ -349,9 +372,7 @@ export function useProgramBroadcast({
     recording,
     startRecording,
     stopRecording,
-    ensureCompositor: () => {
-      startCompositor();
-    },
+    ensureCompositor,
   };
 }
 
