@@ -1,0 +1,11 @@
+[package]
+name = "studio-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-102 — media runtime: GStreamer compositor pipeline driven by a glib MainLoop on a dedicated thread, plus real capability probing (encoders/elements)."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"

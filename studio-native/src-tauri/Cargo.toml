@@ -13,9 +13,18 @@ path = "src/main.rs"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# The media plane is a REMOVABLE module. With it off, the shell still runs and
+# reports zero encoders (CHR-101 behaviour) — the modular guarantee, at the
+# compile level.
+default = ["media"]
+media = ["dep:studio-media"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The pure domain layer. The shell depends on it; never the reverse.
 studio-core = { path = "../crates/studio-core" }
+# The media plane — optional, behind the `media` feature.
+studio-media = { path = "../crates/studio-media", optional = true }
