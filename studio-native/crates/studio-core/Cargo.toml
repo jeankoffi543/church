@@ -1,0 +1,12 @@
+[package]
+name = "studio-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Pure domain logic for the native studio: scene/layer model, easing, CHR-57 reaction blending. No media dependencies."
+
+[dependencies]
+# Intentionally empty. studio-core must never depend on GStreamer, Tauri, or any
+# platform/media crate. If a dependency here is not pure-Rust std logic, it is a
+# design smell — the media plane lives in studio-media / mod-* crates.

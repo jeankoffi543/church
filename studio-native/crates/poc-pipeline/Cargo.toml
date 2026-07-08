@@ -1,0 +1,16 @@
+[package]
+name = "poc-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-100 de-risking spike: 2 sources → GStreamer compositor → x264 → mp4mux → file, driven programmatically from gstreamer-rs, with duration read back."
+
+[[bin]]
+name = "poc-pipeline"
+path = "src/main.rs"
+
+[dependencies]
+gstreamer = "0.23"
+gstreamer-pbutils = "0.23"
+anyhow = "1"
