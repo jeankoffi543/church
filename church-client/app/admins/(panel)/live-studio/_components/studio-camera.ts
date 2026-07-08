@@ -41,6 +41,23 @@ export async function requestCameraPermission(): Promise<boolean> {
   }
 }
 
+/**
+ * Acquire a SCREEN / window / tab capture via `getDisplayMedia` (OBS "Capture
+ * d'écran"). Unlike a camera, this MUST be called from a user gesture and the
+ * browser shows its own picker each time — there is no persistable deviceId, so
+ * the resulting stream is held in the shared registry (see setCameraStream) and
+ * is never silently re-acquired. `withAudio` requests system/tab audio where the
+ * browser supports it (Chrome tab/desktop audio); it is best-effort.
+ */
+export async function acquireScreenStream(opts?: { withAudio?: boolean }): Promise<MediaStream> {
+  const md = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  if (!md?.getDisplayMedia) throw new Error("getDisplayMedia indisponible");
+  return md.getDisplayMedia({
+    video: { frameRate: { ideal: 30, max: 60 } },
+    audio: opts?.withAudio ?? true,
+  });
+}
+
 /** Acquire a capture stream for a device (video, optional audio). */
 export async function acquireCameraStream(opts: {
   deviceId?: string;

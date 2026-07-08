@@ -24,7 +24,7 @@ import {
 import { parseResolution } from "./_components/studio-style";
 import { StudioHeader } from "./_components/studio-header";
 import { StageMonitor } from "./_components/stage-monitor";
-import { CameraKeepAlive } from "./_components/composite-layer";
+import { CameraKeepAlive, ScreenKeepAlive } from "./_components/composite-layer";
 import { TransitionBar } from "./_components/transition-bar";
 import { ScenesDock } from "./_components/scenes-dock";
 import { SourcesDock } from "./_components/sources-dock";
@@ -1404,6 +1404,12 @@ export function LiveStudioConsole({
   // nothing remounts / re-acquires.)
   const keepAliveCameras = [...programLayers, ...layers].filter((l) => l.type === "camera");
 
+  // Screen-capture (getDisplayMedia) streams owned off-screen by <ScreenKeepAlive>
+  // — same union rationale as cameras. The owner never re-acquires (a display
+  // stream needs a fresh user gesture); it only meters + watches the browser's
+  // "Stop sharing" bar, which fires onEnded so we flip captureActive back off.
+  const keepAliveScreens = [...programLayers, ...layers].filter((l) => l.type === "screen");
+
   // Headless program-out broadcaster (compositor → WHIP → SRS → Facebook). Fed
   // with the ON-AIR layers so it mirrors the antenne.
   const broadcast = useProgramBroadcast({
@@ -2298,6 +2304,12 @@ export function LiveStudioConsole({
       {/* Off-screen owner of on-air + preview camera streams — survives scene
           switches so a camera stays on the antenne when the Preview changes. */}
       <CameraKeepAlive layers={keepAliveCameras} />
+      {/* Same, for screen-capture streams — plus flips captureActive off when the
+          operator ends the share via the browser's native "Stop sharing" bar. */}
+      <ScreenKeepAlive
+        layers={keepAliveScreens}
+        onEnded={(id) => patchLayerById(id, { captureActive: false })}
+      />
       {mounted &&
         status &&
         createPortal(

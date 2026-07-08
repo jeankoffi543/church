@@ -38,6 +38,8 @@ import {
   Check,
   Crosshair,
   Link2,
+  MonitorUp,
+  MonitorOff,
 } from "lucide-react";
 
 import { importStudioMediaFromUrl } from "@/lib/admin-api";
@@ -46,7 +48,15 @@ import { uploadStudioMediaWithProgress } from "@/lib/studio-upload";
 import { type ScriptureVerse, type StudioSettings } from "@/lib/studio";
 import { cn } from "@/lib/utils";
 import { getVideoController, type VideoTransportState } from "./studio-video";
-import { listInputs, requestCameraPermission, type MediaDeviceLite } from "./studio-camera";
+import {
+  acquireScreenStream,
+  getCameraStream,
+  listInputs,
+  requestCameraPermission,
+  setCameraStream,
+  subscribeCameraStreams,
+  type MediaDeviceLite,
+} from "./studio-camera";
 import { getAudioController, type AudioTransportState, getMonitorMuted, setMonitorMuted, subscribeMonitorMuted } from "./studio-audio";
 import { Slider } from "@/components/ui/slider";
 import { NativeSelect as Select } from "@/components/ui/select";
@@ -84,6 +94,7 @@ const TYPE_ICON: Record<StudioLayerType, typeof BookOpen> = {
   image: ImageIcon,
   embed: Radio,
   camera: Video,
+  screen: MonitorUp,
   video: Film,
   audio: Volume2,
   group: Folder,
@@ -1451,8 +1462,139 @@ function ContentPanel({
     return <VideoContent key={layer.id} layer={layer} patchLayerData={patchLayerData} />;
   }
 
+  if (layer.type === "screen") {
+    return <ScreenContent key={layer.id} layer={layer} patchLayerData={patchLayerData} />;
+  }
+
   // camera / capture
   return <CameraContent layer={layer} patchLayerData={patchLayerData} />;
+}
+
+/**
+ * Contenu for a "Capture d'écran" source (getDisplayMedia — OBS "Display /
+ * Window Capture"). The browser shows its own picker on the "Partager" gesture;
+ * the resulting stream is published to the shared registry (rendered by the
+ * console's <ScreenKeepAlive> and mixed by program-out). It cannot survive a page
+ * reload (a fresh gesture is required), so after a reload the status invites a
+ * re-share. The browser's own "Stop sharing" bar is handled upstream.
+ */
+function ScreenContent({ layer, patchLayerData }: { layer: StudioLayer; patchLayerData: Patch }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const stream = useSyncExternalStore(
+    subscribeCameraStreams,
+    () => getCameraStream(layer.id),
+    () => undefined,
+  );
+  const sharing = !!stream;
+  const listenLocal = layer.listenLocal ?? false;
+
+  const share = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await acquireScreenStream({ withAudio: true });
+      const prev = getCameraStream(layer.id);
+      if (prev && prev !== s) prev.getTracks().forEach((t) => t.stop());
+      setCameraStream(layer.id, s);
+      patchLayerData({
+        captureActive: true,
+        deviceLabel: s.getVideoTracks()[0]?.label || "Écran",
+      });
+    } catch (e) {
+      // Cancelling the picker rejects with NotAllowedError — not a real failure.
+      if (!(e instanceof DOMException && e.name === "NotAllowedError")) {
+        setError("Capture d'écran indisponible sur ce navigateur.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stop = () => {
+    getCameraStream(layer.id)
+      ?.getTracks()
+      .forEach((t) => t.stop());
+    setCameraStream(layer.id, null);
+    patchLayerData({ captureActive: false });
+  };
+
+  const statusLabel = sharing
+    ? "Partage actif"
+    : layer.captureActive
+      ? "Partage interrompu — repartagez"
+      : "Aucun partage";
+
+  return (
+    <>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => void share()}
+          disabled={busy}
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#5eb0d0]/35 bg-[#5eb0d0]/10 py-2 text-[11px] font-bold text-[#7fc6e0] transition hover:bg-[#5eb0d0]/20 disabled:opacity-50"
+        >
+          <MonitorUp className="size-3.5" />
+          {busy ? "…" : sharing ? "Changer d'écran" : "Partager un écran"}
+        </button>
+        {sharing && (
+          <button
+            type="button"
+            onClick={stop}
+            title="Arrêter le partage"
+            className="flex items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-bold text-red-400 transition hover:bg-red-500/20"
+          >
+            <MonitorOff className="size-3.5" />
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-[9px] border border-red-500/25 bg-red-500/10 p-3 text-[10px] leading-relaxed text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-[9px] border px-3 py-2 text-[10.5px] font-semibold",
+          sharing
+            ? "border-[#5eb0d0]/30 bg-[#5eb0d0]/10 text-[#7fc6e0]"
+            : layer.captureActive
+              ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+              : "border-white/10 bg-white/[0.03] text-white/45",
+        )}
+      >
+        <span
+          className={cn(
+            "size-2 rounded-full",
+            sharing ? "bg-[#5eb0d0]" : layer.captureActive ? "bg-amber-400" : "bg-white/30",
+          )}
+        />
+        {statusLabel}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => patchLayerData({ listenLocal: !listenLocal })}
+        className={cn(
+          "flex items-center justify-center gap-2 rounded-lg border py-2 text-[11.5px] font-bold transition-colors",
+          listenLocal
+            ? "border-gold/40 bg-gold/15 text-gold"
+            : "border-white/12 bg-white/[0.03] text-white/60 hover:text-white",
+        )}
+      >
+        {listenLocal ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+        {listenLocal ? "Écoute locale activée" : "Écouter en local (risque de Larsen)"}
+      </button>
+
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        Choisissez un écran, une fenêtre ou un onglet. L&apos;audio système/onglet est capté si le
+        navigateur le permet (Chrome). Le partage s&apos;arrête via ce bouton ou la barre « Arrêter le
+        partage » du navigateur. Le son passe par la table de mixage (VU réel).
+      </div>
+    </>
+  );
 }
 
 /**

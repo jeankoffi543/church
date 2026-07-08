@@ -191,7 +191,7 @@ function drawRevealCursor(
 
 /* ── Per-layer render sources ────────────────────────────────────────────── */
 
-type DrawKind = "camera" | "video" | "image" | "audio";
+type DrawKind = "camera" | "screen" | "video" | "image" | "audio";
 
 type Source = {
   kind: DrawKind;
@@ -221,6 +221,13 @@ function drawableKey(layer: StudioLayer): { kind: DrawKind; key: string } | null
   if (!layer.visible) return null;
   if (layer.type === "camera") {
     return layer.deviceId ? { kind: "camera", key: `dev:${layer.deviceId}` } : null;
+  }
+  if (layer.type === "screen") {
+    // No persistable id — the truth is the shared-stream registry. Only drawable
+    // when a getDisplayMedia stream is actually live (a stale captureActive flag
+    // after a reload has no stream, so nothing is drawn). The stream-replacement
+    // stale check (below) rebinds if the operator re-shares.
+    return getCameraStream(layer.id) ? { kind: "screen", key: `scr:${layer.id}` } : null;
   }
   if (layer.type === "video") {
     const url = (layer.feedUrl || "").trim();
@@ -379,10 +386,11 @@ export function startProgramOut(opts?: {
   function ensureSource(layer: StudioLayer, kind: DrawKind, key: string): Source | null {
     const existing = sources.get(layer.id);
     if (existing && existing.key === key) {
-      // Camera keys don't change with the underlying stream — rebuild when the
-      // shared stream is replaced (re-acquired) so we bind the live one.
+      // Camera/screen keys don't change with the underlying stream — rebuild when
+      // the shared stream is replaced (re-acquired) so we bind the live one.
       const streamStale =
-        kind === "camera" && existing.camStream !== (getCameraStream(layer.id) ?? undefined);
+        (kind === "camera" || kind === "screen") &&
+        existing.camStream !== (getCameraStream(layer.id) ?? undefined);
       if (!streamStale) {
         applyAudioLevels(layer, existing);
         return existing;
@@ -391,7 +399,7 @@ export function startProgramOut(opts?: {
     if (existing) disposeSource(layer.id, existing);
 
     let src: Source | null = null;
-    if (kind === "camera") {
+    if (kind === "camera" || kind === "screen") {
       const shared = getCameraStream(layer.id);
       if (!shared) return null;
       // Clone the tracks so we never touch the Preview's live stream or its audio
@@ -646,8 +654,8 @@ export function startProgramOut(opts?: {
           drawRevealCursor(ctx, a, box, textScale);
           continue;
         }
-        // Camera: animated like the DOM preview (CHR-56). Safe on CUT: its
-        // animStart survives scene pushes (set on APPEARANCE only, and the
+        // Camera / screen: animated like the DOM preview (CHR-56). Safe on CUT:
+        // its animStart survives scene pushes (set on APPEARANCE only, and the
         // nonce-driven replay skips cameras) — so a settled camera stays at
         // identity instead of vanishing like the old per-CUT fade did.
         if (src.el instanceof HTMLVideoElement && src.el.readyState >= 2 && src.el.videoWidth > 0) {
@@ -657,7 +665,7 @@ export function startProgramOut(opts?: {
             layer.style.animDuration ?? 500,
             layer.style.animEasing ?? "ease-out",
             textScale,
-            "camera",
+            layer.type as AnimSourceKind,
           );
           ctx.save();
           applyEntranceTransform(ctx, a, box);
