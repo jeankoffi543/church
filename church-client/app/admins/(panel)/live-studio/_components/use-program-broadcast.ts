@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { startFacebookBroadcast, stopFacebookBroadcast } from "@/lib/admin-api";
+import { fixWebmDuration } from "./webm-duration-fix";
 import { startProgramOut, type BibleContext, type ProgramOut } from "./program-out";
 import { publishWhip, type WhipPublisher, type WhipState } from "./whip-publisher";
 import type { ScriptureVerse, StudioLayer } from "./studio-layers";
@@ -45,6 +46,28 @@ export type ProgramBroadcast = {
   startBroadcast: () => Promise<string | null>;
   /** Stops publishing + the local compositor and tells the backend to kill the relay. */
   stopBroadcast: () => Promise<void>;
+  /** Raw WebRTC stats of the outgoing WHIP connection — `null` when not
+   *  publishing (compositor-only / idle). Feeds `use-encoder-stats.ts`. */
+  getStats: () => Promise<RTCStatsReport | null>;
+  /** A local MediaRecorder capture of the exact program feed is running. */
+  recording: boolean;
+  /**
+   * Starts recording the program feed to a local file (CHR-59). Decoupled from
+   * Facebook: starts the compositor on its own if nothing is broadcasting yet
+   * (rehearsal recording), so it works whether or not a real direct is live.
+   * Resolves `true` on success.
+   */
+  startRecording: () => Promise<boolean>;
+  /** Stops recording and triggers a local file download of exactly what was
+   *  captured. Only tears down the compositor if recording had started it
+   *  (never interrupts an active real broadcast). */
+  stopRecording: () => Promise<void>;
+  /** Starts the compositor LOCALLY ONLY — no Facebook publish, no WHIP. Used by
+   *  sandbox mode (CHR-59) so the operator can rehearse the composited output
+   *  without ever going out over the wire. `stopBroadcast()` tears it back down
+   *  the same way it already does for a real broadcast (no-op on the
+   *  Facebook/WHIP side since neither was ever started). */
+  ensureCompositor: () => void;
 };
 
 /**
@@ -90,10 +113,18 @@ export function useProgramBroadcast({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [whepUrl, setWhepUrl] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
 
   const outRef = useRef<ProgramOut | null>(null);
   const publisherRef = useRef<WhipPublisher | null>(null);
   const broadcastStreamRef = useRef<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+  const recordingStartedAtRef = useRef(0);
+  /** Recording started the compositor itself (no broadcast was running) — so
+   *  stopping recording should tear it back down, unless a real broadcast has
+   *  since started using it too. */
+  const compositorOwnedByRecordingRef = useRef(false);
   const layersRef = useRef(layers);
   const bibleRef = useRef<BibleContext>({ verse: bibleVerse, style: bibleStyle });
   const animRef = useRef(animNonce);
@@ -133,6 +164,10 @@ export function useProgramBroadcast({
     setError(null);
     try {
       const out = startCompositor();
+      // The compositor is now jointly needed by the real broadcast — recording
+      // (if any) no longer solely "owns" it, so stopping recording later must
+      // not tear it down while Facebook is still using it.
+      compositorOwnedByRecordingRef.current = false;
       const { whipUrl, stream, whepUrl: whep } = await startFacebookBroadcast();
       broadcastStreamRef.current = stream;
       setWhipState("connecting");
@@ -179,8 +214,92 @@ export function useProgramBroadcast({
   async function stopBroadcast() {
     setBusy(true);
     await teardownBroadcast();
-    stopCompositor();
+    // A local recording in progress keeps the compositor alive — stopping the
+    // PUBLIC broadcast must never cut off a recording the operator is keeping
+    // rolling (e.g. closing remarks after ending the public feed).
+    if (recorderRef.current) {
+      compositorOwnedByRecordingRef.current = true;
+    } else {
+      stopCompositor();
+    }
     setBusy(false);
+  }
+
+  /** video/webm is the only container every Chromium/Firefox build reliably
+   *  produces without extra licensing — try the best codec pair first. */
+  function pickRecorderMimeType(): string | undefined {
+    if (typeof MediaRecorder === "undefined") return undefined;
+    const candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    return candidates.find((c) => MediaRecorder.isTypeSupported(c));
+  }
+
+  function downloadRecording(blob: Blob) {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const d = new Date();
+    const name = `culte-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.webm`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function startRecording(): Promise<boolean> {
+    if (recorderRef.current) return true; // already recording
+    setError(null);
+    try {
+      const wasOn = !!outRef.current;
+      const out = startCompositor();
+      compositorOwnedByRecordingRef.current = !wasOn;
+      const mimeType = pickRecorderMimeType();
+      const mr = mimeType ? new MediaRecorder(out.stream, { mimeType }) : new MediaRecorder(out.stream);
+      recordedChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      mr.start(1000); // 1s timeslice — flush periodically, resilient to a crash
+      recorderRef.current = mr;
+      recordingStartedAtRef.current = Date.now();
+      setRecording(true);
+      return true;
+    } catch (e) {
+      setError(`Enregistrement impossible : ${e instanceof Error ? e.message : String(e)}`);
+      // Only undo what WE started — never rip out a compositor the broadcast owns.
+      if (compositorOwnedByRecordingRef.current) stopCompositor();
+      return false;
+    }
+  }
+
+  async function stopRecording(): Promise<void> {
+    const mr = recorderRef.current;
+    if (!mr) return;
+    await new Promise<void>((resolve) => {
+      mr.addEventListener("stop", () => resolve(), { once: true });
+      mr.stop();
+    });
+    recorderRef.current = null;
+    setRecording(false);
+    const durationMs = Date.now() - recordingStartedAtRef.current;
+    const raw = new Blob(recordedChunksRef.current, { type: mr.mimeType || "video/webm" });
+    recordedChunksRef.current = [];
+    if (raw.size > 0) {
+      // Chrome's MediaRecorder never writes a Duration for a live capture
+      // (confirmed: Segment→Info only has TimecodeScale/MuxingApp/WritingApp)
+      // — the file plays in Chrome/VLC but many stricter players refuse a
+      // duration-less webm outright ("impossible de lire la vidéo"). Patch it
+      // in before offering the download; falls back to the raw blob if the
+      // bytes don't match the expected structure.
+      const blob = await fixWebmDuration(raw, durationMs);
+      downloadRecording(blob);
+    }
+    // Only recording's OWN compositor comes down — never a live broadcast's.
+    if (compositorOwnedByRecordingRef.current && !publisherRef.current) {
+      compositorOwnedByRecordingRef.current = false;
+      stopCompositor();
+    }
   }
 
   // Keep the compositor scene + on-air verse in sync (animNonce replays entrances,
@@ -206,27 +325,55 @@ export function useProgramBroadcast({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Warn before leaving/refreshing while the output or a broadcast is live.
+  // Warn before leaving/refreshing while the output, a broadcast, or a
+  // recording is live — a refresh would silently drop it.
   useEffect(() => {
-    if (!on && !broadcasting) return;
+    if (!on && !broadcasting && !recording) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [on, broadcasting]);
+  }, [on, broadcasting, recording]);
 
   // Release everything on unmount.
   useEffect(
     () => () => {
       void publisherRef.current?.stop();
+      if (recorderRef.current) recorderRef.current.stop();
       outRef.current?.stop();
     },
     [],
   );
 
-  return { on, broadcasting, whipState, busy, error, whepUrl, startBroadcast, stopBroadcast };
+  // Stable identities (read only from refs) — CHR-59 fix: these used to be
+  // recreated inline on every render. `getStats` is a dependency of
+  // `useEncoderStats`'s effect, so a fresh function every render tore that
+  // effect down and re-ran it (→ `setStats` → re-render → new `getStats` →
+  // repeat), pinning a tight loop that made the status bar flicker/blink
+  // almost too fast to read.
+  const getStats = useCallback(() => publisherRef.current?.getStats() ?? Promise.resolve(null), []);
+  const ensureCompositor = useCallback(() => {
+    startCompositor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    on,
+    broadcasting,
+    whipState,
+    busy,
+    error,
+    whepUrl,
+    startBroadcast,
+    stopBroadcast,
+    getStats,
+    recording,
+    startRecording,
+    stopRecording,
+    ensureCompositor,
+  };
 }
 
 /** Human-readable message for a broadcast start failure. */

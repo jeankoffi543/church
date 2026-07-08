@@ -31,10 +31,13 @@ export function ControlsDock({
   liveError,
   onStartLive,
   onStopLive,
+  sandboxRehearsal = false,
   recording,
+  recBusy = false,
   onToggleRecord,
   recLabel,
   sandbox,
+  sandboxLocked = false,
   onToggleSandbox,
   dualLayout,
   onToggleLayout,
@@ -48,10 +51,16 @@ export function ControlsDock({
   liveError: string | null;
   onStartLive: () => void;
   onStopLive: () => void;
+  /** Mode Test · Sandbox is on — the primary button runs a LOCAL rehearsal
+   *  only (never Facebook/site), so its copy must say so unambiguously. */
+  sandboxRehearsal?: boolean;
   recording: boolean;
+  recBusy?: boolean;
   onToggleRecord: () => void;
   recLabel: string;
   sandbox: boolean;
+  /** A real broadcast is active — sandbox can't be toggled mid-direct. */
+  sandboxLocked?: boolean;
   onToggleSandbox: () => void;
   dualLayout: boolean;
   onToggleLayout: () => void;
@@ -70,7 +79,8 @@ export function ControlsDock({
       </div>
 
       <ScrollArea className="flex min-h-0 flex-1 flex-col gap-2.5 p-2.5">
-        {/* Primary action — Facebook broadcast + public site live in one gesture. */}
+        {/* Primary action — Facebook broadcast + public site live in one gesture
+            (or, in sandbox, a local-only rehearsal that never leaves the browser). */}
         <button
           type="button"
           onClick={liveActive ? onStopLive : onStartLive}
@@ -79,7 +89,9 @@ export function ControlsDock({
             "flex items-center gap-2.5 rounded-[10px] border px-3 py-3 text-left transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60",
             liveActive
               ? "border-studio-onair/45 bg-studio-onair/12"
-              : "border-[#1877f2]/45 bg-[#1877f2]/12",
+              : sandboxRehearsal
+                ? "border-studio-sandbox/45 bg-studio-sandbox/12"
+                : "border-[#1877f2]/45 bg-[#1877f2]/12",
           )}
         >
           <span className="flex size-8 shrink-0 items-center justify-center">
@@ -87,35 +99,47 @@ export function ControlsDock({
               <Loader2 className="size-5 animate-spin text-white/80" />
             ) : liveActive ? (
               <Square className="size-4 fill-studio-onair text-studio-onair" />
+            ) : sandboxRehearsal ? (
+              <TriangleAlert className="size-5 text-studio-sandbox" strokeWidth={1.9} />
             ) : (
               <RadioTower className="size-5 text-[#4a94ff]" strokeWidth={1.9} />
             )}
           </span>
           <span className="flex-1">
             <span className="block text-[12px] font-bold text-white">
-              {liveActive ? "Arrêter le live" : "Démarrer le live"}
+              {sandboxRehearsal
+                ? liveActive
+                  ? "Arrêter le test"
+                  : "Démarrer le test"
+                : liveActive
+                  ? "Arrêter le live"
+                  : "Démarrer le live"}
             </span>
             <span className={cn("block text-[9.5px] text-white/50", MONO)}>
-              {liveActive
-                ? liveState === "connected"
-                  ? "En direct · Facebook + site"
-                  : liveState === "failed"
-                    ? "Diffusion en échec"
-                    : liveState === "connecting"
-                      ? "Connexion à Facebook…"
-                      : "En direct · site"
-                : "Facebook + site en même temps"}
+              {sandboxRehearsal
+                ? "Répétition locale · rien n'est diffusé"
+                : liveActive
+                  ? liveState === "connected"
+                    ? "En direct · Facebook + site"
+                    : liveState === "failed"
+                      ? "Diffusion en échec"
+                      : liveState === "connecting"
+                        ? "Connexion à Facebook…"
+                        : "En direct · site"
+                  : "Facebook + site en même temps"}
             </span>
           </span>
           {liveActive && (
             <span
               className={cn(
                 "size-2 shrink-0 rounded-full",
-                liveState === "connected"
-                  ? "relative animate-onair-pulse bg-studio-onair"
-                  : liveState === "failed"
-                    ? "bg-red-400"
-                    : "bg-studio-sandbox",
+                sandboxRehearsal
+                  ? "bg-studio-sandbox"
+                  : liveState === "connected"
+                    ? "relative animate-onair-pulse bg-studio-onair"
+                    : liveState === "failed"
+                      ? "bg-red-400"
+                      : "bg-studio-sandbox",
               )}
             />
           )}
@@ -127,25 +151,31 @@ export function ControlsDock({
         <button
           type="button"
           onClick={onToggleRecord}
+          disabled={recBusy}
+          title="Enregistre exactement le flux du programme (compositeur + mixage audio) dans un fichier local, que le direct soit lancé ou non."
           className={cn(
-            "flex items-center gap-2.5 rounded-[10px] border px-3 py-3 text-left transition hover:brightness-110",
+            "flex items-center gap-2.5 rounded-[10px] border px-3 py-3 text-left transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60",
             recording
               ? "border-studio-onair/40 bg-studio-onair/12"
               : "border-white/10 bg-white/[0.03]",
           )}
         >
-          <span
-            className={cn(
-              "size-[11px] shrink-0",
-              recording ? "rounded-full bg-studio-onair" : "rounded-[2px] bg-white/40",
-            )}
-          />
+          {recBusy ? (
+            <Loader2 className="size-[11px] shrink-0 animate-spin text-white/60" />
+          ) : (
+            <span
+              className={cn(
+                "size-[11px] shrink-0",
+                recording ? "rounded-full bg-studio-onair" : "rounded-[2px] bg-white/40",
+              )}
+            />
+          )}
           <span className="flex-1">
             <span className="block text-[12px] font-bold text-white">
               {recording ? "Arrêter l'enregistrement" : "Démarrer l'enregistrement"}
             </span>
             <span className={cn("block text-[9.5px] text-white/45", MONO)}>
-              {recording ? recLabel : "Prêt"}
+              {recording ? recLabel : "Fichier local (.webm)"}
             </span>
           </span>
         </button>
@@ -185,7 +215,13 @@ export function ControlsDock({
         <button
           type="button"
           onClick={onToggleSandbox}
-          className="flex items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.03] px-3 py-3 text-left"
+          disabled={sandboxLocked}
+          title={
+            sandboxLocked
+              ? "Arrêtez le direct avant d'activer le mode test."
+              : "Rien n'est jamais envoyé à Facebook ni visible sur /live tant que ce mode est actif."
+          }
+          className="flex items-center gap-2.5 rounded-[10px] border border-white/10 bg-white/[0.03] px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span
             className={cn(
@@ -202,7 +238,9 @@ export function ControlsDock({
           </span>
           <span className="flex-1">
             <span className="block text-[12px] font-bold text-white">Mode Test · Sandbox</span>
-            <span className="block text-[9.5px] text-white/45">Environnement isolé</span>
+            <span className="block text-[9.5px] text-white/45">
+              Jamais sur Facebook ni /live
+            </span>
           </span>
         </button>
 
@@ -257,8 +295,8 @@ export function ControlsDock({
               </span>
             </div>
             <p className="m-0 text-[10.5px] leading-relaxed text-white/60">
-              Tchat et demandes de prière contournent la base : exécution en mémoire locale
-              temporaire, jamais enregistrée.
+              Le direct (Facebook + site) et les versets diffusés restent strictement locaux :
+              rien n&apos;est envoyé au public tant que ce mode est actif.
             </p>
           </div>
         )}

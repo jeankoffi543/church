@@ -340,6 +340,8 @@ export function InspectorDock({
                 replayMode={selectedLayer.replayOnCut ?? "auto"}
                 onReplayModeChange={(m) => patchLayerData({ replayOnCut: m })}
                 replayGlobalDefault={replayOnCutGlobal}
+                layer={selectedLayer}
+                patchLayerData={patchLayerData}
               />
             )}
             {activeTab === "reaction" && (
@@ -2589,6 +2591,8 @@ function AnimPanel({
   replayMode,
   onReplayModeChange,
   replayGlobalDefault,
+  layer,
+  patchLayerData,
 }: {
   settings: StudioSettings;
   setStudioField: <K extends keyof StudioSettings>(key: K, value: StudioSettings[K]) => void;
@@ -2599,6 +2603,9 @@ function AnimPanel({
   onReplayModeChange: (m: "auto" | "always" | "never") => void;
   /** What "Auto" currently resolves to (the global toggle). */
   replayGlobalDefault: boolean;
+  /** Entry-sound fields (CHR-59) live on the LAYER, not the style. */
+  layer: StudioLayer;
+  patchLayerData: Patch;
 }) {
   const kind = layerType as AnimSourceKind; // "audio" never gets an Anim tab
   const [cat, setCat] = useState<"all" | AnimCategoryId>("all");
@@ -2767,7 +2774,194 @@ function AnimPanel({
         />
         <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
+
+      <EntrySoundBlock layer={layer} patch={patchLayerData} />
     </>
+  );
+}
+
+/**
+ * Entry sound cue (CHR-59): an optional one-shot audio clip that plays through
+ * the REAL program mix the moment this source first appears ON AIR (never in
+ * the preview, never on a plain re-CUT — see program-out.ts's appearance
+ * branch). "Tester le son" is a local-only preview (`new Audio`), never touches
+ * the broadcast mix, so the operator can audition/pick a clip safely.
+ */
+function EntrySoundBlock({ layer, patch }: { layer: StudioLayer; patch: Patch }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [urlDraft, setUrlDraft] = useState("");
+
+  const enabled = layer.entrySoundEnabled ?? false;
+  const url = layer.entrySoundUrl ?? "";
+  const volume = layer.entrySoundVolume ?? 80;
+
+  const upload = async (file: File) => {
+    if (!file.type.startsWith("audio/")) {
+      setError("Choisissez un fichier audio (.mp3, .wav, .m4a…).");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    setProgress(0);
+    try {
+      const { url: hosted } = await uploadStudioMediaWithProgress(file, setProgress);
+      patch({ entrySoundUrl: hosted, entrySoundName: file.name });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'envoi du son.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const importUrl = async () => {
+    const raw = urlDraft.trim();
+    if (!raw) return;
+    if (raw.includes("/studio/media/") || raw.startsWith("/storage")) {
+      patch({ entrySoundUrl: raw, entrySoundName: raw.split("/").pop() });
+      setUrlDraft("");
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const { url: hosted } = await importStudioMediaFromUrl(raw);
+      patch({ entrySoundUrl: hosted, entrySoundName: raw.split("/").pop() });
+      setUrlDraft("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Impossible d'importer ce son depuis cette URL.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-3">
+      <button
+        type="button"
+        onClick={() => patch({ entrySoundEnabled: !enabled })}
+        className="flex w-full items-center justify-between"
+      >
+        <span className="flex items-center gap-1.5 text-[11.5px] font-bold text-white">
+          <Music className="size-3.5 text-studio-purple" />
+          Jouer un son à l&apos;apparition
+        </span>
+        <span
+          className={cn(
+            "relative h-5 w-[34px] shrink-0 rounded-full transition-colors",
+            enabled ? "bg-studio-purple" : "bg-white/15",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-0.5 size-4 rounded-full bg-white transition-all",
+              enabled ? "left-4" : "left-0.5",
+            )}
+          />
+        </span>
+      </button>
+      <div className="mt-1 text-[10px] leading-snug text-white/40">
+        Joué une seule fois, à l&apos;antenne (Facebook + site), quand cette source apparaît pour la
+        première fois — jamais dans l&apos;aperçu, jamais rejoué sur un simple re-CUT.
+      </div>
+
+      {enabled && (
+        <div className="mt-2.5 flex flex-col gap-2">
+          {url ? (
+            <div className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2">
+              <Music className="size-3.5 shrink-0 text-white/40" />
+              <span className="min-w-0 flex-1 truncate text-[11px] text-white/70">
+                {layer.entrySoundName || url}
+              </span>
+              <button
+                type="button"
+                onClick={() => patch({ entrySoundUrl: undefined, entrySoundName: undefined })}
+                title="Retirer le son"
+                className="shrink-0 text-white/30 transition-colors hover:text-[#ff8a8a]"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) void upload(f);
+                }}
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-white/14 bg-white/[0.03] py-2.5 text-[11px] font-bold text-white/55 transition-colors hover:border-gold/40 hover:text-gold"
+              >
+                <Upload className="size-3.5" />
+                {uploading ? `Envoi… ${Math.round(progress * 100)}%` : "Importer ou glisser-déposer…"}
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void upload(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void importUrl();
+                  }}
+                  placeholder="…ou coller une URL de son"
+                  className={cn(FIELD, "text-[11px]")}
+                />
+                <button
+                  type="button"
+                  onClick={() => void importUrl()}
+                  className="shrink-0 rounded-lg border border-gold/30 bg-gold/15 px-3 text-[11px] font-bold text-gold transition hover:bg-gold/25"
+                >
+                  Importer
+                </button>
+              </div>
+            </>
+          )}
+          {error && <span className="text-[10px] text-[#ff8a8a]">{error}</span>}
+
+          {url && (
+            <>
+              <div>
+                <SliderLabel label="Volume" value={`${volume}%`} />
+                <Slider
+                  min={0}
+                  max={100}
+                  value={volume}
+                  onValueChange={(v) => patch({ entrySoundVolume: v })}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const a = new Audio(
+                    url.startsWith("http") || url.startsWith("blob:")
+                      ? url
+                      : `${process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://127.0.0.1:8000"}${url}`,
+                  );
+                  a.volume = Math.max(0, Math.min(1, volume / 100));
+                  void a.play().catch(() => {});
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/30 bg-studio-purple/10 py-2 text-[11px] font-bold text-studio-purple transition hover:bg-studio-purple/20"
+              >
+                <Play className="size-3.5 fill-current" />
+                Tester le son (local, ne diffuse pas)
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

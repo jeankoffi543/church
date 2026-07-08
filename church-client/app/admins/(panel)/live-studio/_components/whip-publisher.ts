@@ -18,6 +18,9 @@ export type WhipState = "connecting" | "connected" | "failed" | "closed";
 export type WhipPublisher = {
   /** Live connection state. */
   getState: () => WhipState;
+  /** Raw WebRTC stats for the outgoing connection (real encoder/bitrate/fps
+   *  readouts) — `null` once stopped. See `use-encoder-stats.ts`. */
+  getStats: () => Promise<RTCStatsReport | null>;
   /** Stop publishing: DELETE the WHIP resource and close the peer connection. */
   stop: () => Promise<void>;
 };
@@ -161,6 +164,7 @@ export async function publishWhip(opts: {
 
   return {
     getState: () => state,
+    getStats: () => (state === "closed" ? Promise.resolve(null) : pc.getStats()),
     async stop() {
       setState("closed");
       if (resourceUrl) {

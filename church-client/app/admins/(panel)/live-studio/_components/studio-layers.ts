@@ -60,6 +60,15 @@ export type StudioLayer = {
   reactStyle?: Partial<StudioSettings>;
   /** Duration (ms) of the base⇄reaction transition (default 600). */
   reactTransitionMs?: number;
+  /** Entry sound cue (CHR-59): plays once, mixed into the REAL program audio,
+   *  the moment this source first appears ON AIR (not in the preview — see
+   *  program-out.ts's `animStart` appearance branch). Never replays on a plain
+   *  re-CUT of the same scene. */
+  entrySoundEnabled?: boolean;
+  entrySoundUrl?: string;
+  entrySoundName?: string;
+  /** 0-100, mixer-fader convention like `audioLevel` elsewhere. */
+  entrySoundVolume?: number;
   // song stanzas (feature/CHR-39)
   stanzas?: Array<{ name: string; content: string }>;
   activeStanzaIndex?: number;

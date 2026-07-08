@@ -1,28 +1,35 @@
 "use client";
 
-import { Settings2, Radio, TriangleAlert, Square } from "lucide-react";
+import { Loader2, Settings2, Radio, TriangleAlert, Square } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { MONO } from "./studio-tokens";
 
 /**
- * Broadcast control-bar header: brand lockup + settings, sandbox banner, and the
- * PREVIEW/LIVE program-mode switch with the on-air / recording indicators.
+ * Broadcast control-bar header: brand lockup + settings, sandbox banner, and
+ * the on-air indicator + recording indicator.
  *
- * The PREVIEW/LIVE mode, sandbox and recording flags are OBS "chrome" state
- * (stub — TODO(studio): drive from a real scene/broadcast engine). The settings
- * gear opens the real live-configuration modal.
+ * CHR-59: the header used to ALSO offer a "Passer en direct" start button
+ * (`onModeChange("live")`) that called `saveLiveSettings(true)` directly,
+ * bypassing the real compositor/WHIP/Facebook start entirely — the site could
+ * flip to "live" with no actual stream. Starting is now EXCLUSIVELY the dock's
+ * "Démarrer le live" job (the one control that does the whole real sequence).
+ * The header keeps only the on-air indicator + an emergency STOP, routed
+ * through the same real `stopLive()` the dock uses (via a confirm dialog owned
+ * by the console) — it no longer flips `live_status` on its own.
  */
 export function StudioHeader({
-  mode,
-  onModeChange,
+  onAir,
+  onRequestStop,
+  busy = false,
   sandbox,
   recording,
   recLabel,
   onOpenSettings,
 }: {
-  mode: "preview" | "live";
-  onModeChange: (mode: "preview" | "live") => void;
+  onAir: boolean;
+  onRequestStop: () => void;
+  busy?: boolean;
   sandbox: boolean;
   recording: boolean;
   recLabel: string;
@@ -62,7 +69,7 @@ export function StudioHeader({
       )}
 
       <div className="ml-auto flex items-center gap-2.5">
-        {mode === "live" ? (
+        {onAir ? (
           <span className="relative flex animate-onair-pulse items-center gap-1.5 rounded-[10px] border border-studio-onair/32 bg-studio-onair/15 px-3 py-[7px] text-[11px] font-extrabold tracking-[1px] text-[#ff9a9a]">
             <span className="size-2 animate-studio-blink rounded-full bg-studio-onair" />
             EN DIRECT
@@ -86,23 +93,17 @@ export function StudioHeader({
           </span>
         )}
 
-        {mode === "live" ? (
+        {/* Emergency stop only — starting is exclusively the dock's job (its
+            "Démarrer le live" already runs the full real sequence). */}
+        {onAir && (
           <button
             type="button"
-            onClick={() => onModeChange("preview")}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-studio-onair/40 bg-studio-onair/15 px-4 py-[7px] text-[11px] font-extrabold tracking-[0.6px] text-[#ff9a9a] transition hover:bg-studio-onair/25"
+            onClick={onRequestStop}
+            disabled={busy}
+            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-studio-onair/40 bg-studio-onair/15 px-4 py-[7px] text-[11px] font-extrabold tracking-[0.6px] text-[#ff9a9a] transition hover:bg-studio-onair/25 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Square className="size-3 fill-current" />
+            {busy ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3 fill-current" />}
             Arrêter le direct
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onModeChange("live")}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[10px] border border-emerald-400/40 bg-emerald-500/15 px-4 py-[7px] text-[11px] font-extrabold tracking-[0.6px] text-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.18)] transition hover:bg-emerald-500/25"
-          >
-            <Radio className="size-3.5" />
-            Passer en direct
           </button>
         )}
       </div>
