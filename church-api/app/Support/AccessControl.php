@@ -107,6 +107,10 @@ final class AccessControl
                 ['name' => 'view_followups', 'label' => 'Consulter les dossiers de suivi pastoral (les siens, ou tous pour un Pasteur)'],
                 ['name' => 'manage_followups', 'label' => 'Créer un suivi, y ajouter des notes et changer son statut'],
             ],
+            'Logistique' => [
+                ['name' => 'view_resources', 'label' => "Consulter l'inventaire et les réservations de ressources"],
+                ['name' => 'manage_resources', 'label' => 'Gérer les ressources (salles, véhicules, matériel) et leurs réservations'],
+            ],
             'Communication' => [
                 ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
                 ['name' => 'manage_announcements', 'label' => 'Gérer les annonces et le bulletin'],
@@ -212,6 +216,8 @@ final class AccessControl
                 'manage_evangelism',
                 'view_followups',
                 'manage_followups',
+                'view_resources',
+                'manage_resources',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the

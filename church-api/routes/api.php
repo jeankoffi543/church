@@ -252,6 +252,22 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('follow-ups/{followUp}/notes', [Admin\FollowUpNoteController::class, 'store'])->name('follow-ups.notes.store');
             });
 
+            // Logistique — inventaire des ressources (salles, véhicules, matériel) + réservations.
+            Route::middleware('permission:view_resources|manage_resources')->group(function (): void {
+                Route::get('resources', [Admin\ResourceController::class, 'index'])->name('resources.index');
+                Route::get('resources/{resource}', [Admin\ResourceController::class, 'show'])->name('resources.show');
+                Route::get('resource-bookings', [Admin\ResourceBookingController::class, 'index'])->name('resource-bookings.index');
+            });
+            Route::middleware('permission:manage_resources')->group(function (): void {
+                Route::post('resources', [Admin\ResourceController::class, 'store'])->name('resources.store');
+                Route::match(['put', 'patch'], 'resources/{resource}', [Admin\ResourceController::class, 'update'])->name('resources.update');
+                Route::delete('resources/{resource}', [Admin\ResourceController::class, 'destroy'])->name('resources.destroy');
+
+                Route::post('resource-bookings', [Admin\ResourceBookingController::class, 'store'])->name('resource-bookings.store');
+                Route::match(['put', 'patch'], 'resource-bookings/{resourceBooking}', [Admin\ResourceBookingController::class, 'update'])->name('resource-bookings.update');
+                Route::delete('resource-bookings/{resourceBooking}', [Admin\ResourceBookingController::class, 'destroy'])->name('resource-bookings.destroy');
+            });
+
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
                 ->middleware('permission:manage_events');

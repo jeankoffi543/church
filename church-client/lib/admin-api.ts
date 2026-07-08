@@ -2095,3 +2095,112 @@ export async function addAdminFollowUpNote(
   return response.data;
 }
 
+/* ── Logistique : Ressources & Réservations ──────────────────────── */
+
+export type ResourceType = "salle" | "vehicule" | "materiel" | "autre";
+export type ResourceCondition = "bon" | "moyen" | "hors_service";
+export type ResourceBookingStatus = "confirme" | "annule";
+
+export type AdminResource = {
+  id: number;
+  name: string;
+  type: ResourceType;
+  description: string | null;
+  location: string | null;
+  condition: ResourceCondition;
+  is_active: boolean;
+  bookings_count: number | null;
+};
+
+export type AdminResourceBooking = {
+  id: number;
+  resource_id: number;
+  resource_name: string | null;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  booked_by: number | null;
+  booked_by_name: string | null;
+  notes: string | null;
+  status: ResourceBookingStatus;
+};
+
+export async function getAdminResources(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminResource>> {
+  return adminFetch<AdminListResult<AdminResource>>(buildAdminListPath("/resources", params));
+}
+
+export async function createAdminResource(data: {
+  name: string;
+  type: ResourceType;
+  description?: string | null;
+  location?: string | null;
+  condition?: ResourceCondition;
+  is_active?: boolean;
+}): Promise<AdminResource> {
+  const response = await adminFetch<{ data: AdminResource }>("/resources", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminResource(id: number, data: {
+  name?: string;
+  type?: ResourceType;
+  description?: string | null;
+  location?: string | null;
+  condition?: ResourceCondition;
+  is_active?: boolean;
+}): Promise<AdminResource> {
+  const response = await adminFetch<{ data: AdminResource }>(`/resources/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminResource(id: number): Promise<void> {
+  await adminFetch<void>(`/resources/${id}`, { method: "DELETE" });
+}
+
+export async function getAdminResourceBookings(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminResourceBooking>> {
+  return adminFetch<AdminListResult<AdminResourceBooking>>(buildAdminListPath("/resource-bookings", params));
+}
+
+export async function createAdminResourceBooking(data: {
+  resource_id: number;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  notes?: string | null;
+}): Promise<AdminResourceBooking> {
+  const response = await adminFetch<{ data: AdminResourceBooking }>("/resource-bookings", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminResourceBooking(id: number, data: {
+  resource_id?: number;
+  title?: string;
+  starts_at?: string;
+  ends_at?: string;
+  notes?: string | null;
+  status?: ResourceBookingStatus;
+}): Promise<AdminResourceBooking> {
+  const response = await adminFetch<{ data: AdminResourceBooking }>(`/resource-bookings/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminResourceBooking(id: number): Promise<void> {
+  await adminFetch<void>(`/resource-bookings/${id}`, { method: "DELETE" });
+}
+
