@@ -222,6 +222,23 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('members/{member}', [Admin\MemberController::class, 'destroy'])->name('members.destroy');
             });
 
+            // Évangélisation — campagnes de sortie + nouvelles âmes.
+            Route::middleware('permission:view_evangelism|manage_evangelism')->group(function (): void {
+                Route::get('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'index'])->name('evangelism-campaigns.index');
+                Route::get('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'show'])->name('evangelism-campaigns.show');
+                Route::get('converts', [Admin\ConvertController::class, 'index'])->name('converts.index');
+                Route::get('converts/{convert}', [Admin\ConvertController::class, 'show'])->name('converts.show');
+            });
+            Route::middleware('permission:manage_evangelism')->group(function (): void {
+                Route::post('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'store'])->name('evangelism-campaigns.store');
+                Route::match(['put', 'patch'], 'evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'update'])->name('evangelism-campaigns.update');
+                Route::delete('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'destroy'])->name('evangelism-campaigns.destroy');
+
+                Route::post('converts', [Admin\ConvertController::class, 'store'])->name('converts.store');
+                Route::match(['put', 'patch'], 'converts/{convert}', [Admin\ConvertController::class, 'update'])->name('converts.update');
+                Route::delete('converts/{convert}', [Admin\ConvertController::class, 'destroy'])->name('converts.destroy');
+            });
+
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
                 ->middleware('permission:manage_events');

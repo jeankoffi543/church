@@ -32,6 +32,15 @@ it('creates a member attached to a home group', function () {
         ->assertJsonPath('data.home_group_name', 'Cellule Cocody');
 });
 
+it('applies the DB-level member_type/status defaults when omitted', function () {
+    actingAsAdminWith(['manage_members']);
+
+    $this->postJson('/api/v1/admin/members', ['name' => 'Sans Type Ni Statut'])
+        ->assertCreated()
+        ->assertJsonPath('data.member_type', 'membre')
+        ->assertJsonPath('data.status', 'actif');
+});
+
 it('rejects creation without the manage_members permission', function () {
     actingAsAdminWith(['view_members']);
 
