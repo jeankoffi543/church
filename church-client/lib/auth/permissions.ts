@@ -29,6 +29,8 @@ export const PERMISSIONS = {
   viewBranches: "view_branches",
   manageBranches: "manage_branches",
   manageStore: "manage_store",
+  viewServices: "view_services",
+  manageServices: "manage_services",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
