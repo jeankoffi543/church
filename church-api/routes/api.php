@@ -117,6 +117,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('logout', [Admin\AuthController::class, 'logout'])->name('logout');
             Route::get('users', [Admin\AuthController::class, 'users'])->name('users');
 
+            // Tableau de bord — snapshot agrégé de tous les modules, chaque section
+            // gated en interne par la permission du domaine correspondant.
+            Route::get('dashboard/summary', [Admin\DashboardController::class, 'summary'])
+                ->middleware('permission:view_dashboard')
+                ->name('dashboard.summary');
+
             // Settings: readable by any authenticated admin (most pages need the
             // config to render); writes are gated by the relevant privileges.
             Route::get('settings/pastor-word', [Admin\SettingController::class, 'getPastorWord'])

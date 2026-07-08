@@ -2278,3 +2278,23 @@ export async function upsertAdminServiceAssignments(
   return response.data;
 }
 
+/* ── Tableau de bord ─────────────────────────────────────────────── */
+
+export type DashboardSummary = {
+  members?: { total: number; active: number; new_in_period: number };
+  services?: { count_in_period: number; attendance_in_period: number | null };
+  attendance_trend?: { date: string; count: number }[];
+  giving?: { total: number; en_ligne: number; especes: number; by_nature: Record<string, number> };
+  evangelism?: { new_converts_in_period: number; campaigns_in_period: number };
+  followups?: { open_count: number };
+  resources?: { upcoming_bookings: number };
+  teams?: { services_total: number; services_planned: number };
+};
+
+export async function getAdminDashboardSummary(from: string, to: string): Promise<DashboardSummary> {
+  const response = await adminFetch<{ data: DashboardSummary }>(
+    `/dashboard/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
+  return response.data;
+}
+
