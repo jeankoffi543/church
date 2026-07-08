@@ -3,11 +3,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ShoppingBag, X, Plus, Minus, Check, AlertTriangle, ArrowRight } from "lucide-react";
+import { ShoppingBag, X, Check, AlertTriangle, ArrowRight } from "lucide-react";
 import { Product, ProductVariant } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { assetUrl } from "@/lib/asset-url";
+import { useCurrency } from "@/components/currency/currency-context";
+import { CurrencySelector } from "@/components/currency/currency-selector";
 
 const FRENCH_COLORS_MAP: Record<string, string> = {
   "blanc": "#ffffff",
@@ -63,11 +65,21 @@ interface OrderItem {
   image?: string;
 }
 
+function readStoredCart(): OrderItem[] {
+  try {
+    const saved = localStorage.getItem("mfm_cart");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 interface ProductViewProps {
   product: ProductRich;
 }
 
 export function ProductView({ product }: ProductViewProps) {
+  const { format } = useCurrency();
   // Gallery state
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
@@ -92,16 +104,11 @@ export function ProductView({ product }: ProductViewProps) {
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("mfm_cart");
-      if (saved) {
-        try {
-          setCartItems(JSON.parse(saved));
-        } catch {
-          // ignore
-        }
-      }
-    }
+    // Reading localStorage during the lazy useState initializer would run on
+    // the client's first render and mismatch the server-rendered empty cart,
+    // breaking hydration — load it post-mount instead.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCartItems(readStoredCart());
   }, []);
 
   const saveCart = (items: OrderItem[]) => {
@@ -196,7 +203,7 @@ export function ProductView({ product }: ProductViewProps) {
     if (selectedVariant && selectedVariant.unlimited_stock !== undefined) {
       return !!selectedVariant.unlimited_stock;
     }
-    const override = selectedOptionObjects.find((o: any) => o.unlimited_stock !== undefined);
+    const override = selectedOptionObjects.find((o) => o.unlimited_stock !== undefined);
     if (override && override.unlimited_stock !== undefined) {
       return !!override.unlimited_stock;
     }
@@ -212,7 +219,7 @@ export function ProductView({ product }: ProductViewProps) {
     if (selectedVariant && selectedVariant.low_stock_threshold !== undefined && selectedVariant.low_stock_threshold !== null) {
       return currentQty <= selectedVariant.low_stock_threshold;
     }
-    const override = selectedOptionObjects.find((o: any) => o.low_stock_threshold !== undefined && o.low_stock_threshold !== null);
+    const override = selectedOptionObjects.find((o) => o.low_stock_threshold !== undefined && o.low_stock_threshold !== null);
     if (override && override.low_stock_threshold !== undefined && override.low_stock_threshold !== null) {
       return currentQty <= override.low_stock_threshold;
     }
@@ -325,18 +332,21 @@ export function ProductView({ product }: ProductViewProps) {
             ← E-Boutique / {product.title}
           </Link>
 
-          {/* Cart Button with Count indicator */}
-          <button
-            onClick={() => setIsCartOpen(true)}
-            className="relative flex items-center gap-2 bg-gradient-to-br from-[#3a2a6e] to-[#211648] text-white cursor-pointer font-bold text-xs px-4.5 py-2.5 rounded-xl shadow-md shadow-[#211648]/20 transition-all hover:brightness-108 active:scale-98"
-          >
-            <span>Panier</span>
-            {cartItems.length > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#e2b85f] text-[#211648] text-[9.5px] font-extrabold flex items-center justify-center animate-bounce">
-                {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
-              </span>
-            )}
-          </button>
+          {/* Currency selector + Cart Button */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <CurrencySelector />
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative flex items-center gap-2 bg-gradient-to-br from-[#3a2a6e] to-[#211648] text-white cursor-pointer font-bold text-xs px-4.5 py-2.5 rounded-xl shadow-md shadow-[#211648]/20 transition-all hover:brightness-108 active:scale-98"
+            >
+              <span>Panier</span>
+              {cartItems.length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#e2b85f] text-[#211648] text-[9.5px] font-extrabold flex items-center justify-center animate-bounce">
+                  {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -441,11 +451,11 @@ export function ProductView({ product }: ProductViewProps) {
               
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-black text-[#c8902e]">
-                  {currentPrice.toLocaleString("fr-FR")} FCFA
+                  {format(currentPrice)}
                 </span>
                 {currentOldPrice !== undefined && (
                   <span className="text-sm line-through text-[#9a93ad]">
-                    {currentOldPrice.toLocaleString("fr-FR")} FCFA
+                    {format(currentOldPrice)}
                   </span>
                 )}
               </div>
@@ -683,7 +693,7 @@ export function ProductView({ product }: ProductViewProps) {
 
                       {/* Pricing */}
                       <span className="block text-xs font-black text-[#c8902e] mt-1.5">
-                        {item.price.toLocaleString("fr-FR")} FCFA <span className="text-[10px] text-[#9a93ad] font-normal">/ u</span>
+                        {format(item.price)} <span className="text-[10px] text-[#9a93ad] font-normal">/ u</span>
                       </span>
                     </div>
 
@@ -728,7 +738,7 @@ export function ProductView({ product }: ProductViewProps) {
               <div className="p-5 border-t border-[#281950]/8 bg-white space-y-4">
                 <div className="flex justify-between items-baseline font-bold text-sm text-[#5a5470]">
                   <span>Total</span>
-                  <span className="font-display font-black text-2xl text-[#211648]">{subtotal.toLocaleString("fr-FR")} FCFA</span>
+                  <span className="font-display font-black text-2xl text-[#211648]">{format(subtotal)}</span>
                 </div>
                 
                 <Link href="/store/checkout" className="w-full">

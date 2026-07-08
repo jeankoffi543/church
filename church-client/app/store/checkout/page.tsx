@@ -3,11 +3,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, ShieldCheck, ArrowRight, ArrowLeft, ShoppingBag } from "lucide-react";
+import { ArrowLeft, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { placeStoreOrder } from "@/lib/public-api";
+import { useCurrency } from "@/components/currency/currency-context";
 
 interface OrderItem {
   id: string;
@@ -30,6 +31,15 @@ interface DeliveryOption {
 
 
 
+function readStoredCart(): OrderItem[] {
+  try {
+    const saved = localStorage.getItem("mfm_cart");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 interface PayMethod {
   key: string;
   label: string;
@@ -47,6 +57,7 @@ const PAY_METHODS: PayMethod[] = [
 ];
 
 export default function CheckoutPage() {
+  const { format } = useCurrency();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Cart state persisted via localStorage
@@ -78,16 +89,11 @@ export default function CheckoutPage() {
   const [submitError, setSubmitError] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("mfm_cart");
-      if (saved) {
-        try {
-          setCartItems(JSON.parse(saved));
-        } catch {
-          // ignore
-        }
-      }
-    }
+    // Reading localStorage during the lazy useState initializer would run on
+    // the client's first render and mismatch the server-rendered empty cart,
+    // breaking hydration — load it post-mount instead.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCartItems(readStoredCart());
 
     // Load dynamic delivery options
     const loadBoutiqueSettings = async () => {
@@ -207,8 +213,8 @@ export default function CheckoutPage() {
       } else {
         setSubmitError("Une erreur inattendue est survenue.");
       }
-    } catch (err: any) {
-      setSubmitError(err.message || "Une erreur est survenue lors de l'enregistrement de votre commande.");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Une erreur est survenue lors de l'enregistrement de votre commande.");
     } finally {
       setIsSubmitting(false);
     }
@@ -342,7 +348,7 @@ export default function CheckoutPage() {
                               <span className="block text-xs text-[#5a5470] mt-0.5">{d.desc}</span>
                             </span>
                             <span className="font-extrabold text-sm text-[#211648]">
-                              {d.price === 0 ? "Gratuit" : `+${d.price.toLocaleString("fr-FR")} FCFA`}
+                              {d.price === 0 ? "Gratuit" : `+${format(d.price)}`}
                             </span>
                           </button>
                         );
@@ -468,7 +474,7 @@ export default function CheckoutPage() {
                         disabled={isSubmitting || cartItems.length === 0}
                         className="flex-1 bg-gradient-to-br from-[#e2b85f] to-[#c8902e] text-[#211648] font-extrabold h-12 rounded-xl shadow-lg shadow-[#c8902e]/20 transition-all hover:brightness-105 active:scale-98 cursor-pointer border-none"
                       >
-                        {isSubmitting ? "Traitement en cours..." : `Payer ${total.toLocaleString("fr-FR")} FCFA`}
+                        {isSubmitting ? "Traitement en cours..." : `Payer ${format(total)}`}
                       </Button>
                     </div>
                   </div>
@@ -534,7 +540,7 @@ export default function CheckoutPage() {
                       </div>
                     </div>
                     <span className="font-extrabold text-xs text-[#211648] shrink-0 pt-0.5">
-                      {(item.price * item.quantity).toLocaleString("fr-FR")} FCFA
+                      {format(item.price * item.quantity)}
                     </span>
                   </div>
                 ))}
@@ -547,18 +553,18 @@ export default function CheckoutPage() {
               <div className="border-t border-[#281950]/6 pt-4 space-y-2.5">
                 <div className="flex justify-between text-xs font-bold text-[#5a5470]">
                   <span>Sous-total</span>
-                  <span className="text-[#211648]">{subtotal.toLocaleString("fr-FR")} FCFA</span>
+                  <span className="text-[#211648]">{format(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-xs font-bold text-[#5a5470]">
                   <span>Livraison</span>
                   <span className="text-[#211648]">
-                    {selectedDelivery.price === 0 ? "Gratuit" : `${selectedDelivery.price.toLocaleString("fr-FR")} FCFA`}
+                    {selectedDelivery.price === 0 ? "Gratuit" : format(selectedDelivery.price)}
                   </span>
                 </div>
                 <div className="flex justify-between items-baseline border-t border-[#281950]/8 pt-4 mt-2">
                   <span className="text-xs font-bold text-[#211648]">Total</span>
                   <span className="font-display font-black text-2xl text-[#c8902e]">
-                    {total.toLocaleString("fr-FR")} FCFA
+                    {format(total)}
                   </span>
                 </div>
               </div>
@@ -585,7 +591,7 @@ export default function CheckoutPage() {
             <div className="bg-white border border-[#281950]/8 rounded-2xl p-6 text-left space-y-3.5 shadow-sm">
               <div className="flex justify-between text-xs text-[#5a5470]">
                 <span>Montant réglé</span>
-                <span className="font-display font-bold text-lg text-[#211648]">{orderTotal.toLocaleString("fr-FR")} FCFA</span>
+                <span className="font-display font-bold text-lg text-[#211648]">{format(orderTotal)}</span>
               </div>
               <div className="flex justify-between text-xs text-[#5a5470] border-t border-[#281950]/6 pt-3">
                 <span>Paiement</span>

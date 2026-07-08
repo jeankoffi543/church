@@ -22,6 +22,7 @@ import {
   ClipboardList,
   UsersRound,
   TrendingUp,
+  Coins,
   type LucideIcon,
 } from "lucide-react";
 
@@ -83,6 +84,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "store-orders", path: "/admins/store/orders", label: "Commandes", icon: ClipboardList, permission: [PERMISSIONS.manageStore], group: "boutique" },
   { key: "store-clients", path: "/admins/store/clients", label: "Clients", icon: UsersRound, permission: [PERMISSIONS.manageStore], group: "boutique" },
   { key: "store-finance", path: "/admins/store/finance", label: "Finance", icon: TrendingUp, permission: [PERMISSIONS.manageStore], group: "boutique" },
+  { key: "store-currencies", path: "/admins/store/currencies", label: "Devises", icon: Coins, permission: [PERMISSIONS.manageStore], group: "boutique" },
 
   // Église & Présentation
   { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },
