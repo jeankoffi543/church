@@ -23,6 +23,15 @@ use anyhow::{anyhow, bail, Context, Result};
 use gst::glib;
 use gst::prelude::*;
 use gstreamer as gst;
+use gstreamer_app as gst_app;
+
+/// The latest encoded preview frame (JPEG bytes), shared between the appsink
+/// callback (streaming thread) and the reader (Tauri command thread).
+type FrameSlot = Arc<Mutex<Option<Vec<u8>>>>;
+
+/// Preview downscale target — small + cheap; a monitor, not the program feed.
+const PREVIEW_W: i32 = 640;
+const PREVIEW_H: i32 = 360;
 
 /// Ensure GStreamer is initialised (idempotent — safe to call repeatedly).
 fn ensure_init() -> Result<()> {
@@ -59,11 +68,20 @@ pub fn probe_encoders() -> Vec<String> {
     out
 }
 
+/// Handles handed back from the media thread once the pipeline is `Playing`.
+struct Ready {
+    main_loop: glib::MainLoop,
+    frames: Arc<AtomicU64>,
+    latest: FrameSlot,
+}
+
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
-/// its own thread. Dropping or [`MediaEngine::stop`]-ping it tears the loop down.
+/// its own thread, publishing JPEG preview frames. Dropping or
+/// [`MediaEngine::stop`]-ping it tears the loop down.
 pub struct MediaEngine {
     main_loop: glib::MainLoop,
     frames: Arc<AtomicU64>,
+    latest: FrameSlot,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -85,9 +103,10 @@ impl MediaEngine {
             .context("spawn media thread")?;
 
         match ready_rx.recv() {
-            Ok(Ok((main_loop, frames))) => Ok(MediaEngine {
-                main_loop,
-                frames,
+            Ok(Ok(r)) => Ok(MediaEngine {
+                main_loop: r.main_loop,
+                frames: r.frames,
+                latest: r.latest,
                 thread: Some(thread),
             }),
             Ok(Err(e)) => bail!("media engine setup: {e}"),
@@ -95,9 +114,14 @@ impl MediaEngine {
         }
     }
 
-    /// Buffers composited so far (proof the pipeline is actually running).
+    /// Frames encoded so far (proof the pipeline is actually running).
     pub fn frames(&self) -> u64 {
         self.frames.load(Ordering::Relaxed)
+    }
+
+    /// The most recent preview frame as JPEG bytes, if one has been produced.
+    pub fn latest_frame(&self) -> Option<Vec<u8>> {
+        self.latest.lock().ok().and_then(|g| g.clone())
     }
 
     /// Stop the loop and join the media thread. Safe to call once.
@@ -121,9 +145,7 @@ impl Drop for MediaEngine {
 
 /// Runs entirely on the dedicated media thread: build the pipeline, attach the
 /// glib bus watch, go `Playing`, signal ready, then run the loop until quit.
-fn run_media_thread(
-    ready: &mpsc::Sender<Result<(glib::MainLoop, Arc<AtomicU64>), String>>,
-) -> Result<()> {
+fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
     ensure_init()?;
 
     // Own a MainContext for THIS thread so the bus watch and the MainLoop share it
@@ -135,7 +157,8 @@ fn run_media_thread(
         let main_loop = glib::MainLoop::new(None, false);
 
         let frames = Arc::new(AtomicU64::new(0));
-        let pipeline = build_compositor_pipeline(&frames)?;
+        let latest: FrameSlot = Arc::new(Mutex::new(None));
+        let pipeline = build_preview_pipeline(&frames, &latest)?;
 
         let bus = pipeline
             .bus()
@@ -158,9 +181,13 @@ fn run_media_thread(
             .set_state(gst::State::Playing)
             .context("set Playing")?;
 
-        // Hand the control handle + frame counter back to the engine, then run.
+        // Hand the control handle + shared state back to the engine, then run.
         ready
-            .send(Ok((main_loop.clone(), frames.clone())))
+            .send(Ok(Ready {
+                main_loop: main_loop.clone(),
+                frames: frames.clone(),
+                latest: latest.clone(),
+            }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
         main_loop.run();
@@ -171,10 +198,10 @@ fn run_media_thread(
     .map_err(|e| anyhow!("with_thread_default: {e}"))?
 }
 
-/// videotestsrc → compositor → convert → fakesink, with a buffer probe on the
-/// sink counting composited frames. One source for now; CHR-103+ add/remove
-/// compositor pads dynamically per scene layer.
-fn build_compositor_pipeline(frames: &Arc<AtomicU64>) -> Result<gst::Pipeline> {
+/// videotestsrc → compositor → convert → scale → jpegenc → appsink.
+/// The appsink callback stores each JPEG frame in `latest` and bumps `frames`.
+/// One source for now; CHR-103+ request/release compositor pads per scene layer.
+fn build_preview_pipeline(frames: &Arc<AtomicU64>, latest: &FrameSlot) -> Result<gst::Pipeline> {
     let pipeline = gst::Pipeline::with_name("studio-preview");
 
     let src = gst::ElementFactory::make("videotestsrc")
@@ -182,7 +209,7 @@ fn build_compositor_pipeline(frames: &Arc<AtomicU64>) -> Result<gst::Pipeline> {
         .property_from_str("pattern", "smpte")
         .build()
         .context("make videotestsrc")?;
-    let caps = gst::ElementFactory::make("capsfilter")
+    let caps_in = gst::ElementFactory::make("capsfilter")
         .property(
             "caps",
             gst::Caps::builder("video/x-raw")
@@ -197,34 +224,72 @@ fn build_compositor_pipeline(frames: &Arc<AtomicU64>) -> Result<gst::Pipeline> {
         .build()
         .context("make compositor")?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
-    let sink = gst::ElementFactory::make("fakesink")
-        .property("sync", true)
+    let scale = gst::ElementFactory::make("videoscale").build()?;
+    let caps_out = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("width", PREVIEW_W)
+                .field("height", PREVIEW_H)
+                .build(),
+        )
+        .build()?;
+    let jpeg = gst::ElementFactory::make("jpegenc")
+        .property("quality", 70i32)
         .build()
-        .context("make fakesink")?;
+        .context("make jpegenc")?;
 
-    pipeline.add_many([&src, &caps, &compositor, &convert, &sink])?;
-    gst::Element::link_many([&src, &caps])?;
-    gst::Element::link_many([&compositor, &convert, &sink])?;
+    let appsink = gst_app::AppSink::builder()
+        .caps(&gst::Caps::builder("image/jpeg").build())
+        .max_buffers(1)
+        .drop(true)
+        .sync(true)
+        .build();
+
+    pipeline.add_many([
+        &src,
+        &caps_in,
+        &compositor,
+        &convert,
+        &scale,
+        &caps_out,
+        &jpeg,
+    ])?;
+    pipeline.add(&appsink).context("add appsink")?;
+    gst::Element::link_many([&src, &caps_in])?;
+    gst::Element::link_many([&compositor, &convert, &scale, &caps_out, &jpeg])?;
+    jpeg.link(&appsink).context("link jpegenc → appsink")?;
 
     // Request a compositor pad and link the source layer to it (the same API the
     // scene→graph mapping drives in CHR-103+).
     let comp_pad = compositor
         .request_pad_simple("sink_%u")
         .ok_or_else(|| anyhow!("compositor request pad failed"))?;
-    caps.static_pad("src")
-        .ok_or_else(|| anyhow!("caps src pad"))?
+    caps_in
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("caps_in src pad"))?
         .link(&comp_pad)
         .context("link source → compositor")?;
 
-    // Count composited buffers as they hit the sink — the head-less proof of life.
+    // Pull each encoded JPEG into the shared slot; count them (head-less proof).
     let f = frames.clone();
-    sink.static_pad("sink")
-        .ok_or_else(|| anyhow!("sink pad"))?
-        .add_probe(gst::PadProbeType::BUFFER, move |_, _| {
-            f.fetch_add(1, Ordering::Relaxed);
-            gst::PadProbeReturn::Ok
-        });
-
+    let slot = latest.clone();
+    appsink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            .new_sample(move |sink| {
+                let sample = sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                if let Some(buffer) = sample.buffer() {
+                    if let Ok(map) = buffer.map_readable() {
+                        if let Ok(mut g) = slot.lock() {
+                            *g = Some(map.as_slice().to_vec());
+                        }
+                        f.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
     Ok(pipeline)
 }
 
@@ -245,12 +310,23 @@ mod tests {
     }
 
     #[test]
-    fn engine_composites_frames() {
+    fn engine_produces_jpeg_preview_frames() {
         let engine = MediaEngine::start().expect("engine start");
-        // Live source at 30fps → a few hundred ms yields several frames.
-        std::thread::sleep(Duration::from_millis(500));
+        // Poll up to ~2s for the first encoded frame.
+        let mut frame = None;
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if let Some(f) = engine.latest_frame() {
+                frame = Some(f);
+                break;
+            }
+        }
         let n = engine.frames();
         engine.stop();
-        assert!(n > 0, "compositor produced no frames");
+
+        let frame = frame.expect("no preview frame produced");
+        assert!(n > 0, "no frames counted");
+        // JPEG SOI marker — proves the compositor→jpegenc→appsink path is real.
+        assert_eq!(&frame[..2], &[0xFF, 0xD8], "not a JPEG (bad magic bytes)");
     }
 }

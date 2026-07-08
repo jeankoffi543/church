@@ -113,6 +113,16 @@ mod media {
             },
         }
     }
+    /// The latest preview frame as a `data:image/jpeg;base64,…` URL the webview can
+    /// drop straight into an `<img>`. `None` until the engine is running and has
+    /// produced a frame. This is the embedded preview — no native-window surgery.
+    #[tauri::command]
+    pub fn preview_frame(state: tauri::State<'_, MediaState>) -> Option<String> {
+        use base64::Engine;
+        let bytes = state.0.lock().ok()?.as_ref()?.latest_frame()?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        Some(format!("data:image/jpeg;base64,{b64}"))
+    }
 }
 
 fn main() {
@@ -126,7 +136,8 @@ fn main() {
                 get_capabilities,
                 media::start_preview,
                 media::stop_preview,
-                media::media_status
+                media::media_status,
+                media::preview_frame
             ]);
 
     #[cfg(not(feature = "media"))]

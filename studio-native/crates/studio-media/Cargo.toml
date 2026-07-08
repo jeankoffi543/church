@@ -8,4 +8,5 @@ description = "CHR-102 — media runtime: GStreamer compositor pipeline driven b
 
 [dependencies]
 gstreamer = "0.23"
+gstreamer-app = "0.23"
 anyhow = "1"

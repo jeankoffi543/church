@@ -32,6 +32,7 @@ export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaStatus | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<Capabilities>("get_capabilities")
@@ -39,15 +40,22 @@ export function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // Poll the media engine's frame counter while it runs — the live proof the
-  // compositor pipeline is producing frames on its glib thread.
+  // Poll status (slow) + the live preview frame (fast) while the engine runs.
   useEffect(() => {
-    const id = setInterval(() => {
+    const status = setInterval(() => {
       invoke<MediaStatus>("media_status")
         .then(setMedia)
         .catch(() => {});
     }, 500);
-    return () => clearInterval(id);
+    const frame = setInterval(() => {
+      invoke<string | null>("preview_frame")
+        .then((url) => url && setPreview(url))
+        .catch(() => {});
+    }, 120);
+    return () => {
+      clearInterval(status);
+      clearInterval(frame);
+    };
   }, []);
 
   const hasMedia =
@@ -130,6 +138,14 @@ export function App() {
           <p className="muted">
             Compositeur GStreamer piloté par une boucle glib sur son propre thread.
           </p>
+
+          <div className="monitor">
+            {preview ? (
+              <img src={preview} alt="Aperçu programme" />
+            ) : (
+              <span className="monitor-empty">Aperçu arrêté</span>
+            )}
+          </div>
 
           <div className="preview">
             <div className="dot" data-on={media?.running ? "1" : "0"} />

@@ -153,6 +153,30 @@ code {
   align-content: center;
 }
 
+.monitor {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #000;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  margin: 4px 0 12px;
+}
+
+.monitor img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.monitor-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .preview {
   display: flex;
   align-items: center;
