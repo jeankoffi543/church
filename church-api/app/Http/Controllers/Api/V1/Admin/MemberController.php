@@ -26,6 +26,9 @@ class MemberController extends Controller
     public function store(MemberRequest $request): JsonResponse
     {
         $member = Member::create($request->validated());
+        // member_type/status have DB-level defaults; the in-memory instance
+        // from create() doesn't know them until reloaded.
+        $member->refresh();
 
         return (new MemberResource($member->load('homeGroup')))->response()->setStatusCode(201);
     }

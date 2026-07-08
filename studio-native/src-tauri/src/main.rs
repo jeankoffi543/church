@@ -132,7 +132,6 @@ mod media {
             },
         }
     }
-
     /// The latest preview frame as a `data:image/jpeg;base64,…` URL the webview can
     /// drop straight into an `<img>`. `None` until the engine is running and has
     /// produced a frame. This is the embedded preview — no native-window surgery.

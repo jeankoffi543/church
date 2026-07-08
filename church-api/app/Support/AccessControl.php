@@ -37,6 +37,16 @@ final class AccessControl
     }
 
     /**
+     * Whether the user sees every discipleship follow-up case (pastoral
+     * oversight). Everyone else — a counselor — only sees the cases assigned
+     * to them; care notes are sensitive pastoral data, not a general roster.
+     */
+    public static function viewsFollowUpsGlobally(User $user): bool
+    {
+        return $user->hasRole(self::SUPER_ADMIN) || $user->hasRole(self::PASTEUR);
+    }
+
+    /**
      * The full permission catalogue, grouped by functional category. The keys
      * are the category labels rendered as columns groups in the security
      * matrix; each entry is the permission name plus a human description.
@@ -88,6 +98,18 @@ final class AccessControl
             'Fidèles' => [
                 ['name' => 'view_members', 'label' => 'Consulter le registre des fidèles'],
                 ['name' => 'manage_members', 'label' => 'Créer, modifier et supprimer des fidèles'],
+            ],
+            'Évangélisation' => [
+                ['name' => 'view_evangelism', 'label' => 'Consulter les campagnes et les nouvelles âmes'],
+                ['name' => 'manage_evangelism', 'label' => 'Créer des campagnes et enregistrer des nouvelles âmes'],
+            ],
+            'Suivi des âmes' => [
+                ['name' => 'view_followups', 'label' => 'Consulter les dossiers de suivi pastoral (les siens, ou tous pour un Pasteur)'],
+                ['name' => 'manage_followups', 'label' => 'Créer un suivi, y ajouter des notes et changer son statut'],
+            ],
+            'Logistique' => [
+                ['name' => 'view_resources', 'label' => "Consulter l'inventaire et les réservations de ressources"],
+                ['name' => 'manage_resources', 'label' => 'Gérer les ressources (salles, véhicules, matériel) et leurs réservations'],
             ],
             'Communication' => [
                 ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
@@ -190,6 +212,12 @@ final class AccessControl
                 'manage_members',
                 'view_attendance',
                 'manage_attendance',
+                'view_evangelism',
+                'manage_evangelism',
+                'view_followups',
+                'manage_followups',
+                'view_resources',
+                'manage_resources',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
