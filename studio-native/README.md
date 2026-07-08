@@ -64,7 +64,7 @@ utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 | **CHR-61** ✅ | `studio-core` : logique pure portée + tests | — (cœur, 0 dép) |
 | **CHR-100** ✅ | POC média headless (2 sources → compositor GPU → x264 → mp4mux, durée relue) | spike de dé-risquage |
 | **CHR-101** ✅ | Bootstrap Tauri + `src-tauri` + `ui` + contrat IPC `get_capabilities` | — (fondation) |
-| **CHR-102** ✅ | `studio-media` : compositor + glib loop + sonde encodeurs + **preview JPEG embarquée** dans le webview | feature `media` off ⇒ app tourne, 0 encodeur |
+| **CHR-102** 🟡 | `studio-media` : moteur compositor + glib loop + sonde encodeurs (surface preview embarquée = reste à faire) | feature `media` off ⇒ app tourne, 0 encodeur |
 | CHR-103 | `mod-screen-capture` | source « écran » disparaît du menu |
 | CHR-104 | `mod-camera` | source « caméra » disparaît |
 | CHR-105 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
@@ -121,13 +121,7 @@ build source via `cargo-c` le moment venu. `gstreamer1.0-tools` (CLI `gst-launch
 non installé — non requis : `gstreamer-rs` lie les libs, pas le CLI ; les POC sont
 prouvés par de vrais binaires Rust.
 
-CHR-102 complet : moteur `studio-media` (glib loop + compositor + sonde
-encodeurs) + **preview embarquée** — le compositor est encodé en JPEG basse-déf
-(`appsink`) et poussé au webview en data-URL (`<img>`), sans chirurgie de fenêtre
-native, cross-platform. Le flux *program* vers l'encodeur/WHIP restera GPU
-zéro-copie (concern séparé, CHR-108). Un overlay GPU natif haute-fréquence pour la
-preview reste une optimisation possible plus tard.
-
-Prochaine étape : **CHR-103**, `mod-screen-capture` — la 1re vraie source
-(getDisplayMedia → PipeWire/WGC/ScreenCaptureKit), branchée sur un request pad du
-compositor.
+CHR-102 : moteur `studio-media` (glib loop + compositor + sonde encodeurs) livré
+et prouvé headless. **Reste dans CHR-102** : embarquer un video sink natif dans la
+fenêtre Tauri (raw-window-handle / GTK) pour voir les pixels — dépend d'un
+affichage, à valider sur ta machine (`cargo tauri dev`).

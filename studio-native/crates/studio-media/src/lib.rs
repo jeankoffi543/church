@@ -4,19 +4,19 @@
 //! `MainLoop` on a dedicated thread** — the concrete realisation of the glib↔tokio
 //! split we designed: Tauri keeps the main thread for its own event loop, the
 //! media plane lives entirely here, and the two talk through channels + shared
-//! state (never a shared `&mut`).
+//! atomics (never a shared `&mut`).
 //!
 //! CHR-102 scope:
 //!   * [`probe_encoders`] — real capability probe (which H.264 encoder elements
 //!     actually exist on this machine), feeding the module-agnostic UI negotiation.
-//!   * [`MediaEngine`] — starts a `compositor` pipeline and exposes its output as
-//!     **JPEG preview frames** (compositor → downscale → `jpegenc` → `appsink`).
-//!     The frames are pushed to the webview as a data-URL — an embedded,
-//!     cross-platform preview that needs no native-window surgery. (The zero-copy
-//!     GPU path to the *encoder/WHIP* is a later, program-feed concern.)
+//!   * [`MediaEngine`] — starts a `compositor` pipeline on the media thread and
+//!     proves it produces frames (buffer count via a pad probe). The pixels are
+//!     currently consumed by a `fakesink` so the engine is verifiable head-less;
+//!     docking a real video sink into the Tauri window (raw-window-handle / GTK)
+//!     is the display-dependent follow-up.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -89,7 +89,8 @@ impl MediaEngine {
     /// Start the engine. Blocks only until the media thread has the pipeline in
     /// `Playing` (or errors during setup), then returns while frames flow.
     pub fn start() -> Result<MediaEngine> {
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<Ready, String>>();
+        let (ready_tx, ready_rx) =
+            mpsc::channel::<Result<(glib::MainLoop, Arc<AtomicU64>), String>>();
 
         let thread = std::thread::Builder::new()
             .name("studio-media".into())
@@ -289,7 +290,6 @@ fn build_preview_pipeline(frames: &Arc<AtomicU64>, latest: &FrameSlot) -> Result
             })
             .build(),
     );
-
     Ok(pipeline)
 }
 

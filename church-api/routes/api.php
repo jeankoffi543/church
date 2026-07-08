@@ -222,6 +222,52 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('members/{member}', [Admin\MemberController::class, 'destroy'])->name('members.destroy');
             });
 
+            // Évangélisation — campagnes de sortie + nouvelles âmes.
+            Route::middleware('permission:view_evangelism|manage_evangelism')->group(function (): void {
+                Route::get('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'index'])->name('evangelism-campaigns.index');
+                Route::get('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'show'])->name('evangelism-campaigns.show');
+                Route::get('converts', [Admin\ConvertController::class, 'index'])->name('converts.index');
+                Route::get('converts/{convert}', [Admin\ConvertController::class, 'show'])->name('converts.show');
+            });
+            Route::middleware('permission:manage_evangelism')->group(function (): void {
+                Route::post('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'store'])->name('evangelism-campaigns.store');
+                Route::match(['put', 'patch'], 'evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'update'])->name('evangelism-campaigns.update');
+                Route::delete('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'destroy'])->name('evangelism-campaigns.destroy');
+
+                Route::post('converts', [Admin\ConvertController::class, 'store'])->name('converts.store');
+                Route::match(['put', 'patch'], 'converts/{convert}', [Admin\ConvertController::class, 'update'])->name('converts.update');
+                Route::delete('converts/{convert}', [Admin\ConvertController::class, 'destroy'])->name('converts.destroy');
+            });
+
+            // Suivi des âmes — dossiers de discipulat (données pastorales sensibles,
+            // scopées au conseiller assigné à l'intérieur des contrôleurs).
+            Route::middleware('permission:view_followups|manage_followups')->group(function (): void {
+                Route::get('follow-ups', [Admin\FollowUpController::class, 'index'])->name('follow-ups.index');
+                Route::get('follow-ups/{followUp}', [Admin\FollowUpController::class, 'show'])->name('follow-ups.show');
+            });
+            Route::middleware('permission:manage_followups')->group(function (): void {
+                Route::post('follow-ups', [Admin\FollowUpController::class, 'store'])->name('follow-ups.store');
+                Route::match(['put', 'patch'], 'follow-ups/{followUp}', [Admin\FollowUpController::class, 'update'])->name('follow-ups.update');
+                Route::delete('follow-ups/{followUp}', [Admin\FollowUpController::class, 'destroy'])->name('follow-ups.destroy');
+                Route::post('follow-ups/{followUp}/notes', [Admin\FollowUpNoteController::class, 'store'])->name('follow-ups.notes.store');
+            });
+
+            // Logistique — inventaire des ressources (salles, véhicules, matériel) + réservations.
+            Route::middleware('permission:view_resources|manage_resources')->group(function (): void {
+                Route::get('resources', [Admin\ResourceController::class, 'index'])->name('resources.index');
+                Route::get('resources/{resource}', [Admin\ResourceController::class, 'show'])->name('resources.show');
+                Route::get('resource-bookings', [Admin\ResourceBookingController::class, 'index'])->name('resource-bookings.index');
+            });
+            Route::middleware('permission:manage_resources')->group(function (): void {
+                Route::post('resources', [Admin\ResourceController::class, 'store'])->name('resources.store');
+                Route::match(['put', 'patch'], 'resources/{resource}', [Admin\ResourceController::class, 'update'])->name('resources.update');
+                Route::delete('resources/{resource}', [Admin\ResourceController::class, 'destroy'])->name('resources.destroy');
+
+                Route::post('resource-bookings', [Admin\ResourceBookingController::class, 'store'])->name('resource-bookings.store');
+                Route::match(['put', 'patch'], 'resource-bookings/{resourceBooking}', [Admin\ResourceBookingController::class, 'update'])->name('resource-bookings.update');
+                Route::delete('resource-bookings/{resourceBooking}', [Admin\ResourceBookingController::class, 'destroy'])->name('resource-bookings.destroy');
+            });
+
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
                 ->middleware('permission:manage_events');
