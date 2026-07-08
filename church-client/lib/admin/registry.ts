@@ -28,6 +28,7 @@ import {
   Flame,
   HeartHandshake,
   Boxes,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 
@@ -88,6 +89,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "evangelism", path: "/admins/evangelism", label: "Évangélisation", icon: Flame, permission: [PERMISSIONS.viewEvangelism, PERMISSIONS.manageEvangelism], group: "church-life" },
   { key: "follow-ups", path: "/admins/follow-ups", label: "Suivi des âmes", icon: HeartHandshake, permission: [PERMISSIONS.viewFollowups, PERMISSIONS.manageFollowups], group: "church-life" },
   { key: "resources", path: "/admins/resources", label: "Logistique", icon: Boxes, permission: [PERMISSIONS.viewResources, PERMISSIONS.manageResources], group: "church-life" },
+  { key: "teams", path: "/admins/teams", label: "Équipes de service", icon: Layers, permission: [PERMISSIONS.viewTeams, PERMISSIONS.manageTeams], group: "church-life" },
 
   // Finances
   { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },

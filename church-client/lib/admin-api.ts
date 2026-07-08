@@ -1739,6 +1739,20 @@ export type AdminAttendance = {
   recorded_by: string | null;
 };
 
+export type ServiceAssignmentStatus = "prevu" | "confirme" | "absent";
+
+export type AdminServiceAssignment = {
+  id: number;
+  service_id: number;
+  member_id: number;
+  member_name: string | null;
+  team_id: number | null;
+  team_name: string | null;
+  role: string;
+  status: ServiceAssignmentStatus;
+  notes: string | null;
+};
+
 export type AdminService = {
   id: number;
   title: string | null;
@@ -1748,6 +1762,7 @@ export type AdminService = {
   notes: string | null;
   offering_collections: AdminOfferingCollection[];
   attendances: AdminAttendance[];
+  assignments: AdminServiceAssignment[];
   created_at: string | null;
 };
 
@@ -2202,5 +2217,64 @@ export async function updateAdminResourceBooking(id: number, data: {
 
 export async function deleteAdminResourceBooking(id: number): Promise<void> {
   await adminFetch<void>(`/resource-bookings/${id}`, { method: "DELETE" });
+}
+
+/* ── Équipes de service & planning ────────────────────────────────── */
+
+export type AdminTeam = {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  members_count: number | null;
+  members: { id: number; name: string }[] | null;
+};
+
+export async function getAdminTeams(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminTeam>> {
+  return adminFetch<AdminListResult<AdminTeam>>(buildAdminListPath("/teams", params));
+}
+
+export async function createAdminTeam(data: {
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+  member_ids?: number[];
+}): Promise<AdminTeam> {
+  const response = await adminFetch<{ data: AdminTeam }>("/teams", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminTeam(id: number, data: {
+  name?: string;
+  description?: string | null;
+  is_active?: boolean;
+  member_ids?: number[];
+}): Promise<AdminTeam> {
+  const response = await adminFetch<{ data: AdminTeam }>(`/teams/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminTeam(id: number): Promise<void> {
+  await adminFetch<void>(`/teams/${id}`, { method: "DELETE" });
+}
+
+/** Replace the whole service-planning roster in one call (one line per scheduled member). */
+export async function upsertAdminServiceAssignments(
+  serviceId: number,
+  lines: { member_id: number; team_id?: number | null; role: string; status?: ServiceAssignmentStatus; notes?: string | null }[]
+): Promise<AdminServiceAssignment[]> {
+  const response = await adminFetch<{ data: AdminServiceAssignment[] }>(
+    `/services/${serviceId}/assignments`,
+    { method: "POST", body: JSON.stringify({ lines }) }
+  );
+  return response.data;
 }
 

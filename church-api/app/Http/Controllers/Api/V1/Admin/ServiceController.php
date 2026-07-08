@@ -15,7 +15,7 @@ class ServiceController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Service::query()->with(['offeringCollections', 'attendances'])->orderByDesc('date');
+        $query = Service::query()->with(['offeringCollections', 'attendances', 'assignments.member', 'assignments.team'])->orderByDesc('date');
 
         $query->searchOnRequest()->filterOnRequest()->sortOnRequest();
 
@@ -33,14 +33,14 @@ class ServiceController extends Controller
 
     public function show(Service $service): ServiceResource
     {
-        return new ServiceResource($service->load(['offeringCollections', 'attendances']));
+        return new ServiceResource($service->load(['offeringCollections', 'attendances', 'assignments.member', 'assignments.team']));
     }
 
     public function update(ServiceRequest $request, Service $service): ServiceResource
     {
         $service->update($request->validated());
 
-        return new ServiceResource($service->load(['offeringCollections', 'attendances']));
+        return new ServiceResource($service->load(['offeringCollections', 'attendances', 'assignments.member', 'assignments.team']));
     }
 
     public function destroy(Service $service): JsonResponse

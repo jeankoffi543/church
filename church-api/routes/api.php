@@ -211,6 +211,18 @@ Route::prefix('v1')->group(function (): void {
                 ->middleware('permission:manage_attendance')
                 ->name('services.attendances.upsert');
 
+            // Équipes de service — planning des équipes (roster complet par culte).
+            Route::middleware('permission:view_teams|manage_teams')->group(function (): void {
+                Route::get('teams', [Admin\TeamController::class, 'index'])->name('teams.index');
+                Route::get('teams/{team}', [Admin\TeamController::class, 'show'])->name('teams.show');
+            });
+            Route::middleware('permission:manage_teams')->group(function (): void {
+                Route::post('teams', [Admin\TeamController::class, 'store'])->name('teams.store');
+                Route::match(['put', 'patch'], 'teams/{team}', [Admin\TeamController::class, 'update'])->name('teams.update');
+                Route::delete('teams/{team}', [Admin\TeamController::class, 'destroy'])->name('teams.destroy');
+                Route::post('services/{service}/assignments', [Admin\ServiceAssignmentController::class, 'upsert'])->name('services.assignments.upsert');
+            });
+
             // Fidèles — registre de la congrégation.
             Route::middleware('permission:view_members|manage_members')->group(function (): void {
                 Route::get('members', [Admin\MemberController::class, 'index'])->name('members.index');

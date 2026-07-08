@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Calendar, Coins, Pencil, Plus, Save, Search, Trash2, Users } from "lucide-react";
+import { Calendar, Coins, Layers, Pencil, Plus, Save, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 
-import type { AdminListMeta, AdminService } from "@/lib/admin-api";
+import type { AdminListMeta, AdminMember, AdminService, AdminTeam, ServiceAssignmentStatus } from "@/lib/admin-api";
 import {
   createAdminService,
   deleteAdminService,
   getAdminServices,
   updateAdminService,
+  upsertAdminServiceAssignments,
   upsertAttendances,
   upsertOfferingCollections,
 } from "@/lib/admin-api";
@@ -21,6 +22,14 @@ import { ConfirmDialog } from "@/components/admin/ui/confirm-dialog";
 import { StatusBanner, type Status } from "@/components/admin/ui/status-banner";
 import { Pagination } from "../_components/pagination";
 import { useServerList } from "../_components/use-server-list";
+
+const ASSIGNMENT_STATUSES: { key: ServiceAssignmentStatus; label: string }[] = [
+  { key: "prevu", label: "Prévu" },
+  { key: "confirme", label: "Confirmé" },
+  { key: "absent", label: "Absent" },
+];
+
+type RosterLine = { member_id: number | ""; team_id: number | ""; role: string; status: ServiceAssignmentStatus; notes: string };
 
 const SERVICE_TYPES = [
   { key: "culte_dominical", label: "Culte dominical" },
@@ -52,11 +61,17 @@ export function ServicesManager({
   initialMeta,
   canManage,
   canRecordAttendance,
+  canManageTeams,
+  members,
+  teams,
 }: {
   initialData: AdminService[];
   initialMeta: AdminListMeta;
   canManage: boolean;
   canRecordAttendance: boolean;
+  canManageTeams: boolean;
+  members: AdminMember[];
+  teams: AdminTeam[];
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -92,6 +107,11 @@ export function ServicesManager({
   const [presenceFor, setPresenceFor] = useState<AdminService | null>(null);
   const [presenceCounts, setPresenceCounts] = useState<Record<string, string>>({});
   const [savingPresence, setSavingPresence] = useState(false);
+
+  // Planning (équipes) modal
+  const [rosterFor, setRosterFor] = useState<AdminService | null>(null);
+  const [rosterLines, setRosterLines] = useState<RosterLine[]>([]);
+  const [savingRoster, setSavingRoster] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<AdminService | null>(null);
 
@@ -217,6 +237,64 @@ export function ServicesManager({
     });
   };
 
+  const openRoster = (s: AdminService) => {
+    setRosterFor(s);
+    setRosterLines(
+      s.assignments.map((a) => ({
+        member_id: a.member_id,
+        team_id: a.team_id ?? "",
+        role: a.role,
+        status: a.status,
+        notes: a.notes ?? "",
+      }))
+    );
+    setStatus(null);
+  };
+
+  const addRosterLine = () => {
+    setRosterLines((lines) => [...lines, { member_id: "", team_id: "", role: "", status: "prevu", notes: "" }]);
+  };
+
+  const removeRosterLine = (index: number) => {
+    setRosterLines((lines) => lines.filter((_, i) => i !== index));
+  };
+
+  const updateRosterLine = (index: number, patch: Partial<RosterLine>) => {
+    setRosterLines((lines) => lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  };
+
+  const handleSaveRoster = () => {
+    if (!rosterFor) return;
+    const lines = rosterLines.filter((l) => l.member_id && l.role.trim());
+    if (lines.length !== rosterLines.length) {
+      setStatus({ type: "error", message: "Chaque ligne doit avoir un membre et un rôle." });
+      return;
+    }
+
+    setSavingRoster(true);
+    startTransition(async () => {
+      try {
+        await upsertAdminServiceAssignments(
+          rosterFor.id,
+          lines.map((l) => ({
+            member_id: Number(l.member_id),
+            team_id: l.team_id ? Number(l.team_id) : null,
+            role: l.role.trim(),
+            status: l.status,
+            notes: l.notes || null,
+          }))
+        );
+        setStatus({ type: "success", message: `Planning enregistré pour le ${rosterFor.date}.` });
+        setRosterFor(null);
+        await refresh();
+      } catch (err) {
+        setStatus({ type: "error", message: (err as Error).message || "Enregistrement impossible." });
+      } finally {
+        setSavingRoster(false);
+      }
+    });
+  };
+
   const confirmDelete = () => {
     const service = deleteTarget;
     if (!service) return;
@@ -274,18 +352,19 @@ export function ServicesManager({
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Titre</th>
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Collecte</th>
               <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Présences</th>
+              <th className="px-4 py-3.5 text-left text-[11px] font-bold tracking-wider text-body uppercase">Équipe</th>
               <th className="px-6 py-3.5 text-right text-[11px] font-bold tracking-wider text-body uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[rgba(40,25,80,0.06)]">
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-sm text-faint">Chargement…</td>
+                <td colSpan={7} className="px-6 py-10 text-center text-sm text-faint">Chargement…</td>
               </tr>
             )}
             {!isLoading && services.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-sm text-faint">Aucun culte enregistré.</td>
+                <td colSpan={7} className="px-6 py-10 text-center text-sm text-faint">Aucun culte enregistré.</td>
               </tr>
             )}
             {!isLoading && services.map((s) => (
@@ -315,6 +394,11 @@ export function ServicesManager({
                     ? `${totalAttendance(s).toLocaleString("fr-FR")} pers.`
                     : <span className="font-normal text-faint">Non saisies</span>}
                 </td>
+                <td className="px-4 py-3.5 font-bold text-indigo">
+                  {s.assignments.length > 0
+                    ? `${s.assignments.length} serviteur${s.assignments.length > 1 ? "s" : ""}`
+                    : <span className="font-normal text-faint">Non planifiée</span>}
+                </td>
                 <td className="px-6 py-3.5">
                   <div className="flex items-center justify-end gap-2">
                     {canRecordAttendance && (
@@ -325,6 +409,16 @@ export function ServicesManager({
                         onClick={() => openPresence(s)}
                       >
                         Présences
+                      </Button>
+                    )}
+                    {canManageTeams && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Layers className="size-3.5" />}
+                        onClick={() => openRoster(s)}
+                      >
+                        Planning
                       </Button>
                     )}
                     <Button
@@ -509,6 +603,82 @@ export function ServicesManager({
             onClick={handleSavePresence}
           >
             Enregistrer les présences
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Planning (équipes) modal */}
+      <Modal
+        open={rosterFor !== null}
+        onOpenChange={(o) => !o && setRosterFor(null)}
+        title="Planning des équipes de service"
+        description={rosterFor ? `${typeLabel(rosterFor.type)} · ${rosterFor.date}` : undefined}
+        size="lg"
+      >
+        <div className="space-y-3 px-6 py-6">
+          {rosterLines.length === 0 && (
+            <p className="rounded-xl border border-dashed border-[rgba(40,25,80,0.15)] px-4 py-6 text-center text-sm text-faint">
+              Aucun serviteur planifié pour ce culte.
+            </p>
+          )}
+          {rosterLines.map((line, index) => (
+            <div key={index} className="grid grid-cols-1 gap-2.5 rounded-xl border border-[rgba(40,25,80,0.08)] bg-cream/40 p-3.5 sm:grid-cols-[1.4fr_1.1fr_1.1fr_1fr_auto]">
+              <select
+                value={line.member_id}
+                onChange={(e) => updateRosterLine(index, { member_id: e.target.value ? Number(e.target.value) : "" })}
+                className={cn(inputClass, "py-2")}
+              >
+                <option value="">Membre…</option>
+                {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <select
+                value={line.team_id}
+                onChange={(e) => updateRosterLine(index, { team_id: e.target.value ? Number(e.target.value) : "" })}
+                className={cn(inputClass, "py-2")}
+              >
+                <option value="">Sans équipe</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <input
+                type="text"
+                value={line.role}
+                onChange={(e) => updateRosterLine(index, { role: e.target.value })}
+                placeholder="Rôle (ex : Chantre)"
+                className={cn(inputClass, "py-2")}
+              />
+              <select
+                value={line.status}
+                onChange={(e) => updateRosterLine(index, { status: e.target.value as ServiceAssignmentStatus })}
+                className={cn(inputClass, "py-2")}
+              >
+                {ASSIGNMENT_STATUSES.map((st) => <option key={st.key} value={st.key}>{st.label}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => removeRosterLine(index)}
+                className="flex cursor-pointer items-center justify-center rounded-lg p-2 text-faint transition hover:bg-live/10 hover:text-live"
+                title="Retirer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ))}
+          <Button type="button" variant="secondary" size="sm" icon={<UserPlus className="size-3.5" />} onClick={addRosterLine}>
+            Ajouter un serviteur
+          </Button>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(40,25,80,0.08)] px-6 py-4">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setRosterFor(null)}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            icon={<Save className="size-3.5" />}
+            loading={savingRoster && isPending}
+            onClick={handleSaveRoster}
+          >
+            Enregistrer le planning
           </Button>
         </div>
       </Modal>

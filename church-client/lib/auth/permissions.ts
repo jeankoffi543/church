@@ -41,6 +41,8 @@ export const PERMISSIONS = {
   manageFollowups: "manage_followups",
   viewResources: "view_resources",
   manageResources: "manage_resources",
+  viewTeams: "view_teams",
+  manageTeams: "manage_teams",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
