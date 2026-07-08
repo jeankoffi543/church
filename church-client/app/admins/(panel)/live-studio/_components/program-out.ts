@@ -328,6 +328,41 @@ export function startProgramOut(opts?: {
     return { node, gain, pan };
   }
 
+  /**
+   * Entry sound cue (CHR-59): a one-shot clip mixed straight into the REAL
+   * program audio (`mixDest`) — the same graph every other source uses, so it
+   * reaches Facebook and the site's WHEP player exactly like a camera's mic.
+   * Fire-and-forget: the element (and its Web Audio node) is discarded once
+   * playback ends. Best-effort — a blocked/failed play must never break the
+   * compositor.
+   */
+  function playEntrySound(layer: StudioLayer) {
+    if (!layer.entrySoundEnabled || !layer.entrySoundUrl || !audioCtx || !mixDest) return;
+    const el = document.createElement("audio");
+    el.crossOrigin = "anonymous";
+    el.src = resolveMediaUrl(layer.entrySoundUrl);
+    let audio: ReturnType<typeof connectAudio> | undefined;
+    try {
+      audio = connectAudio(audioCtx.createMediaElementSource(el));
+    } catch {
+      return; // CORS-tainted source or unsupported — skip silently, best-effort.
+    }
+    if (audio) audio.gain.gain.value = Math.max(0, Math.min(1, (layer.entrySoundVolume ?? 80) / 100));
+    const cleanup = () => {
+      try {
+        audio?.node.disconnect();
+        audio?.gain.disconnect();
+        audio?.pan.disconnect();
+      } catch {
+        /* noop */
+      }
+      el.removeAttribute("src");
+      el.load();
+    };
+    el.addEventListener("ended", cleanup, { once: true });
+    void el.play().catch(cleanup);
+  }
+
   function applyAudioLevels(layer: StudioLayer, src: Source) {
     if (!src.audio) return;
     const muted = layer.audioMuted ?? false;
@@ -470,7 +505,12 @@ export function startProgramOut(opts?: {
     for (const layer of layers) {
       if (!layer.visible) continue;
       present.add(layer.id);
-      if (!animStart.has(layer.id)) animStart.set(layer.id, now);
+      if (!animStart.has(layer.id)) {
+        animStart.set(layer.id, now);
+        // Entry sound fires HERE — true first appearance only, never on the
+        // CUT-replay branch below (that would re-trigger the cue every CUT).
+        playEntrySound(layer);
+      }
     }
     for (const id of animStart.keys()) {
       if (!present.has(id)) animStart.delete(id);

@@ -2,13 +2,15 @@
 
 import { cn } from "@/lib/utils";
 import { MONO } from "./studio-tokens";
+import type { EncoderStats } from "./use-encoder-stats";
 
 /**
- * Bottom encoder/status strip. The technical readouts (encoder, bitrate, FPS,
- * dropped frames, CPU) are OBS chrome — TODO(studio): feed from a real encoder
- * stats source. `statusRight` carries the live console's real status message.
+ * Bottom encoder/status strip — every value is a REAL readout of the outgoing
+ * WHIP connection (`use-encoder-stats.ts`), sampled from `RTCStatsReport`.
+ * Shows a neutral idle state (no fabricated numbers) while not publishing.
  */
-export function StatusBar({ statusRight }: { statusRight: string }) {
+export function StatusBar({ statusRight, stats }: { statusRight: string; stats: EncoderStats }) {
+  const { connected, codecName, profile, bitrateKbps, fps, droppedFrames, droppedPct, encodeLoadPct } = stats;
   return (
     <footer
       className={cn(
@@ -17,14 +19,21 @@ export function StatusBar({ statusRight }: { statusRight: string }) {
       )}
     >
       <span className="flex items-center gap-1.5">
-        <span className="size-[7px] rounded-full bg-studio-preview" />
-        ENCODEUR x264 · high
+        <span className={cn("size-[7px] rounded-full", connected ? "bg-studio-preview" : "bg-white/25")} />
+        {connected
+          ? `ENCODEUR ${codecName ?? "—"}${profile ? ` · ${profile}` : ""}`
+          : "ENCODEUR · hors ligne"}
       </span>
-      <span>4500 kb/s</span>
-      <span>60 FPS</span>
-      <span className="text-white/70">0 images perdues</span>
+      <span>{connected && bitrateKbps != null ? `${bitrateKbps} kb/s` : "—"}</span>
+      <span>{connected && fps != null ? `${fps} FPS` : "—"}</span>
+      <span className="text-white/70">
+        {connected ? `${droppedFrames} image${droppedFrames > 1 ? "s" : ""} perdue${droppedFrames > 1 ? "s" : ""} (${droppedPct}%)` : "0 image perdue"}
+      </span>
       <span>
-        CPU <span className="text-studio-preview-bright">14%</span>
+        CHARGE ENCODAGE{" "}
+        <span className="text-studio-preview-bright">
+          {connected && encodeLoadPct != null ? `${encodeLoadPct}%` : "—"}
+        </span>
       </span>
       {statusRight && <span className="ml-auto text-gold/70">{statusRight}</span>}
     </footer>

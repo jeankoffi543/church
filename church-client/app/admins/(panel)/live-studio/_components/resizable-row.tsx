@@ -219,7 +219,14 @@ export function ResizableRow({
         })}
       </div>
 
-      <div ref={rowRef} className="flex flex-col gap-3 lg:h-[clamp(360px,52vh,520px)] lg:flex-row lg:gap-0">
+      {/* Row height: the stacked (mobile) fallback keeps a fixed clamp (its own
+          per-item heights below already match); the `lg` row FILLS whatever
+          space the parent gives it (CHR-59 single-screen — no more viewport-
+          relative clamp that could exceed a short desktop window). */}
+      <div
+        ref={rowRef}
+        className="flex flex-col gap-3 lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row lg:gap-0"
+      >
         {visibleIds.map((id, i) => {
           const item = byId.get(id);
           if (!item) return null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle, AlertCircle, AlertTriangle, Square, Maximize } from "lucide-react";
 
@@ -32,6 +32,7 @@ import { MixerDock } from "./_components/mixer-dock";
 import { InspectorDock } from "./_components/inspector-dock";
 import { ControlsDock } from "./_components/controls-dock";
 import { useProgramBroadcast } from "./_components/use-program-broadcast";
+import { useEncoderStats } from "./_components/use-encoder-stats";
 import {
   lsGet,
   lsGetJSON,
@@ -603,6 +604,10 @@ export function LiveStudioConsole({
 
   const [prepared, setPrepared] = useState<ScriptureVerse[]>(initialPrepared);
   const [busy, setBusy] = useState(false);
+  // CHR-59 — Mode Test · Sandbox: while true, nothing may reach Facebook or the
+  // public /live site (video, verse, `live_status`). Declared here (early) since
+  // `pushLive`/`masquer` below read it in their `useCallback` deps.
+  const [sandbox, setSandbox] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   // Gate the toast portal until after mount (createPortal needs `document`).
   const [mounted, setMounted] = useState(false);
@@ -933,17 +938,26 @@ export function LiveStudioConsole({
     async (verse: ScriptureVerse, nextSettings: StudioSettings) => {
       setBusy(true);
       try {
-        await broadcastScripture({ action: "show", verse, settings: nextSettings });
+        // CHR-59 sandbox: rehearse locally only. Never call the real public
+        // endpoint (persists the verse + fires the Reverb event /live listens
+        // to) — the antenne monitor still reflects the verse for the operator,
+        // but the public site and Facebook never see it.
+        if (!sandbox) {
+          await broadcastScripture({ action: "show", verse, settings: nextSettings });
+        }
         setLive(verse);
         setOnAirSettings(nextSettings);
-        setStatus({ type: "success", message: `Diffusé : ${verse.reference}` });
+        setStatus({
+          type: "success",
+          message: sandbox ? `Test (sandbox) : ${verse.reference} — non diffusé` : `Diffusé : ${verse.reference}`,
+        });
       } catch (err) {
         setStatus({ type: "error", message: (err as Error).message || "Diffusion impossible." });
       } finally {
         setBusy(false);
       }
     },
-    [],
+    [sandbox],
   );
 
   const diffuse = useCallback(() => {
@@ -954,7 +968,9 @@ export function LiveStudioConsole({
   const masquer = useCallback(async () => {
     setBusy(true);
     try {
-      await broadcastScripture({ action: "hide" });
+      if (!sandbox) {
+        await broadcastScripture({ action: "hide" });
+      }
       setLive(null);
       setStatus({ type: "success", message: "Overlay masqué." });
     } catch (err) {
@@ -962,7 +978,7 @@ export function LiveStudioConsole({
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [sandbox]);
 
   // Load a verse from the search / prepared list. It always stages it in the
   // preview; when the bible is currently ON AIR (`live`), it ALSO goes straight
@@ -1035,12 +1051,14 @@ export function LiveStudioConsole({
     if (!liveRef.current) return;
     const t = setTimeout(() => {
       if (liveRef.current) {
-        void broadcastScripture({ action: "show", verse: liveRef.current, settings });
+        // CHR-59 sandbox: a style tweak while "live" must not leak the verse
+        // to the real public endpoint either.
+        if (!sandbox) void broadcastScripture({ action: "show", verse: liveRef.current, settings });
         setOnAirSettings(settings);
       }
     }, 250);
     return () => clearTimeout(t);
-  }, [settings]);
+  }, [settings, sandbox]);
 
   const persistPrepared = useCallback(async (next: ScriptureVerse[]) => {
     setPrepared(next);
@@ -1244,27 +1262,18 @@ export function LiveStudioConsole({
   });
 
 
-  // TODO(studio): habillage OBS — états de présentation (mode/sandbox/REC/disposition)
-  // non encore reliés à un vrai moteur de scènes/diffusion réel.
-  const [sandbox, setSandbox] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [recTime, setRecTime] = useState(0);
+  // TODO(studio): habillage OBS — disposition non encore reliée à un vrai moteur.
   const [dualLayout, setDualLayout] = useState(true);
-  useEffect(() => {
-    if (!recording) return;
-    const id = setInterval(() => setRecTime((t) => t + 1), 1000);
-    return () => {
-      clearInterval(id);
-      setRecTime(0);
-    };
-  }, [recording]);
+  const [recTime, setRecTime] = useState(0);
   const recLabel = `${String(Math.floor(recTime / 60)).padStart(2, "0")}:${String(recTime % 60).padStart(2, "0")}`;
   // The program-mode switch is wired to the REAL broadcast: switching to LIVE
-  // starts the stream, leaving LIVE asks to stop it (confirm dialog).
-  const mode: "preview" | "live" = liveStreamActive ? "live" : "preview";
-  const handleModeChange = (m: "preview" | "live") => {
-    if (m === "live" && !liveStreamActive) void saveLiveSettings(true);
-    else if (m === "preview" && liveStreamActive) setShowStopConfirm(true);
+  // starts the stream. Starting is EXCLUSIVELY the dock's "Démarrer le live"
+  // (runs the real compositor+WHIP+Facebook sequence via `startLive`); the
+  // header only offers an emergency stop, confirmed then routed through the
+  // SAME real `stopLive()` — never `saveLiveSettings` directly (CHR-59: that
+  // used to leave the compositor/WHIP running while the site flipped "offline").
+  const requestStopLive = () => {
+    if (liveStreamActive) setShowStopConfirm(true);
   };
 
   // ── Scene compositor: scenes → layer stacks driving preview + inspector ──
@@ -1407,11 +1416,44 @@ export function LiveStudioConsole({
     composition,
     output,
   });
+  // Real encoder/network readouts (CHR-59) — replaces the previously hardcoded
+  // status-bar numbers with values sampled from the actual WHIP connection.
+  const encoderStats = useEncoderStats(broadcast.getStats, broadcast.whipState === "connected", output.fps);
+  // REC (CHR-59): drives a real MediaRecorder capture of the program feed
+  // (`broadcast.startRecording`/`stopRecording`) — this timer is purely the
+  // header/dock's visual "REC 00:00" readout, ticking only while it's genuinely
+  // recording.
+  useEffect(() => {
+    if (!broadcast.recording) {
+      setRecTime(0);
+      return;
+    }
+    const id = setInterval(() => setRecTime((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [broadcast.recording]);
+  const [recBusy, setRecBusy] = useState(false);
+  const toggleRecording = async () => {
+    setRecBusy(true);
+    try {
+      if (broadcast.recording) await broadcast.stopRecording();
+      else await broadcast.startRecording();
+    } finally {
+      setRecBusy(false);
+    }
+  };
   const [liveBusy, setLiveBusy] = useState(false);
   // One gesture = go live on Facebook AND flip the public site live together.
   const startLive = async () => {
     setLiveBusy(true);
     try {
+      // CHR-59 sandbox: rehearse the composited output locally ONLY — never
+      // publish to Facebook (`broadcast.startBroadcast`/WHIP) nor flip the
+      // public site's `live_status` (`saveLiveSettings(true, ...)`).
+      if (sandbox) {
+        broadcast.ensureCompositor();
+        setStatus({ type: "success", message: "Test (sandbox) démarré — rien n'est diffusé au public." });
+        return;
+      }
       // The studio's own WHEP (WebRTC playback) feed becomes the site's live source
       // (overriding any stale embed link) so /live shows the broadcast directly.
       const whepUrl = await broadcast.startBroadcast();
@@ -1425,9 +1467,13 @@ export function LiveStudioConsole({
     try {
       // A verse still on air must go down with the live — otherwise the bible
       // kept "broadcasting" (studio antenne + /live overlay) after the stop.
+      // `masquer()` is itself sandbox-aware (no real API call while testing).
       if (live) await masquer();
+      // Safe in sandbox too: neither Facebook nor a stream were ever started,
+      // so this just tears the local-only compositor back down (unless a
+      // recording is keeping it alive — `stopBroadcast` already guards that).
       await broadcast.stopBroadcast();
-      await saveLiveSettings(false);
+      if (!sandbox) await saveLiveSettings(false);
     } finally {
       setLiveBusy(false);
     }
@@ -2132,7 +2178,8 @@ export function LiveStudioConsole({
       diffuse();
     } else {
       if (live) {
-        void broadcastScripture({ action: "hide" });
+        // CHR-59 sandbox: never hit the real endpoint (see `pushLive`/`masquer`).
+        if (!sandbox) void broadcastScripture({ action: "hide" });
         setLive(null);
       }
       setStatus({ type: "success", message: `Scène « ${currentScene?.name ?? ""} » envoyée à l'antenne.` });
@@ -2201,8 +2248,33 @@ export function LiveStudioConsole({
     },
   };
 
+  // CHR-59 — single-screen console (no page scroll). The shared admin layout's
+  // topbar (`#admin-topbar`) sits ABOVE this component in normal flow, so the
+  // console must fill exactly the REMAINING viewport height, not its own
+  // `100vh` (which would always overflow by the topbar's height). Measured via
+  // ResizeObserver (same guarded-threshold idiom as stage-monitor.tsx /
+  // live-video-overlay.tsx) rather than hardcoded, since the topbar's real
+  // height can vary with content/breakpoint. `useLayoutEffect` (not
+  // `useEffect`) so the very first paint already uses the right height.
+  const [topbarHeight, setTopbarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = document.getElementById("admin-topbar");
+    if (!el) return;
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      setTopbarHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div className="-mx-6 -my-8 flex min-h-screen flex-col gap-3 bg-studio-bg p-3 text-white md:-mx-10 md:-my-10 md:p-4">
+    <div
+      className="-mx-6 -my-8 flex flex-col gap-3 overflow-hidden bg-studio-bg p-3 text-white md:-mx-10 md:-my-10 md:p-4"
+      style={{ height: `calc(100dvh - ${topbarHeight}px)` }}
+    >
       {layers
         .filter((l) => l.type === "audio" && l.audioFileUrl)
         .map((l) => (
@@ -2215,10 +2287,11 @@ export function LiveStudioConsole({
           />
         ))}
       <StudioHeader
-        mode={mode}
-        onModeChange={handleModeChange}
+        onAir={liveStreamActive}
+        onRequestStop={requestStopLive}
+        busy={broadcast.busy || liveBusy}
         sandbox={sandbox}
-        recording={recording}
+        recording={broadcast.recording}
         recLabel={recLabel}
         onOpenSettings={() => setShowGeneralConfig(true)}
       />
@@ -2343,9 +2416,12 @@ export function LiveStudioConsole({
       </section>
 
       {/* Docks row — each panel is width-resizable via the grab handles between
-          neighbours (weights persisted); stacked below lg. */}
-      <section>
+          neighbours (weights persisted); stacked below lg. `flex-1 min-h-0` so
+          it fills exactly whatever height remains (CHR-59 single-screen) —
+          ResizableRow itself grows to `lg:h-full` inside this. */}
+      <section className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
         <ResizableRow
+          className="flex min-h-0 flex-1 flex-col lg:h-full"
           storageKey="studio_docks_v2"
           resetNonce={dockResetNonce}
           items={[
@@ -2399,16 +2475,25 @@ export function LiveStudioConsole({
           onPatchLayer={patchLayerById}
         /> },
             { id: "controls", label: "Commandes", node: <ControlsDock
-          liveActive={broadcast.broadcasting}
+          // Sandbox never sets `broadcast.broadcasting` (WHIP is never
+          // started) — its "active" signal is the LOCAL compositor instead,
+          // so the button still reflects/toggles the rehearsal correctly.
+          liveActive={sandbox ? broadcast.on : broadcast.broadcasting}
           liveBusy={broadcast.busy || liveBusy}
           liveState={broadcast.whipState}
           liveError={broadcast.error}
           onStartLive={() => void startLive()}
           onStopLive={() => void stopLive()}
-          recording={recording}
-          onToggleRecord={() => setRecording((r) => !r)}
+          sandboxRehearsal={sandbox}
+          recording={broadcast.recording}
+          recBusy={recBusy}
+          onToggleRecord={() => void toggleRecording()}
           recLabel={recLabel}
           sandbox={sandbox}
+          // A real broadcast owns the compositor now — toggling sandbox would
+          // create an ambiguous "sandbox + real direct" state, so it's locked
+          // while actually live (stop the direct first).
+          sandboxLocked={broadcast.broadcasting}
           onToggleSandbox={() => setSandbox((s) => !s)}
           dualLayout={dualLayout}
           onToggleLayout={() => setDualLayout((d) => !d)}
@@ -2420,7 +2505,7 @@ export function LiveStudioConsole({
         />
       </section>
 
-      <StatusBar statusRight={status?.message ?? "Prêt"} />
+      <StatusBar statusRight={status?.message ?? "Prêt"} stats={encoderStats} />
 
       <SettingsModal
         open={showGeneralConfig}
@@ -2579,7 +2664,13 @@ export function LiveStudioConsole({
                 type="button"
                 onClick={() => {
                   setShowStopConfirm(false);
-                  saveLiveSettings(false);
+                  // CHR-59 fix: this used to call `saveLiveSettings(false)`
+                  // directly — it only flipped the site's `live_status` off
+                  // while the compositor/WHIP/Facebook publish kept running
+                  // (zombie stream, wasted bandwidth/CPU) and the on-air verse
+                  // stayed broadcast. Route through the real `stopLive()`
+                  // (same one the dock's "Arrêter le live" uses) instead.
+                  void stopLive();
                 }}
                 className="flex cursor-pointer items-center gap-2 rounded-xl bg-live px-5 py-2.5 text-xs font-bold text-white transition hover:brightness-110"
               >
