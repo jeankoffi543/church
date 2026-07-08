@@ -39,6 +39,7 @@ studio-native/
 │   │   · easing (cubic-bézier, port 1:1 de EASING_BEZIER)
 │   │   · reaction (blend de poses CHR-57, port 1:1 de blendReactionStyles)
 │   │   · model (scène/calques + Capabilities pour la négociation UI)
+│   ├── poc-pipeline/      ✅ LIVRÉ  — spike média headless (CHR-100)
 │   ├── studio-media/      ⏳  runtime GStreamer + glib MainLoop ↔ tokio
 │   ├── mod-screen-capture/⏳  Source (getDisplayMedia → WGC/SCK/PipeWire)
 │   ├── mod-camera/        ⏳  Source
@@ -47,7 +48,8 @@ studio-native/
 │   ├── mod-output-record/ ⏳  Output (mp4mux/webmmux, durée écrite nativement)
 │   ├── mod-output-whip/   ⏳  Output (whipclientsink → SRS → Facebook)
 │   └── mod-encoder/       ⏳  NVENC/QSV/VAAPI/VideoToolbox → x264 (fallback)
-└── src-tauri/             ⏳  shell Tauri : commands IPC, events, fenêtre
+├── src-tauri/             ✅ LIVRÉ  — shell Tauri v2 : fenêtre + IPC get_capabilities
+└── ui/                    ✅ LIVRÉ  — frontend Vite+React (UI pilotée par Capabilities)
 ```
 
 ## Roadmap (branches `feature/CHR-*`)
@@ -60,7 +62,7 @@ utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 |---|---|---|
 | **CHR-61** ✅ | `studio-core` : logique pure portée + tests | — (cœur, 0 dép) |
 | **CHR-100** ✅ | POC média headless (2 sources → compositor GPU → x264 → mp4mux, durée relue) | spike de dé-risquage |
-| CHR-101 | Bootstrap Tauri + `src-tauri` + contrat IPC + glib↔tokio | — (fondation) |
+| **CHR-101** ✅ | Bootstrap Tauri + `src-tauri` + `ui` + contrat IPC `get_capabilities` | — (fondation) |
 | CHR-102 | Compositeur GPU + surface preview native | UI tourne, preview « média indispo » |
 | CHR-103 | `mod-screen-capture` | source « écran » disparaît du menu |
 | CHR-104 | `mod-camera` | source « caméra » disparaît |
@@ -81,11 +83,27 @@ utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 ## Build & test (état actuel)
 
 ```sh
-# studio-core : rien d'autre qu'un toolchain Rust.
-cargo test          # 19 tests (easing / reaction / model)
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
+# studio-core seul : rien d'autre qu'un toolchain Rust (default-members).
+cargo test                       # 19 tests (easing / reaction / model)
+
+# POC média headless (CHR-100).
+cargo run -p poc-pipeline        # 2 sources → compositor → x264 → mp4mux, durée relue
+
+# Shell Tauri (CHR-101).
+pnpm --dir ui install && pnpm --dir ui build   # frontend → ui/dist
+cargo test -p studio-native-app                # 3 tests (contrat IPC)
 ```
+
+### Lancer le shell (nécessite un affichage)
+
+```sh
+cargo install tauri-cli --version '^2'         # une fois
+cargo tauri dev                                # depuis studio-native/
+```
+
+Le webview ne peut pas s'afficher en headless ; en CI le shell est prouvé par la
+compilation + les tests du contrat IPC (et un smoke test Xvfb : le binaire démarre
+la fenêtre/webview sans crash).
 
 ## Toolchain média (installée)
 
@@ -98,4 +116,6 @@ build source via `cargo-c` le moment venu. `gstreamer1.0-tools` (CLI `gst-launch
 non installé — non requis : `gstreamer-rs` lie les libs, pas le CLI ; les POC sont
 prouvés par de vrais binaires Rust.
 
-POC média (CHR-100) validé. Prochaine étape : **CHR-101**, bootstrap Tauri + IPC.
+Shell Tauri (CHR-101) validé. Prochaine étape : **CHR-102**, compositeur GPU +
+surface preview native (branche la 1re image dans la fenêtre + `studio-media` avec
+la boucle glib↔tokio).

@@ -1,0 +1,148 @@
+:root {
+  --bg: #0c0e13;
+  --panel: #14171f;
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #e7e9ee;
+  --muted: #8a90a0;
+  --accent: #5eb0d0;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 800;
+  letter-spacing: 3px;
+  font-size: 13px;
+}
+
+.tag {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.panel {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 26px 28px;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 6px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.row .k {
+  color: var(--muted);
+}
+
+.row .v {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.banner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.banner.empty {
+  border-color: rgba(94, 176, 208, 0.3);
+  background: rgba(94, 176, 208, 0.08);
+  color: #a9d6e6;
+}
+
+.banner.err {
+  border-color: rgba(240, 120, 120, 0.3);
+  background: rgba(240, 120, 120, 0.08);
+  color: #f0a8a8;
+}
+
+.hint {
+  margin-top: 6px;
+  opacity: 0.75;
+}
+
+.chips {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(94, 176, 208, 0.12);
+  border: 1px solid rgba(94, 176, 208, 0.3);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 11px;
+}
