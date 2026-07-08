@@ -40,7 +40,8 @@ studio-native/
 │   │   · reaction (blend de poses CHR-57, port 1:1 de blendReactionStyles)
 │   │   · model (scène/calques + Capabilities pour la négociation UI)
 │   ├── poc-pipeline/      ✅ LIVRÉ  — spike média headless (CHR-100)
-│   ├── studio-media/      ⏳  runtime GStreamer + glib MainLoop ↔ tokio
+│   ├── studio-media/      ✅ LIVRÉ  — runtime GStreamer, glib MainLoop (thread dédié)
+│   │   · MediaEngine (compositor → frames comptées) + probe_encoders réel
 │   ├── mod-screen-capture/⏳  Source (getDisplayMedia → WGC/SCK/PipeWire)
 │   ├── mod-camera/        ⏳  Source
 │   ├── mod-overlays/      ⏳  Source (image/text/bible/song, sans DOM)
@@ -63,7 +64,7 @@ utilise **CHR-61** (kickoff, hors plage) puis **CHR-100+**.
 | **CHR-61** ✅ | `studio-core` : logique pure portée + tests | — (cœur, 0 dép) |
 | **CHR-100** ✅ | POC média headless (2 sources → compositor GPU → x264 → mp4mux, durée relue) | spike de dé-risquage |
 | **CHR-101** ✅ | Bootstrap Tauri + `src-tauri` + `ui` + contrat IPC `get_capabilities` | — (fondation) |
-| CHR-102 | Compositeur GPU + surface preview native | UI tourne, preview « média indispo » |
+| **CHR-102** ✅ | `studio-media` : compositor + glib loop + sonde encodeurs + **preview JPEG embarquée** dans le webview | feature `media` off ⇒ app tourne, 0 encodeur |
 | CHR-103 | `mod-screen-capture` | source « écran » disparaît du menu |
 | CHR-104 | `mod-camera` | source « caméra » disparaît |
 | CHR-105 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
@@ -89,9 +90,13 @@ cargo test                       # 19 tests (easing / reaction / model)
 # POC média headless (CHR-100).
 cargo run -p poc-pipeline        # 2 sources → compositor → x264 → mp4mux, durée relue
 
-# Shell Tauri (CHR-101).
-pnpm --dir ui install && pnpm --dir ui build   # frontend → ui/dist
-cargo test -p studio-native-app                # 3 tests (contrat IPC)
+# Moteur média (CHR-102) : glib loop + compositor + sonde encodeurs.
+cargo test -p studio-media       # 2 tests (frames comptées, encodeurs sondés)
+
+# Shell Tauri (CHR-101/102).
+pnpm --dir ui install && pnpm --dir ui build           # frontend → ui/dist
+cargo test -p studio-native-app                        # 3 tests (contrat IPC)
+cargo build -p studio-native-app --no-default-features # garantie modulaire : sans média
 ```
 
 ### Lancer le shell (nécessite un affichage)
@@ -116,6 +121,13 @@ build source via `cargo-c` le moment venu. `gstreamer1.0-tools` (CLI `gst-launch
 non installé — non requis : `gstreamer-rs` lie les libs, pas le CLI ; les POC sont
 prouvés par de vrais binaires Rust.
 
-Shell Tauri (CHR-101) validé. Prochaine étape : **CHR-102**, compositeur GPU +
-surface preview native (branche la 1re image dans la fenêtre + `studio-media` avec
-la boucle glib↔tokio).
+CHR-102 complet : moteur `studio-media` (glib loop + compositor + sonde
+encodeurs) + **preview embarquée** — le compositor est encodé en JPEG basse-déf
+(`appsink`) et poussé au webview en data-URL (`<img>`), sans chirurgie de fenêtre
+native, cross-platform. Le flux *program* vers l'encodeur/WHIP restera GPU
+zéro-copie (concern séparé, CHR-108). Un overlay GPU natif haute-fréquence pour la
+preview reste une optimisation possible plus tard.
+
+Prochaine étape : **CHR-103**, `mod-screen-capture` — la 1re vraie source
+(getDisplayMedia → PipeWire/WGC/ScreenCaptureKit), branchée sur un request pad du
+compositor.
