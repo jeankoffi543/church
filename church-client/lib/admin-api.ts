@@ -1476,15 +1476,108 @@ export async function setPreparedVerses(verses: ScriptureVerse[]): Promise<Scrip
 
 // ── Store Admin APIs ───────────────────────────────────────
 
-export async function getAdminProducts(): Promise<any[]> {
-  const res = await adminFetch<{ data: any[] }>("/store/products");
+export type AdminProductAttributeValue = {
+  value: string;
+  color?: string;
+  image?: string;
+  price?: number;
+  oldPrice?: number;
+  stock?: number;
+  description?: string;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
+};
+
+export type AdminProductAttribute = {
+  name: string;
+  type?: string;
+  values?: (string | AdminProductAttributeValue)[];
+};
+
+export type AdminProductVariant = {
+  id: string;
+  sku?: string;
+  price_override?: number | null;
+  stock_count?: number;
+  image_override?: string | null;
+  attributes?: Record<string, string>;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number | null;
+};
+
+export type AdminProduct = {
+  id: number;
+  title: string;
+  description?: string | null;
+  base_price: number;
+  old_price?: number | null;
+  category?: string;
+  badge?: string | null;
+  is_digital?: boolean;
+  is_featured?: boolean;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number | null;
+  status?: string;
+  images?: string[];
+  attributes?: AdminProductAttribute[];
+  variants?: AdminProductVariant[];
+};
+
+export type AdminOrderItem = {
+  product_title: string;
+  quantity: number;
+  price: number;
+  selected_attributes?: Record<string, string>;
+};
+
+export type AdminOrder = {
+  id: number;
+  reference?: string;
+  customer_first_name: string;
+  customer_last_name: string;
+  customer_email: string;
+  customer_phone: string;
+  created_at: string;
+  fulfillment_status: string;
+  payment_method?: string;
+  delivery_label?: string;
+  delivery_key?: string;
+  items?: AdminOrderItem[];
+};
+
+export type AdminClient = {
+  name: string;
+  email: string;
+  phone: string;
+  since: string;
+  orders: number;
+  spent: number;
+  segment: string;
+};
+
+export type AdminStoreAnalyticsKpi = { label: string; value: string | number; trend?: string };
+export type AdminStoreAnalyticsRevenuePoint = { month: string; value: number };
+export type AdminStoreAnalyticsCategory = { name: string; pct: number };
+export type AdminStoreAnalyticsTransaction = { id: number | string; method: string; date: string; amount: number; short: string };
+export type AdminStoreAnalyticsTopProduct = { rank: number; name: string; image?: string; sales: number; revenue: number };
+
+export type AdminStoreAnalytics = {
+  kpis?: AdminStoreAnalyticsKpi[];
+  revenue_by_month?: AdminStoreAnalyticsRevenuePoint[];
+  category_breakdown?: AdminStoreAnalyticsCategory[];
+  recent_transactions?: AdminStoreAnalyticsTransaction[];
+  top_products?: AdminStoreAnalyticsTopProduct[];
+};
+
+export async function getAdminProducts(): Promise<AdminProduct[]> {
+  const res = await adminFetch<{ data: AdminProduct[] }>("/store/products");
   return res.data;
 }
 
 export async function getAdminProductsPaginated(
   params?: AdminListParams
-): Promise<AdminListResult<any>> {
-  return adminFetch<AdminListResult<any>>(buildAdminListPath("/store/products", params));
+): Promise<AdminListResult<AdminProduct>> {
+  return adminFetch<AdminListResult<AdminProduct>>(buildAdminListPath("/store/products", params));
 }
 
 export async function getAdminProductCategories(): Promise<string[]> {
@@ -1492,7 +1585,7 @@ export async function getAdminProductCategories(): Promise<string[]> {
   return res.data;
 }
 
-export async function createAdminProduct(payload: any, imageFiles?: File[]): Promise<any> {
+export async function createAdminProduct(payload: Record<string, unknown>, imageFiles?: File[]): Promise<AdminProduct> {
   const formData = new FormData();
   Object.entries(payload).forEach(([key, val]) => {
     if (val !== undefined && val !== null) {
@@ -1510,14 +1603,14 @@ export async function createAdminProduct(payload: any, imageFiles?: File[]): Pro
     });
   }
 
-  const res = await adminFetch<any>("/store/products", {
+  const res = await adminFetch<{ data: AdminProduct }>("/store/products", {
     method: "POST",
     body: formData,
   });
   return res.data;
 }
 
-export async function updateAdminProduct(id: number, payload: any, imageFiles?: File[]): Promise<any> {
+export async function updateAdminProduct(id: number, payload: Record<string, unknown>, imageFiles?: File[]): Promise<AdminProduct> {
   const formData = new FormData();
   formData.append("_method", "PUT");
   Object.entries(payload).forEach(([key, val]) => {
@@ -1536,7 +1629,7 @@ export async function updateAdminProduct(id: number, payload: any, imageFiles?: 
     });
   }
 
-  const res = await adminFetch<any>(`/store/products/${id}`, {
+  const res = await adminFetch<{ data: AdminProduct }>(`/store/products/${id}`, {
     method: "POST",
     body: formData,
   });
@@ -1549,26 +1642,26 @@ export async function deleteAdminProduct(id: number): Promise<void> {
   });
 }
 
-export async function getAdminOrders(): Promise<any[]> {
-  const res = await adminFetch<{ data: any[] }>("/store/orders");
+export async function getAdminOrders(): Promise<AdminOrder[]> {
+  const res = await adminFetch<{ data: AdminOrder[] }>("/store/orders");
   return res.data;
 }
 
 export async function getAdminOrdersPaginated(
   params?: AdminListParams
-): Promise<AdminListResult<any>> {
-  return adminFetch<AdminListResult<any>>(buildAdminListPath("/store/orders", params));
+): Promise<AdminListResult<AdminOrder>> {
+  return adminFetch<AdminListResult<AdminOrder>>(buildAdminListPath("/store/orders", params));
 }
 
-export async function updateAdminOrderStatus(id: number, status: string): Promise<any> {
-  const res = await adminFetch<any>(`/store/orders/${id}/status`, {
+export async function updateAdminOrderStatus(id: number, status: string): Promise<AdminOrder> {
+  const res = await adminFetch<{ data: AdminOrder }>(`/store/orders/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
   return res.data;
 }
 
-export async function getAdminClients(search?: string, segment?: string): Promise<any[]> {
+export async function getAdminClients(search?: string, segment?: string): Promise<AdminClient[]> {
   let url = "/store/clients";
   const params: string[] = [];
   if (search) params.push(`search=${encodeURIComponent(search)}`);
@@ -1576,17 +1669,51 @@ export async function getAdminClients(search?: string, segment?: string): Promis
   if (params.length > 0) {
     url += "?" + params.join("&");
   }
-  const res = await adminFetch<{ data: any[] }>(url);
+  const res = await adminFetch<{ data: AdminClient[] }>(url);
   return res.data;
 }
 
-export async function getAdminStoreAnalytics(): Promise<any> {
-  const res = await adminFetch<any>("/store/analytics");
-  return res;
+export async function getAdminStoreAnalytics(): Promise<AdminStoreAnalytics> {
+  return adminFetch<AdminStoreAnalytics>("/store/analytics");
 }
 
 export async function exportAdminStoreAnalyticsCsv(): Promise<string> {
   const res = await adminFetch<{ csv: string }>("/store/analytics/export");
   return res.csv;
+}
+
+/* ── Currencies (Boutique) ────────────────────────────────────────── */
+
+export type AdminCurrency = {
+  id: number;
+  code: string;
+  symbol: string;
+  exchange_rate: number;
+  is_default: boolean;
+  is_active: boolean;
+};
+
+export async function getAdminCurrencies(): Promise<AdminCurrency[]> {
+  const response = await adminFetch<{ data: AdminCurrency[] }>("/store/currencies");
+  return response.data;
+}
+
+export async function updateAdminCurrency(id: number, data: {
+  exchange_rate?: number;
+  is_active?: boolean;
+  symbol?: string;
+}): Promise<AdminCurrency> {
+  const response = await adminFetch<{ data: AdminCurrency }>(`/store/currencies/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function setDefaultAdminCurrency(id: number): Promise<AdminCurrency> {
+  const response = await adminFetch<{ data: AdminCurrency }>(`/store/currencies/${id}/set-default`, {
+    method: "POST",
+  });
+  return response.data;
 }
 

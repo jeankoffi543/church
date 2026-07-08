@@ -97,8 +97,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('srs/on_unpublish', [Public\SrsController::class, 'onUnpublish'])->name('srs.on_unpublish');
 
         // Storefront
-        Route::get('store/products', [Public\ProductController::class, 'index'])->name('store.products.index');
-        Route::get('store/products/{id}', [Public\ProductController::class, 'show'])->name('store.products.show');
+        Route::get('store/products', [Public\ProductController::class, 'index'])->name('store.products.index')->middleware('set.currency');
+        Route::get('store/products/{id}', [Public\ProductController::class, 'show'])->name('store.products.show')->middleware('set.currency');
+        Route::get('store/currencies', [Public\CurrencyController::class, 'index'])->name('store.currencies.index');
         Route::post('store/orders', [Public\OrderController::class, 'store'])->name('store.orders.store');
     });
 
@@ -280,6 +281,11 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('store/clients', [Admin\OrderController::class, 'clients'])->name('store.clients');
                 Route::get('store/analytics', [Admin\OrderController::class, 'analytics'])->name('store.analytics');
                 Route::get('store/analytics/export', [Admin\OrderController::class, 'exportAnalytics'])->name('store.analytics.export');
+
+                // Currencies management
+                Route::get('store/currencies', [Admin\CurrencyController::class, 'index'])->name('store.currencies.index');
+                Route::patch('store/currencies/{currency}', [Admin\CurrencyController::class, 'update'])->name('store.currencies.update');
+                Route::post('store/currencies/{currency}/set-default', [Admin\CurrencyController::class, 'setDefault'])->name('store.currencies.set-default');
             });
         });
     });

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, ShoppingBag, X, Plus, Minus, ArrowRight } from "lucide-react";
+import { Search, ShoppingBag, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/select";
 import { assetUrl } from "@/lib/asset-url";
 import { getStoreProducts } from "@/lib/public-api";
+import { useCurrency } from "@/components/currency/currency-context";
+import { CurrencySelector } from "@/components/currency/currency-selector";
 
 interface VariantOption {
   value: string;
@@ -59,11 +61,52 @@ interface OrderItem {
   image?: string;
 }
 
-const MOCK_PRODUCTS: Product[] = [];
+interface RawAttributeValue {
+  value: string;
+  color?: string;
+  image?: string;
+  price?: number;
+  oldPrice?: number;
+  stock?: number;
+  description?: string;
+}
+
+interface RawAttribute {
+  name: string;
+  type?: string;
+  values?: (string | RawAttributeValue)[];
+}
+
+interface RawStoreProduct {
+  id: number | string;
+  title: string;
+  description?: string;
+  base_price: number | string;
+  old_price?: number | string | null;
+  images?: (string | null)[];
+  is_digital?: boolean;
+  is_featured?: boolean;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number | null;
+  status?: "active" | "draft";
+  category?: string;
+  badge?: string;
+  attributes?: RawAttribute[];
+}
 
 const CATEGORIES = ["Tous", "Livres", "Vêtements", "Musique", "Accessoires", "Onction"];
 
+function readStoredCart(): OrderItem[] {
+  try {
+    const saved = localStorage.getItem("mfm_cart");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function ClientStoreCatalogPage() {
+  const { format } = useCurrency();
   const [selectedCategory, setSelectedCategory] = useState("Tous");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -77,7 +120,7 @@ export default function ClientStoreCatalogPage() {
   const [onlyDigital, setOnlyDigital] = useState(false);
   const [sortBy, setSortBy] = useState("featured");
 
-  // Products from API (falls back to MOCK_PRODUCTS if empty)
+  // Products from API
   const [products, setProducts] = useState<Product[]>([]);
   const [visibleCount, setVisibleCount] = useState(8);
 
@@ -91,16 +134,12 @@ export default function ClientStoreCatalogPage() {
   );
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("mfm_cart");
-      if (saved) {
-        try {
-          setCartItems(JSON.parse(saved));
-        } catch {
-          // ignore
-        }
-      }
-    }
+    // Cart lives in localStorage (browser-only) — reading it during the
+    // lazy useState initializer would run on the client's first render and
+    // mismatch the server-rendered empty cart, breaking hydration. Loading
+    // it post-mount, in an effect, is the hydration-safe option here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCartItems(readStoredCart());
 
     // Load boutique settings
     const loadBoutiqueSettings = async () => {
@@ -121,12 +160,12 @@ export default function ClientStoreCatalogPage() {
       try {
         const data = await getStoreProducts();
         if (data && data.length > 0) {
-          const formatted: Product[] = data.map((p: any) => {
-            const variantsGroup: VariantGroup[] = (p.attributes || []).map((attr: any) => {
+          const formatted: Product[] = (data as RawStoreProduct[]).map((p) => {
+            const variantsGroup: VariantGroup[] = (p.attributes || []).map((attr) => {
               return {
                 name: attr.name,
                 type: attr.type === "color" ? "color" : "text",
-                options: (attr.values || []).map((val: any) => {
+                options: (attr.values || []).map((val) => {
                   if (typeof val === "object" && val !== null) {
                     return {
                       value: val.value,
@@ -154,8 +193,8 @@ export default function ClientStoreCatalogPage() {
               base_price: Number(p.base_price) || 0,
               oldPrice: p.old_price ? Number(p.old_price) : undefined,
               images: (() => {
-                const arr = p.images && p.images.length > 0 
-                  ? p.images.map((img: any) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean)
+                const arr = p.images && p.images.length > 0
+                  ? p.images.map((img) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean)
                   : [];
                 return arr.length > 0 ? arr : ["https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80"];
               })(),
@@ -201,7 +240,7 @@ export default function ClientStoreCatalogPage() {
   };
 
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => {
+    const result = products.filter((p) => {
       // 1. Category filter
       const matchesCategory = selectedCategory === "Tous" || p.category === selectedCategory;
 
@@ -252,9 +291,14 @@ export default function ClientStoreCatalogPage() {
     return filteredProducts.slice(0, visibleCount);
   }, [filteredProducts, visibleCount]);
 
-  useEffect(() => {
+  // Reset pagination whenever the active filters change, without an effect
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  const filterKey = [selectedCategory, searchQuery, minPrice, maxPrice, onlyPromo, onlyInStock, onlyPhysical, onlyDigital, sortBy].join("|");
+  const [lastFilterKey, setLastFilterKey] = useState(filterKey);
+  if (filterKey !== lastFilterKey) {
+    setLastFilterKey(filterKey);
     setVisibleCount(8);
-  }, [selectedCategory, searchQuery, minPrice, maxPrice, onlyPromo, onlyInStock, onlyPhysical, onlyDigital, sortBy]);
+  }
 
   useEffect(() => {
     const sentinel = document.getElementById("infinite-scroll-sentinel");
@@ -272,6 +316,13 @@ export default function ClientStoreCatalogPage() {
 
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // Reset the slider whenever a fresh product list loads, without an effect.
+  const [lastProducts, setLastProducts] = useState(products);
+  if (products !== lastProducts) {
+    setLastProducts(products);
+    setCurrentSlide(0);
+  }
+
   const featuredProducts = useMemo(() => {
     const list = products.filter((p) => p.featured);
     return list.length > 0 ? list.slice(0, 5) : (products.length > 0 ? [products[0]] : []);
@@ -286,10 +337,6 @@ export default function ClientStoreCatalogPage() {
   const handleNextSlide = () => {
     setCurrentSlide((prev) => (prev === featuredProducts.length - 1 ? 0 : prev + 1));
   };
-
-  useEffect(() => {
-    setCurrentSlide(0);
-  }, [products]);
 
   const handleQuickAdd = (p: Product) => {
     const selectedAttrs: Record<string, string> = {};
@@ -369,18 +416,21 @@ export default function ClientStoreCatalogPage() {
             ))}
           </div>
 
-          {/* Cart Button with Count indicator */}
-          <button
-            onClick={() => setIsCartOpen(true)}
-            className="relative flex items-center gap-2 bg-gradient-to-br from-[#3a2a6e] to-[#211648] text-white cursor-pointer font-bold text-xs px-4.5 py-2.5 rounded-xl shadow-md shadow-[#211648]/20 transition-all hover:brightness-108 active:scale-98"
-          >
-            <span>Panier</span>
-            {cartItems.length > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#e2b85f] text-[#211648] text-[9.5px] font-extrabold flex items-center justify-center animate-bounce">
-                {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
-              </span>
-            )}
-          </button>
+          {/* Currency selector + Cart Button */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <CurrencySelector />
+            <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative flex items-center gap-2 bg-gradient-to-br from-[#3a2a6e] to-[#211648] text-white cursor-pointer font-bold text-xs px-4.5 py-2.5 rounded-xl shadow-md shadow-[#211648]/20 transition-all hover:brightness-108 active:scale-98"
+            >
+              <span>Panier</span>
+              {cartItems.length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#e2b85f] text-[#211648] text-[9.5px] font-extrabold flex items-center justify-center animate-bounce">
+                  {cartItems.reduce((acc, i) => acc + i.quantity, 0)}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -428,11 +478,11 @@ export default function ClientStoreCatalogPage() {
               </p>
               <div className="flex items-baseline gap-2 pt-2">
                 <span className="font-display text-3xl font-bold text-[#e2b85f]">
-                  {featuredProduct.base_price.toLocaleString("fr-FR")} FCFA
+                  {format(featuredProduct.base_price)}
                 </span>
                 {featuredProduct.oldPrice && (
                   <span className="text-sm line-through text-white/40">
-                    {featuredProduct.oldPrice.toLocaleString("fr-FR")} FCFA
+                    {format(featuredProduct.oldPrice)}
                   </span>
                 )}
               </div>
@@ -694,11 +744,11 @@ export default function ClientStoreCatalogPage() {
                       <div className="flex items-center justify-between pt-3 border-t border-[#281950]/6">
                         <div className="flex flex-col">
                           <span className="text-base font-black text-[#c8902e]">
-                            {p.base_price.toLocaleString("fr-FR")} FCFA
+                            {format(p.base_price)}
                           </span>
                           {hasDiscount && (
                             <span className="text-[11px] line-through text-[#9a93ad]">
-                              {p.oldPrice?.toLocaleString("fr-FR")} FCFA
+                              {format(p.oldPrice)}
                             </span>
                           )}
                         </div>
@@ -816,7 +866,7 @@ export default function ClientStoreCatalogPage() {
 
                       {/* Pricing */}
                       <span className="block text-xs font-black text-[#c8902e] mt-1.5">
-                        {item.price.toLocaleString("fr-FR")} FCFA <span className="text-[10px] text-[#9a93ad] font-normal">/ u</span>
+                        {format(item.price)} <span className="text-[10px] text-[#9a93ad] font-normal">/ u</span>
                       </span>
                     </div>
 
@@ -861,7 +911,7 @@ export default function ClientStoreCatalogPage() {
               <div className="p-5 border-t border-[#281950]/8 bg-white space-y-4">
                 <div className="flex justify-between items-baseline font-bold text-sm text-[#5a5470]">
                   <span>Total</span>
-                  <span className="font-display font-black text-2xl text-[#211648]">{subtotal.toLocaleString("fr-FR")} FCFA</span>
+                  <span className="font-display font-black text-2xl text-[#211648]">{format(subtotal)}</span>
                 </div>
                 
                 <Link href="/store/checkout" className="w-full">

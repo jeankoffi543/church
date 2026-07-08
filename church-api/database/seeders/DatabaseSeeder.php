@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AccessControlSeeder::class,
             SettingSeeder::class,
+            CurrencySeeder::class,
             MinistrySeeder::class,
             SermonSeeder::class,
             EventSeeder::class,
