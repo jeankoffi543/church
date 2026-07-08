@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/studio-core"]
+
+# Media crates (studio-media, mod-*) and src-tauri are added in later CHR-*
+# branches — they require the GStreamer / Tauri dev toolchain (see README).
+# studio-core has ZERO media dependencies on purpose: it compiles and its tests
+# run with nothing but a Rust toolchain, which is the whole point of the modular
+# architecture (the app's pure logic never depends on the media plane).
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

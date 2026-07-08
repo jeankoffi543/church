@@ -1,0 +1,100 @@
+# studio-native
+
+Portage **desktop natif** (Windows / macOS / Linux) de la régie de streaming
+(type OBS) initialement développée en web (Next.js/React, repo `church-clone`).
+
+**Stack cible : Tauri (Rust) + gstreamer-rs.**
+Rust pour le plan de contrôle et le hot path média sans GC ; GStreamer pour la
+capture / le compositing GPU / l'encodage ; le chrome React (docks, inspecteur,
+kit admin) réutilisé dans une webview Tauri ; les deux moniteurs (preview /
+program) rendus sur des **surfaces GPU natives** (le DOM ne peut pas afficher
+1080p60).
+
+---
+
+## Principe directeur : modularité
+
+> **Si on retire un module, l'app continue de fonctionner.**
+
+Garanti par quatre mécanismes superposés :
+
+1. **Workspace en couches.** `studio-core` (ce qui est livré ici) n'a **aucune
+   dépendance média**. Il compile et ses tests tournent avec un simple toolchain
+   Rust — sans GStreamer, sans Tauri, sans API de capture OS.
+2. **Features Cargo par module.** Chaque `mod-*` est derrière une feature.
+   `--no-default-features` retire un module de la compilation sans rien casser.
+3. **Négociation de capacités.** Le frontend construit son menu « + » et ses
+   sorties depuis `Capabilities` renvoyé par le backend — un module absent
+   n'apparaît jamais, aucun code frontend à toucher.
+4. **Isolation des pannes.** Chaque source est un `gst::Bin` séparé attaché au
+   compositeur ; si une source tombe (device débranché, permission refusée), on
+   la détache sans toucher au program.
+
+## Arborescence
+
+```
+studio-native/
+├── crates/
+│   ├── studio-core/       ✅ LIVRÉ  — logique pure, 0 dépendance média
+│   │   · easing (cubic-bézier, port 1:1 de EASING_BEZIER)
+│   │   · reaction (blend de poses CHR-57, port 1:1 de blendReactionStyles)
+│   │   · model (scène/calques + Capabilities pour la négociation UI)
+│   ├── studio-media/      ⏳  runtime GStreamer + glib MainLoop ↔ tokio
+│   ├── mod-screen-capture/⏳  Source (getDisplayMedia → WGC/SCK/PipeWire)
+│   ├── mod-camera/        ⏳  Source
+│   ├── mod-overlays/      ⏳  Source (image/text/bible/song, sans DOM)
+│   ├── mod-audio-mixer/   ⏳  AudioNode (remplace AudioContext/mixDest)
+│   ├── mod-output-record/ ⏳  Output (mp4mux/webmmux, durée écrite nativement)
+│   ├── mod-output-whip/   ⏳  Output (whipclientsink → SRS → Facebook)
+│   └── mod-encoder/       ⏳  NVENC/QSV/VAAPI/VideoToolbox → x264 (fallback)
+└── src-tauri/             ⏳  shell Tauri : commands IPC, events, fenêtre
+```
+
+## Roadmap (branches `feature/CHR-*`)
+
+Numérotation alignée sur le tracker (suite de CHR-60 du web app). Le projet natif
+vit dans le **même repo git que church-clone**, sous `studio-native/`.
+
+| Branche | Livrable | Si le module est retiré |
+|---|---|---|
+| **CHR-61** ✅ | `studio-core` : logique pure portée + tests | — (cœur, 0 dép) |
+| CHR-62 | POC média headless (capture → compositor GPU → x264 → fichier) | spike de dé-risquage |
+| CHR-63 | Bootstrap Tauri + `src-tauri` + contrat IPC + glib↔tokio | — (fondation) |
+| CHR-64 | Compositeur GPU + surface preview native | UI tourne, preview « média indispo » |
+| CHR-65 | `mod-screen-capture` | source « écran » disparaît du menu |
+| CHR-66 | `mod-camera` | source « caméra » disparaît |
+| CHR-67 | `mod-overlays` (texte/bible/image, sans DOM) | plus d'overlays, vidéo intacte |
+| CHR-68 | `mod-audio-mixer` + VU réels | diffusion muette, reste OK |
+| CHR-69 | `mod-output-record` | bouton REC absent |
+| CHR-70 | `mod-output-whip` → Facebook | plus de diffusion externe |
+| CHR-71 | Animations + réactions sur GPU | overlays sans anim |
+| CHR-72 | `mod-encoder` (sélection HW + fallback) | x264 par défaut |
+| CHR-73 | Stats encodeur réelles + mode sandbox | — |
+| CHR-74 | Groupes, scènes multiples, transitions | — |
+| CHR-75 | Packaging, signature, CI 3-OS, notarization | — |
+
+> `studio-core` (CHR-61) est livrable en premier parce que le cœur ne dépend ni
+> du shell Tauri ni du média : il se construit et se teste seul (c'est justement
+> la garantie modulaire).
+
+## Build & test (état actuel)
+
+```sh
+# studio-core : rien d'autre qu'un toolchain Rust.
+cargo test          # 19 tests (easing / reaction / model)
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+```
+
+## Toolchain média (installée)
+
+GStreamer 1.28 (core + base/video/app/gl/audio, plugins good/bad/ugly/libav/gl/
+pipewire) et les deps Tauri Linux (gtk3, soup3, webkit2gtk-4.1, jsc-4.1) sont
+installés sur la machine de dev. Rust 1.96 est en user-space (rustup).
+
+`gstreamer1.0-plugins-rs` (le WHIP, CHR-70) n'est pas packagé sur cette distro →
+build source via `cargo-c` le moment venu. `gstreamer1.0-tools` (CLI `gst-launch`)
+non installé — non requis : `gstreamer-rs` lie les libs, pas le CLI ; les POC sont
+prouvés par de vrais binaires Rust.
+
+Prochaine étape : **CHR-62**, POC média headless.
