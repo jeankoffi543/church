@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Keky\QueryMaster\Concerns\HasFilters;
 use Keky\QueryMaster\Concerns\IsSearchable;
 use Keky\QueryMaster\Concerns\IsSortable;
@@ -87,6 +88,16 @@ class HomeGroup extends Model
     public function leaderUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'leader_id');
+    }
+
+    /**
+     * The fidèles rattachés to this cellule.
+     *
+     * @return HasMany<Member, $this>
+     */
+    public function members(): HasMany
+    {
+        return $this->hasMany(Member::class);
     }
 
     /**

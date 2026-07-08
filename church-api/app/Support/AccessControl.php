@@ -81,6 +81,10 @@ final class AccessControl
                 ['name' => 'view_services', 'label' => 'Consulter le planning des cultes'],
                 ['name' => 'manage_services', 'label' => 'Créer et planifier les cultes'],
             ],
+            'Fidèles' => [
+                ['name' => 'view_members', 'label' => 'Consulter le registre des fidèles'],
+                ['name' => 'manage_members', 'label' => 'Créer, modifier et supprimer des fidèles'],
+            ],
             'Communication' => [
                 ['name' => 'send_notifications', 'label' => 'Envoyer des notifications et SMS'],
                 ['name' => 'manage_announcements', 'label' => 'Gérer les annonces et le bulletin'],
@@ -178,6 +182,8 @@ final class AccessControl
                 'manage_store',
                 'view_services',
                 'manage_services',
+                'view_members',
+                'manage_members',
             ],
             // Ministry leader: may validate recruitment, but only for the
             // ministry they actually lead (enforced contextually in the
@@ -208,6 +214,7 @@ final class AccessControl
                 'process_cells',
                 'validate_home_group_applications',
                 'view_dashboard',
+                'view_members',
             ],
             'Secrétariat' => [
                 'view_contacts',

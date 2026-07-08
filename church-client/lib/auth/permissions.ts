@@ -31,6 +31,8 @@ export const PERMISSIONS = {
   manageStore: "manage_store",
   viewServices: "view_services",
   manageServices: "manage_services",
+  viewMembers: "view_members",
+  manageMembers: "manage_members",
 } as const;
 
 export type PermissionName = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
