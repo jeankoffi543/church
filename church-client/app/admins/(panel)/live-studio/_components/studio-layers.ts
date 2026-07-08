@@ -13,6 +13,7 @@ export type StudioLayerType =
   | "song"
   | "image"
   | "camera"
+  | "screen"
   | "video"
   | "embed"
   | "audio"
@@ -39,8 +40,14 @@ export type StudioLayer = {
   deviceId?: string;
   deviceLabel?: string;
   audioDeviceId?: string;
-  /** Camera only: hear the capture audio locally (off by default — anti-Larsen). */
+  /** Camera + screen: hear the capture audio locally (off by default — anti-Larsen). */
   listenLocal?: boolean;
+  /** Screen capture (getDisplayMedia): the operator's INTENT that this source is
+   *  live. Persisted so the UI shows "re-share" after a reload (the actual stream
+   *  cannot survive a reload — getDisplayMedia needs a fresh user gesture). The
+   *  real "is there a stream" truth is the shared-stream registry (getCameraStream),
+   *  which is what the compositor and monitors gate on. */
+  captureActive?: boolean;
   // audio input (audio source device)
   device?: string;
   /** Bible only: when false the bible keeps showing in the PREVIEW but is
@@ -196,7 +203,13 @@ export function reactionStyle(l: StudioLayer, b: number): StudioSettings {
 
 /** Sources that carry an audio channel shown in the mixer. */
 export function hasAudio(l: StudioLayer): boolean {
-  return l.type === "embed" || l.type === "video" || l.type === "audio" || l.type === "camera";
+  return (
+    l.type === "embed" ||
+    l.type === "video" ||
+    l.type === "audio" ||
+    l.type === "camera" ||
+    l.type === "screen"
+  );
 }
 
 /**
@@ -208,6 +221,7 @@ export function hasAudio(l: StudioLayer): boolean {
 export function isAudioActive(l: StudioLayer): boolean {
   if (!hasAudio(l) || !l.visible || l.audioMuted) return false;
   if (l.type === "camera") return !!l.deviceId;
+  if (l.type === "screen") return !!l.captureActive;
   if (l.type === "audio") {
     return !!l.audioPlaying && !!l.audioFileUrl;
   }
@@ -231,6 +245,7 @@ export const LAYER_META: Record<
   song: { label: "Chant", color: "#b270ff", typeLabel: "Chant · Paroles" },
   image: { label: "Image / Fond", color: "#34d399", typeLabel: "Image / Fond" },
   camera: { label: "Caméra / Capture", color: "#c89af0", typeLabel: "Caméra · webcam / capture" },
+  screen: { label: "Capture d'écran", color: "#5eb0d0", typeLabel: "Écran · fenêtre / onglet" },
   video: { label: "Vidéo", color: "#f0a868", typeLabel: "Vidéo · lien ou fichier" },
   embed: { label: "Direct externe", color: "#ff6b6b", typeLabel: "YouTube / Facebook" },
   audio: { label: "Audio", color: "#86d0e0", typeLabel: "Entrée audio" },
@@ -246,6 +261,7 @@ export const ADD_TYPES: StudioLayerType[] = [
   "image",
   "embed",
   "camera",
+  "screen",
   "video",
   "audio",
   "group",
@@ -271,6 +287,7 @@ export function layerTabs(type: StudioLayerType): InspTab[] {
     case "image":
       return ["contenu", "layout", "container", "anim", "reaction", "presets"];
     case "camera":
+    case "screen":
     case "video":
     case "embed":
       return ["contenu", "layout", "anim", "reaction", "presets"];
@@ -301,6 +318,22 @@ export function defaultLayerStyle(type: StudioLayerType): StudioSettings {
       animation: "none",
       fontBodyFamily: "Plus Jakarta Sans",
       fontBodyWeight: "700",
+    };
+  }
+  if (type === "screen") {
+    // Screen capture defaults to FULL-FRAME: a 16:9 display on the 16:9 canvas
+    // fills edge-to-edge with no crop (object-cover parity with camera). The
+    // operator can shrink it to a PiP box in the Layout tab. No entrance so it
+    // never fades on a CUT.
+    return {
+      ...DEFAULT_STUDIO_SETTINGS,
+      animation: "none",
+      containerShape: "transparent",
+      positionMode: "custom",
+      customX: 0,
+      customY: 0,
+      customWidth: 100,
+      customHeight: 100,
     };
   }
   if (type === "embed" || type === "video" || type === "camera") {
@@ -367,6 +400,12 @@ export function createLayer(type: StudioLayerType, existingCount: number): Studi
   }
   if (type === "camera") {
     base.deviceId = "";
+    base.listenLocal = false;
+  }
+  if (type === "screen") {
+    // No stream yet — the operator clicks "Partager un écran" in the inspector
+    // (a user gesture getDisplayMedia requires). captureActive flips true then.
+    base.captureActive = false;
     base.listenLocal = false;
   }
   if (type === "audio") {

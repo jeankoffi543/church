@@ -158,7 +158,9 @@ export function MixerDock({
                 ? !!ch.device?.trim()
                 : ch.type === "camera"
                   ? !!ch.deviceId
-                  : !!ch.feedUrl?.trim();
+                  : ch.type === "screen"
+                    ? !!ch.captureActive
+                    : !!ch.feedUrl?.trim();
             const probed = hasAudioProbe(ch.id);
             // "Capturable" = real probe registered, or a hardware audio device.
             const capturable = probed || ch.type === "audio";

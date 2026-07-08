@@ -182,7 +182,10 @@ export function CompositeLayer({
   // initial variant, then animate to the final one, whenever the effect or the
   // replay nonce changes. The media element underneath stays mounted and live.
   const isStableMedia =
-    layer.type === "camera" || layer.type === "video" || layer.type === "embed";
+    layer.type === "camera" ||
+    layer.type === "screen" ||
+    layer.type === "video" ||
+    layer.type === "embed";
   const mediaControls = useAnimationControls();
   // The registry only emits object variants (never the TargetResolver form), so
   // narrowing to TargetAndTransition here is safe.
@@ -438,6 +441,34 @@ export function CompositeLayer({
         <CameraMedia layer={layer} audioOwner={false} />
         <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#c89af0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white" style={{ transform: `scale(${uiScale})`, transformOrigin: "top left" }}>
           CAMÉRA
+        </span>
+      </motion.div>
+    );
+  }
+
+  // Screen / window / tab capture — getDisplayMedia, movable overlay
+  if (layer.type === "screen") {
+    return (
+      <motion.div
+        key={layer.id}
+        initial={mediaInitial}
+        animate={mediaControls}
+        exit={mediaExit}
+        data-layer
+        {...dragProps}
+        className={cn(
+          "absolute overflow-hidden rounded-xl bg-black",
+          movable && "cursor-move",
+        )}
+        style={{ ...getOverlayBoxStyle(effStyle), zIndex: z, ...editRingStyle, ...reactCss }}
+      >
+        {handles}
+        {/* Monitors are pure CONSUMERS — the getDisplayMedia stream is owned by the
+            console-level <ScreenKeepAlive>, so an on-air capture survives a Preview
+            scene switch (no re-prompt possible anyway). */}
+        <ScreenMedia layer={layer} audioOwner={false} />
+        <span className="pointer-events-none absolute top-2.5 left-2.5 rounded-md bg-[#5eb0d0]/85 px-2 py-1 text-[9px] font-extrabold tracking-[1px] text-white" style={{ transform: `scale(${uiScale})`, transformOrigin: "top left" }}>
+          CAPTURE D&apos;ÉCRAN
         </span>
       </motion.div>
     );
@@ -1060,6 +1091,171 @@ export function CameraKeepAlive({ layers }: { layers: StudioLayer[] }) {
       {cameras.map((l) => (
         <div key={l.id} className="relative size-px">
           <CameraMedia layer={l} audioOwner />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The live media of a "Capture d'écran" source (getDisplayMedia). Unlike a
+ * camera, the owner NEVER acquires here — the stream is captured on a user
+ * gesture in the inspector and published to the shared registry. The owner only
+ * plays it (local monitor), meters its audio for the mixer VU, and watches the
+ * VIDEO track's `ended` event (the browser's native "Stop sharing" bar) to clean
+ * up and notify the console so `captureActive` flips back off.
+ */
+function ScreenMedia({
+  layer,
+  audioOwner,
+  onEnded,
+}: {
+  layer: StudioLayer;
+  audioOwner: boolean;
+  onEnded?: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const monitorMuted = useSyncExternalStore(subscribeMonitorMuted, getMonitorMuted, () => false);
+
+  const level = layer.audioLevel ?? 80;
+  const mutedSetting = layer.audioMuted ?? false; // on-air mute (drives the meter)
+  const listenLocal = layer.listenLocal ?? false;
+
+  // Live values for the probe (updated via effect, never read in render).
+  const audioRef = useRef({ level, mutedSetting });
+  useEffect(() => {
+    audioRef.current = { level, mutedSetting };
+  }, [level, mutedSetting]);
+
+  // Keep the latest onEnded without re-running the owner effect.
+  const onEndedRef = useRef(onEnded);
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+
+  const sharedStream = useSyncExternalStore(
+    subscribeCameraStreams,
+    () => getCameraStream(layer.id),
+    () => undefined,
+  );
+
+  // Owner: play the registry stream, meter its audio, register the probe, and
+  // detect the user ending the share. No acquisition (getDisplayMedia is gesture
+  // -bound — it happens in the inspector).
+  useEffect(() => {
+    if (!audioOwner || !sharedStream) return;
+    const el = videoRef.current;
+    if (el) {
+      el.srcObject = sharedStream;
+      void el.play().catch(() => {});
+    }
+    let unregisterProbe = () => {};
+    const meter = attachStreamMeter(sharedStream);
+    if (meter) {
+      let peak = 0;
+      const probe: AudioProbe = {
+        getLevel: () => {
+          const { level: lv, mutedSetting: mm } = audioRef.current;
+          const raw = mm ? 0 : meter.getLevel() * (lv / 100);
+          peak = Math.max(0, Math.min(100, peak + (raw - peak) * 0.5));
+          return peak;
+        },
+        isActive: () => {
+          const { level: lv, mutedSetting: mm } = audioRef.current;
+          return !mm && lv > 0 && meter.hasAudio();
+        },
+      };
+      unregisterProbe = registerAudioProbe(layer.id, probe);
+    }
+    // The browser "Stop sharing" bar ends the video track.
+    const vTrack = sharedStream.getVideoTracks()[0];
+    const handleEnded = () => {
+      sharedStream.getTracks().forEach((t) => t.stop());
+      setCameraStream(layer.id, null);
+      onEndedRef.current?.();
+    };
+    vTrack?.addEventListener("ended", handleEnded);
+    return () => {
+      unregisterProbe();
+      meter?.dispose();
+      vTrack?.removeEventListener("ended", handleEnded);
+    };
+  }, [audioOwner, sharedStream, layer.id]);
+
+  // Program: attach the shared live stream to this element.
+  useEffect(() => {
+    if (audioOwner) return;
+    const el = videoRef.current;
+    if (!el) return;
+    el.srcObject = sharedStream ?? null;
+    if (sharedStream) void el.play().catch(() => {});
+  }, [audioOwner, sharedStream]);
+
+  // Local monitor volume (only audible when listening locally).
+  useEffect(() => {
+    if (!audioOwner) return;
+    const el = videoRef.current;
+    if (el) el.volume = Math.max(0, Math.min(1, level / 100));
+  }, [audioOwner, level]);
+
+  if (!sharedStream) {
+    return (
+      <div className="flex size-full flex-col items-center justify-center gap-1 text-center">
+        <div
+          className={cn("text-[34px] font-semibold tracking-[5px]", MONO)}
+          style={{ color: "rgba(94,176,208,.85)" }}
+        >
+          CAPTURE D&apos;ÉCRAN
+        </div>
+        <div className="text-[26px] text-white/35">
+          Partagez un écran depuis l&apos;inspecteur…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      className="pointer-events-none absolute inset-0 size-full object-cover"
+      autoPlay
+      muted={!audioOwner || !listenLocal || monitorMuted}
+      playsInline
+    />
+  );
+}
+
+/**
+ * Off-screen owner of every screen-capture stream (parallel to
+ * {@link CameraKeepAlive}). Because a getDisplayMedia stream can never be
+ * re-acquired without a fresh user gesture, this owner NEVER acquires — it holds
+ * ownership of the audio metering + "stop sharing" detection for whatever stream
+ * the inspector has published to the registry, so an on-air capture survives a
+ * Preview scene switch. Deduped by id, program copy first. `onEnded(id)` lets the
+ * console flip the layer's `captureActive` back off.
+ */
+export function ScreenKeepAlive({
+  layers,
+  onEnded,
+}: {
+  layers: StudioLayer[];
+  onEnded: (id: string) => void;
+}) {
+  const seen = new Set<string>();
+  const screens = layers.filter((l) => {
+    if (l.type !== "screen" || seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  });
+
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed left-[-9999px] top-[-9999px] size-px overflow-hidden opacity-0"
+    >
+      {screens.map((l) => (
+        <div key={l.id} className="relative size-px">
+          <ScreenMedia layer={l} audioOwner onEnded={() => onEnded(l.id)} />
         </div>
       ))}
     </div>

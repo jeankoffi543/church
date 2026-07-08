@@ -31,6 +31,7 @@ export type AnimSourceKind =
   | "song"
   | "image"
   | "camera"
+  | "screen"
   | "video"
   | "embed"
   | "group";
