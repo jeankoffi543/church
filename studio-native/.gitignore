@@ -2,10 +2,13 @@
 **/*.rs.bk
 Cargo.lock.orig
 
-# Frontend (added in the Tauri bootstrap branch)
+# Frontend (Vite/React under ui/)
 node_modules/
 dist/
 .vite/
+
+# Tauri generated schemas/permissions
+/src-tauri/gen/
 
 # OS / editor
 .DS_Store

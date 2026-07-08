@@ -1,0 +1,21 @@
+[package]
+name = "studio-native-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-101 — Tauri v2 desktop shell for the native studio. Hosts the React chrome (webview) and exposes the IPC capability contract backed by studio-core."
+
+[[bin]]
+name = "studio-native-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The pure domain layer. The shell depends on it; never the reverse.
+studio-core = { path = "../crates/studio-core" }
