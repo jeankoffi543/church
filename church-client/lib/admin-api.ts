@@ -1808,3 +1808,81 @@ export async function getGivingStats(from: string, to: string): Promise<GivingSt
   return response.data;
 }
 
+/* ── Fidèles (Members) ────────────────────────────────────────────── */
+
+export type MemberGender = "homme" | "femme";
+export type MemberType = "visiteur" | "membre" | "leader";
+export type MemberStatus = "actif" | "inactif" | "transfere" | "decede";
+
+export type AdminMember = {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  gender: MemberGender | null;
+  birthdate: string | null;
+  address: string | null;
+  marital_status: string | null;
+  join_date: string | null;
+  member_type: MemberType;
+  home_group_id: number | null;
+  home_group_name: string | null;
+  status: MemberStatus;
+  photo: string | null;
+  notes: string | null;
+  created_at: string | null;
+};
+
+export type AdminMemberPayload = {
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  gender?: MemberGender | null;
+  birthdate?: string | null;
+  address?: string | null;
+  marital_status?: string | null;
+  join_date?: string | null;
+  member_type?: MemberType;
+  home_group_id?: number | null;
+  status?: MemberStatus;
+  notes?: string | null;
+};
+
+export async function getAdminMembers(
+  params?: AdminListParams
+): Promise<AdminListResult<AdminMember>> {
+  return adminFetch<AdminListResult<AdminMember>>(buildAdminListPath("/members", params));
+}
+
+export async function createAdminMember(data: AdminMemberPayload): Promise<AdminMember> {
+  const response = await adminFetch<{ data: AdminMember }>("/members", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function updateAdminMember(id: number, data: Partial<AdminMemberPayload>): Promise<AdminMember> {
+  const response = await adminFetch<{ data: AdminMember }>(`/members/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  return response.data;
+}
+
+export async function deleteAdminMember(id: number): Promise<void> {
+  await adminFetch<void>(`/members/${id}`, { method: "DELETE" });
+}
+
+/** Active-member count — used by the dashboard's "Fidèles inscrits" tile. */
+export async function getAdminMemberCounts(): Promise<{ total: number; active: number }> {
+  const [allResponse, activeResponse] = await Promise.all([
+    adminFetch<AdminListResult<AdminMember>>(buildAdminListPath("/members", { perPage: 1 })),
+    adminFetch<AdminListResult<AdminMember>>(
+      buildAdminListPath("/members", { perPage: 1, filters: { status__eq: "actif" } })
+    ),
+  ]);
+
+  return { total: allResponse.meta.total, active: activeResponse.meta.total };
+}
+

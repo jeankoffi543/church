@@ -1,13 +1,26 @@
 import { Users, Video, CalendarDays, HandCoins } from "lucide-react";
 
-const STATS = [
-  { label: "Fidèles inscrits", value: "1 248", icon: Users },
-  { label: "Cultes diffusés", value: "36", icon: Video },
-  { label: "Événements à venir", value: "4", icon: CalendarDays },
-  { label: "Dons ce mois", value: "—", icon: HandCoins },
-];
+import { getAdminMe, getAdminMemberCounts } from "@/lib/admin-api";
+import { hasAnyPermission, PERMISSIONS } from "@/lib/auth/permissions";
 
-export default function AdminDashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AdminDashboardPage() {
+  const me = await getAdminMe();
+  const canViewMembers = hasAnyPermission(me, [PERMISSIONS.viewMembers, PERMISSIONS.manageMembers]);
+  const memberCounts = canViewMembers ? await getAdminMemberCounts().catch(() => null) : null;
+
+  const STATS = [
+    {
+      label: "Fidèles inscrits",
+      value: memberCounts ? memberCounts.active.toLocaleString("fr-FR") : "—",
+      icon: Users,
+    },
+    { label: "Cultes diffusés", value: "36", icon: Video },
+    { label: "Événements à venir", value: "4", icon: CalendarDays },
+    { label: "Dons ce mois", value: "—", icon: HandCoins },
+  ];
+
   return (
     <div className="mx-auto max-w-[1100px]">
       <header className="mb-8">

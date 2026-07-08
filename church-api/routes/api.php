@@ -206,6 +206,17 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('services/{service}', [Admin\ServiceController::class, 'destroy'])->name('services.destroy');
             });
 
+            // Fidèles — registre de la congrégation.
+            Route::middleware('permission:view_members|manage_members')->group(function (): void {
+                Route::get('members', [Admin\MemberController::class, 'index'])->name('members.index');
+                Route::get('members/{member}', [Admin\MemberController::class, 'show'])->name('members.show');
+            });
+            Route::middleware('permission:manage_members')->group(function (): void {
+                Route::post('members', [Admin\MemberController::class, 'store'])->name('members.store');
+                Route::match(['put', 'patch'], 'members/{member}', [Admin\MemberController::class, 'update'])->name('members.update');
+                Route::delete('members/{member}', [Admin\MemberController::class, 'destroy'])->name('members.destroy');
+            });
+
             // Agenda / événements
             Route::get('events/check-slug', [Admin\EventController::class, 'checkSlug'])
                 ->middleware('permission:manage_events');
