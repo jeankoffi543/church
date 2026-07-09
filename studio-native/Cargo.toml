@@ -4,6 +4,7 @@ members = [
     "crates/studio-core",
     "crates/studio-media",
     "crates/mod-screen-capture",
+    "crates/mod-camera",
     "crates/poc-pipeline",
     "src-tauri",
 ]

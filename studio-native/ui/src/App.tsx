@@ -14,11 +14,14 @@ type MediaStatus = {
   frames: number;
 };
 
-/** Mirror of the Rust `ScreenStatus` — CHR-104's captureActive/ended parity. */
-type ScreenStatus = {
+/** Mirror of the Rust `ScreenStatus` / `CameraStatus` — captureActive/ended parity. */
+type SourceStatus = {
   active: boolean;
   ended_reason: string | null;
 };
+
+/** Mirror of the Rust `mod_camera::CameraDevice` (CHR-105). */
+type CameraDevice = { id: string; label: string };
 
 const SCREEN_SOURCE_ID = "screen";
 
@@ -72,11 +75,15 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaStatus | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [screen, setScreen] = useState<ScreenStatus | null>(null);
-  // `screen_status` *consumes* the ended reason (take, not peek), so it appears
-  // in exactly one poll. Latch it here so the "partage arrêté" banner stays up
-  // until the user acts, instead of flashing for one 500 ms poll cycle.
+  const [screen, setScreen] = useState<SourceStatus | null>(null);
+  // `screen_status` / `camera_status` *consume* the ended reason (take, not
+  // peek), so it appears in exactly one poll. Latch it so the "arrêté" banner
+  // stays up until the user acts, instead of flashing for one 500 ms cycle.
   const [screenEnded, setScreenEnded] = useState<string | null>(null);
+  const [camera, setCamera] = useState<SourceStatus | null>(null);
+  const [cameraEnded, setCameraEnded] = useState<string | null>(null);
+  const [cameras, setCameras] = useState<CameraDevice[]>([]);
+  const [cameraDeviceId, setCameraDeviceId] = useState<string>("");
   const [studio, setStudio] = useState<StudioDoc | null>(null);
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +109,13 @@ export function App() {
     invoke<StudioDoc>("get_studio_state")
       .then(setStudio)
       .catch((e) => setError(String(e)));
+    // Enumerate cameras for the device picker (empty when the module is absent).
+    invoke<CameraDevice[]>("list_cameras")
+      .then((list) => {
+        setCameras(list);
+        setCameraDeviceId((id) => id || list[0]?.id || "");
+      })
+      .catch(() => {});
   }, []);
 
   // Every scene edit goes through the Rust store, which persists to disk and
@@ -166,10 +180,16 @@ export function App() {
       invoke<MediaStatus>("media_status")
         .then(setMedia)
         .catch(() => {});
-      invoke<ScreenStatus>("screen_status")
+      invoke<SourceStatus>("screen_status")
         .then((s) => {
           setScreen(s);
           if (s.ended_reason) setScreenEnded(s.ended_reason);
+        })
+        .catch(() => {});
+      invoke<SourceStatus>("camera_status")
+        .then((s) => {
+          setCamera(s);
+          if (s.ended_reason) setCameraEnded(s.ended_reason);
         })
         .catch(() => {});
     }, 500);
@@ -337,6 +357,52 @@ export function App() {
                 Arrêter le partage
               </button>
             </div>
+          )}
+
+          {cameraEnded && (
+            <div className="banner err">Caméra arrêtée : {cameraEnded}</div>
+          )}
+
+          {caps?.sources.includes("camera") && (
+            <>
+              {cameras.length > 1 && (
+                <select
+                  className="picker"
+                  value={cameraDeviceId}
+                  disabled={!!camera?.active}
+                  onChange={(e) => setCameraDeviceId(e.target.value)}
+                >
+                  {cameras.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label || c.id}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="btnrow">
+                <button
+                  className="btn"
+                  disabled={!!camera?.active}
+                  onClick={() => {
+                    setCameraEnded(null);
+                    invoke("start_camera_source", {
+                      deviceId: cameraDeviceId || null,
+                    }).catch((e) => setError(String(e)));
+                  }}
+                >
+                  Activer la caméra
+                </button>
+                <button
+                  className="btn ghost"
+                  disabled={!camera?.active}
+                  onClick={() =>
+                    invoke("stop_camera_source").catch((e) => setError(String(e)))
+                  }
+                >
+                  Arrêter la caméra
+                </button>
+              </div>
+            </>
           )}
         </section>
 

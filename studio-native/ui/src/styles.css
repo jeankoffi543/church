@@ -279,3 +279,19 @@ code {
 .mini:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+.picker {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.picker:disabled {
+  opacity: 0.5;
+}
