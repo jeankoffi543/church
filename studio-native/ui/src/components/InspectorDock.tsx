@@ -1,8 +1,10 @@
-import { ReactNode, useState } from "react";
-import { Sparkles, Italic, Underline, X } from "lucide-react";
+import { ReactNode, useEffect, useState } from "react";
+import { Sparkles, Italic, Underline, X, Camera, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Slider } from "./Slider";
 import { layerMeta } from "../lib/studio-layers";
+import * as api from "../lib/api";
+import type { CameraDevice } from "../lib/api";
 import {
   FONT_OPTIONS,
   WEIGHT_OPTIONS,
@@ -220,12 +222,25 @@ function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p:
       </div>
     );
   }
-  if (layer.kind === "camera" || layer.kind === "screen") {
+  if (layer.kind === "camera") return <CameraContent layer={layer} patchData={patchData} />;
+  if (layer.kind === "screen") {
     return (
       <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[11px] leading-relaxed text-white/50">
-        {layer.kind === "camera"
-          ? "Rendez la source visible (œil) pour démarrer la caméra sur le compositor natif."
-          : "Rendez la source visible (œil) pour démarrer le partage d'écran."}
+        Rendez la source visible (œil) pour démarrer le partage d&apos;écran (sélecteur système via le
+        portail). L&apos;aperçu apparaît dans les moniteurs, déplaçable/redimensionnable.
+      </div>
+    );
+  }
+  if (layer.kind === "image") {
+    return (
+      <div>
+        <Label className="mb-1.5">URL de l&apos;image</Label>
+        <input
+          value={(layer.imageUrl as string) ?? ""}
+          onChange={(e) => patchData({ imageUrl: e.target.value } as Partial<StudioLayer>)}
+          placeholder="https://…/image.jpg"
+          className={MONO_FIELD}
+        />
       </div>
     );
   }
@@ -233,6 +248,65 @@ function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p:
     <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[11px] leading-relaxed text-white/50">
       Réglez le style dans les onglets ci-dessus.
     </div>
+  );
+}
+
+/* ── Contenu · Caméra (sélecteur de périphérique natif via list_cameras) ── */
+function CameraContent({ layer, patchData }: { layer: StudioLayer; patchData: (p: Partial<StudioLayer>) => void }) {
+  const [devices, setDevices] = useState<CameraDevice[]>([]);
+  const refresh = () => api.listCameras().then(setDevices).catch(() => {});
+  useEffect(() => {
+    refresh();
+  }, []);
+  const listenLocal = (layer.listenLocal as boolean) ?? false;
+  return (
+    <>
+      <div>
+        <Label className="mb-1.5">Périphérique caméra</Label>
+        <div className="flex gap-2">
+          <Select
+            value={(layer.deviceId as string) ?? ""}
+            onValueChange={(v) => {
+              const dev = devices.find((d) => d.id === v);
+              patchData({ deviceId: v, deviceLabel: dev?.label ?? "" } as Partial<StudioLayer>);
+            }}
+            className={FIELD}
+          >
+            <option value="" className="bg-studio-field">
+              — Choisir une caméra —
+            </option>
+            {devices.map((d, i) => (
+              <option key={d.id} value={d.id} className="bg-studio-field">
+                {d.label || `Caméra ${i + 1}`}
+              </option>
+            ))}
+          </Select>
+          <button
+            type="button"
+            onClick={refresh}
+            title="Rafraîchir la liste"
+            className="flex items-center justify-center rounded-lg border border-white/12 bg-white/[0.04] px-3 text-white/60 transition hover:text-white"
+          >
+            <RefreshCw className="size-3.5" />
+          </button>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => patchData({ listenLocal: !listenLocal } as Partial<StudioLayer>)}
+        className={cn(
+          "flex items-center justify-center gap-2 rounded-lg border py-2 text-[11.5px] font-bold transition-colors",
+          listenLocal ? "border-gold/40 bg-gold/15 text-gold" : "border-white/12 bg-white/[0.03] text-white/60 hover:text-white",
+        )}
+      >
+        {listenLocal ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+        {listenLocal ? "Écoute locale activée" : "Écouter en local (risque de Larsen)"}
+      </button>
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        <Camera className="mr-1 inline size-3" /> Rendez la source visible (œil) pour la mettre à l&apos;antenne.
+        Le périphérique choisi est démarré sur le compositor natif.
+      </div>
+    </>
   );
 }
 

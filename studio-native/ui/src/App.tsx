@@ -151,11 +151,12 @@ export function App() {
     // stops it. Idempotent (double-start errors are caught).
     const layers = scene?.layers ?? [];
     const screenWanted = layers.some((l) => l.kind === "screen" && l.visible);
-    const cameraWanted = layers.some((l) => l.kind === "camera" && l.visible);
+    const camLayer = layers.find((l) => l.kind === "camera" && l.visible);
     if (screenWanted && !screenActive) api.startScreen().catch(() => {});
     if (!screenWanted && screenActive) api.stopScreen().catch(() => {});
-    if (cameraWanted && !cameraActive) api.startCamera(cameraId || null).catch(() => {});
-    if (!cameraWanted && cameraActive) api.stopCamera().catch(() => {});
+    // Start the camera with the LAYER's chosen device (inspector picker, CHR-123).
+    if (camLayer && !cameraActive) api.startCamera(((camLayer.deviceId as string) || cameraId) || null).catch(() => {});
+    if (!camLayer && cameraActive) api.stopCamera().catch(() => {});
   }, [doc, screenActive, cameraActive, cameraId]);
 
   // CUT: promote the preview's staged overlays to the PROGRAMME (on-air +
