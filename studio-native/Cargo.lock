@@ -3300,6 +3300,7 @@ dependencies = [
  "anyhow",
  "gstreamer",
  "gstreamer-app",
+ "studio-core",
 ]
 
 [[package]]

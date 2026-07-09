@@ -179,6 +179,10 @@ pub struct MediaEngine {
     /// Currently-attached outputs, keyed by caller-chosen id (e.g. `"record"`).
     outputs: OutputMap,
     ended: EndedMap,
+    /// Per-source animation epoch (CHR-110). Each new entrance/reaction bumps its
+    /// source's counter; a running animation thread stops as soon as its captured
+    /// epoch is superseded, so a re-trigger cleanly cancels the previous one.
+    anim_epochs: Arc<Mutex<HashMap<String, Arc<AtomicU64>>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -210,6 +214,7 @@ impl MediaEngine {
                 sources: r.sources,
                 outputs: r.outputs,
                 ended: r.ended,
+                anim_epochs: Arc::new(Mutex::new(HashMap::new())),
                 thread: Some(thread),
             }),
             Ok(Err(e)) => bail!("media engine setup: {e}"),
@@ -330,6 +335,80 @@ impl MediaEngine {
         handle.pad.set_property("ypos", ypos);
         handle.pad.set_property("width", width);
         handle.pad.set_property("height", height);
+        Ok(())
+    }
+
+    /// Play an **entrance animation** on a source's compositor pad (CHR-110):
+    /// interpolate its `alpha`/geometry from an effect-defined start state to its
+    /// configured pose (the pad's current xpos/ypos/width/height) over
+    /// `duration_ms`, eased by `easing` (a [`studio_core::easing`] preset name).
+    /// The timing logic mirrors the web entrance registry; the *render* is the
+    /// compositor-pad automation the README's CHR-110 calls for.
+    ///
+    /// Supported effects (the ones a compositor pad can express): `fade`,
+    /// `fade_slide`, `slide_left`/`right`/`up`/`down`, `scale`/`zoom_out`/`pop`.
+    /// `none`/unknown snap straight to the pose (no animation). 3D/shader effects
+    /// (flip, door, swirl…) need a GL mixer and stay a later concern.
+    ///
+    /// Non-blocking: runs on a short-lived thread (GObject `set_property` is
+    /// thread-safe), and a re-trigger cancels the previous run via the epoch.
+    pub fn animate_layer(
+        &self,
+        id: &str,
+        effect: &str,
+        duration_ms: u64,
+        easing: &str,
+    ) -> Result<()> {
+        // Snapshot the pad + its target pose under the sources lock.
+        let (pad, target) = {
+            let sources = self
+                .sources
+                .lock()
+                .map_err(|_| anyhow!("sources lock poisoned"))?;
+            let handle = sources
+                .get(id)
+                .ok_or_else(|| anyhow!("no such source: {id}"))?;
+            let pad = handle.pad.clone();
+            let target = TargetPose {
+                x: pad.property::<i32>("xpos") as f64,
+                y: pad.property::<i32>("ypos") as f64,
+                w: pad.property::<i32>("width") as f64,
+                h: pad.property::<i32>("height") as f64,
+            };
+            (pad, target)
+        };
+
+        // `none`/unknown or a zero duration → just ensure the final pose + full
+        // opacity, no thread.
+        if duration_ms == 0 || !effect_is_animatable(effect) {
+            apply_pose(&pad, &target, 1.0);
+            return Ok(());
+        }
+
+        // Bump this source's epoch; the thread stops when it's superseded.
+        let epoch_arc = {
+            let mut m = self
+                .anim_epochs
+                .lock()
+                .map_err(|_| anyhow!("anim epochs lock poisoned"))?;
+            m.entry(id.to_string())
+                .or_insert_with(|| Arc::new(AtomicU64::new(0)))
+                .clone()
+        };
+        let my_epoch = epoch_arc.fetch_add(1, Ordering::SeqCst) + 1;
+        let effect = effect.to_string();
+        let easing = easing.to_string();
+        std::thread::spawn(move || {
+            run_entrance(
+                &pad,
+                target,
+                &effect,
+                duration_ms,
+                &easing,
+                &epoch_arc,
+                my_epoch,
+            );
+        });
         Ok(())
     }
 
@@ -661,6 +740,100 @@ fn teardown_output_now(pipeline: &gst::Pipeline, tee: &gst::Element, handle: Out
         });
         gst::PadProbeReturn::Remove
     });
+}
+
+/// A compositor pad's configured pose — the end state of an entrance animation.
+#[derive(Clone, Copy)]
+struct TargetPose {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+/// Whether `effect` is one a compositor pad can render (else: snap, no anim).
+fn effect_is_animatable(effect: &str) -> bool {
+    matches!(
+        effect,
+        "fade"
+            | "fade_slide"
+            | "slide_left"
+            | "slide_right"
+            | "slide_up"
+            | "slide_down"
+            | "scale"
+            | "zoom_out"
+            | "pop"
+    )
+}
+
+/// Write a pose + alpha onto a compositor pad (geometry rounded, ≥ 1px).
+fn set_pad(pad: &gst::Pad, x: f64, y: f64, w: f64, h: f64, alpha: f64) {
+    pad.set_property("xpos", x.round() as i32);
+    pad.set_property("ypos", y.round() as i32);
+    pad.set_property("width", (w.round() as i32).max(1));
+    pad.set_property("height", (h.round() as i32).max(1));
+    pad.set_property("alpha", alpha.clamp(0.0, 1.0));
+}
+
+fn apply_pose(pad: &gst::Pad, t: &TargetPose, alpha: f64) {
+    set_pad(pad, t.x, t.y, t.w, t.h, alpha);
+}
+
+/// The pad state for an effect at eased progress `p` — the CHR-110 mapping of an
+/// entrance to compositor-pad properties (alpha + geometry). Returns
+/// (xpos, ypos, width, height, alpha).
+fn effect_transform(effect: &str, t: &TargetPose, p: f64) -> (f64, f64, f64, f64, f64) {
+    let a = p; // alpha (clamped when written)
+    match effect {
+        "fade" => (t.x, t.y, t.w, t.h, a),
+        // fade + settle downward into place.
+        "fade_slide" => (t.x, t.y + (1.0 - p) * t.h * 0.3, t.w, t.h, a),
+        // Slides enter fully offset by their own extent, opaque throughout.
+        "slide_left" => (t.x + (1.0 - p) * t.w, t.y, t.w, t.h, 1.0),
+        "slide_right" => (t.x - (1.0 - p) * t.w, t.y, t.w, t.h, 1.0),
+        "slide_up" => (t.x, t.y + (1.0 - p) * t.h, t.w, t.h, 1.0),
+        "slide_down" => (t.x, t.y - (1.0 - p) * t.h, t.w, t.h, 1.0),
+        // Grow from 60% about the centre; `p` past 1 (back-out) gives a soft pop.
+        "scale" | "zoom_out" | "pop" => {
+            let s = 0.6 + 0.4 * p;
+            let (cx, cy) = (t.x + t.w / 2.0, t.y + t.h / 2.0);
+            let (w, h) = (t.w * s, t.h * s);
+            (cx - w / 2.0, cy - h / 2.0, w, h, a)
+        }
+        _ => (t.x, t.y, t.w, t.h, 1.0),
+    }
+}
+
+/// Interpolate a pad from its effect's start state to `target` over `duration_ms`,
+/// ticking ~60 fps. Stops immediately (without snapping) if a newer animation
+/// superseded this one (epoch mismatch); otherwise snaps to the final pose.
+fn run_entrance(
+    pad: &gst::Pad,
+    target: TargetPose,
+    effect: &str,
+    duration_ms: u64,
+    easing: &str,
+    epoch_arc: &Arc<AtomicU64>,
+    my_epoch: u64,
+) {
+    let start = std::time::Instant::now();
+    loop {
+        if epoch_arc.load(Ordering::SeqCst) != my_epoch {
+            return; // a re-trigger took over — leave the pad to the new run
+        }
+        let raw = (start.elapsed().as_millis() as f64 / duration_ms as f64).min(1.0);
+        let p = studio_core::ease(easing, raw);
+        let (x, y, w, h, a) = effect_transform(effect, &target, p);
+        set_pad(pad, x, y, w, h, a);
+        if raw >= 1.0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+    if epoch_arc.load(Ordering::SeqCst) == my_epoch {
+        apply_pose(pad, &target, 1.0);
+    }
 }
 
 /// Whether a bus message's source element lives inside (or *is*) `bin` — how
@@ -1065,6 +1238,126 @@ mod tests {
         engine.stop();
 
         assert_eq!((xpos, ypos, width, height), (100, 50, 800, 450));
+    }
+
+    /// The CHR-110 effect→pad mapping, checked at its endpoints deterministically
+    /// (no engine): every effect must land *exactly* on the target pose at p=1,
+    /// and start where the effect says at p=0 (faded out, or offset by its own
+    /// extent). This pins the entrance geometry without timing races.
+    #[test]
+    fn entrance_effect_transform_maps_endpoints() {
+        let t = TargetPose {
+            x: 100.0,
+            y: 50.0,
+            w: 800.0,
+            h: 450.0,
+        };
+        let approx = |a: f64, b: f64| (a - b).abs() < 1e-6;
+        let ends_at_target = |e: &str| {
+            let (x, y, w, h, al) = effect_transform(e, &t, 1.0);
+            approx(x, t.x) && approx(y, t.y) && approx(w, t.w) && approx(h, t.h) && approx(al, 1.0)
+        };
+        for e in [
+            "fade",
+            "fade_slide",
+            "slide_left",
+            "slide_right",
+            "slide_up",
+            "slide_down",
+            "scale",
+            "zoom_out",
+            "pop",
+        ] {
+            assert!(
+                ends_at_target(e),
+                "{e} must finish exactly on the target pose"
+            );
+        }
+
+        // Start states: fade/scale open transparent; slides open opaque but offset.
+        assert!(
+            approx(effect_transform("fade", &t, 0.0).4, 0.0),
+            "fade starts transparent"
+        );
+        assert!(
+            approx(effect_transform("scale", &t, 0.0).4, 0.0),
+            "scale starts transparent"
+        );
+        let sl = effect_transform("slide_left", &t, 0.0);
+        assert!(
+            approx(sl.0, t.x + t.w) && approx(sl.4, 1.0),
+            "slide_left starts one width right, opaque"
+        );
+        let su = effect_transform("slide_up", &t, 0.0);
+        assert!(approx(su.1, t.y + t.h), "slide_up starts one height below");
+        // scale opens smaller than target, centred.
+        let sc = effect_transform("scale", &t, 0.0);
+        assert!(sc.2 < t.w && sc.3 < t.h, "scale opens smaller than target");
+        assert!(
+            approx(sc.0 + sc.2 / 2.0, t.x + t.w / 2.0),
+            "scale stays centred"
+        );
+    }
+
+    /// End-to-end on a live compositor pad: a `fade` entrance must be partway
+    /// (alpha < 1) shortly after it starts, then finish fully opaque and snapped
+    /// to the configured pose — the pad automation the README's CHR-110 asks for.
+    #[test]
+    fn animate_layer_fades_in_then_snaps_to_pose() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+
+        engine
+            .set_layer_transform(BACKGROUND_SOURCE_ID, 100, 50, 800, 450)
+            .expect("set target pose");
+        engine
+            .animate_layer(BACKGROUND_SOURCE_ID, "fade", 400, "ease-out")
+            .expect("start fade entrance");
+
+        // ~90 ms into a 400 ms fade → alpha should be well under 1.
+        std::thread::sleep(Duration::from_millis(90));
+        let mid_alpha = {
+            let s = engine.sources.lock().unwrap();
+            s.get(BACKGROUND_SOURCE_ID)
+                .unwrap()
+                .pad
+                .property::<f64>("alpha")
+        };
+
+        // Let it finish, then read the final pad state.
+        std::thread::sleep(Duration::from_millis(450));
+        let (alpha, x, y, w, h) = {
+            let s = engine.sources.lock().unwrap();
+            let pad = &s.get(BACKGROUND_SOURCE_ID).unwrap().pad;
+            (
+                pad.property::<f64>("alpha"),
+                pad.property::<i32>("xpos"),
+                pad.property::<i32>("ypos"),
+                pad.property::<i32>("width"),
+                pad.property::<i32>("height"),
+            )
+        };
+        engine.stop();
+
+        assert!(
+            mid_alpha < 0.9,
+            "fade should be partway shortly after start, got {mid_alpha}"
+        );
+        assert!(
+            (alpha - 1.0).abs() < 1e-6,
+            "fade should finish fully opaque, got {alpha}"
+        );
+        assert_eq!(
+            (x, y, w, h),
+            (100, 50, 800, 450),
+            "must snap to the target pose"
+        );
     }
 
     #[test]

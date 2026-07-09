@@ -359,12 +359,19 @@ mod media {
             let engine = guard.as_ref().ok_or("no media engine running")?;
             let id = format!("overlay:{layer_id}");
             let _ = engine.remove_source(&id); // rebuild if already shown
+                                               // The layer's entrance, to play once the pad is attached (CHR-110).
+            let effect = layer.style.animation.clone();
+            let duration = layer.style.anim_duration.max(0.0) as u64;
+            let easing = layer.style.anim_easing.as_name();
             engine
                 .add_source(
-                    id,
+                    id.clone(),
                     Box::new(move || mod_overlays::build_source(&layer, verse.as_ref())),
                 )
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            // Best-effort: an unknown/`none` effect just snaps into place.
+            let _ = engine.animate_layer(&id, &effect, duration, easing);
+            Ok(())
         }
         #[cfg(not(feature = "overlays"))]
         {
