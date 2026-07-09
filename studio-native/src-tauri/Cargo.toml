@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # The media plane is a REMOVABLE module. With it off, the shell still runs and
 # reports zero encoders (CHR-101 behaviour) — the modular guarantee, at the
 # compile level.
-default = ["media", "screen", "camera", "overlays"]
+default = ["media", "screen", "camera", "overlays", "audio"]
 media = ["dep:studio-media", "dep:base64"]
 # Screen capture is its own removable module; it needs the media plane.
 screen = ["media", "dep:mod-screen-capture"]
@@ -25,6 +25,8 @@ screen = ["media", "dep:mod-screen-capture"]
 camera = ["media", "dep:mod-camera"]
 # Text / bible / song overlays are their own removable module; needs media.
 overlays = ["media", "dep:mod-overlays"]
+# Audio mixer is its own removable module; needs the media plane umbrella.
+audio = ["media", "dep:mod-audio-mixer"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -40,5 +42,7 @@ mod-screen-capture = { path = "../crates/mod-screen-capture", optional = true }
 mod-camera = { path = "../crates/mod-camera", optional = true }
 # Text / bible / song overlay module — optional, behind the `overlays` feature.
 mod-overlays = { path = "../crates/mod-overlays", optional = true }
+# Audio mixer module — optional, behind the `audio` feature.
+mod-audio-mixer = { path = "../crates/mod-audio-mixer", optional = true }
 # Preview frames are shipped to the webview as base64 data-URLs.
 base64 = { version = "0.22", optional = true }

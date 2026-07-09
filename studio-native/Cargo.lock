@@ -2044,6 +2044,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-audio-mixer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gstreamer",
+]
+
+[[package]]
 name = "mod-camera"
 version = "0.1.0"
 dependencies = [
@@ -3281,6 +3289,7 @@ name = "studio-native-app"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "mod-audio-mixer",
  "mod-camera",
  "mod-overlays",
  "mod-screen-capture",

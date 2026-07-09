@@ -6,6 +6,7 @@ members = [
     "crates/mod-screen-capture",
     "crates/mod-camera",
     "crates/mod-overlays",
+    "crates/mod-audio-mixer",
     "crates/poc-pipeline",
     "src-tauri",
 ]

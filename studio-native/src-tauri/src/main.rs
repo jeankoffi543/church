@@ -106,6 +106,12 @@ mod media {
     #[derive(Default)]
     pub struct MediaState(pub Mutex<Option<MediaEngine>>);
 
+    /// The running audio mixer, if any (CHR-107). Its own engine/glib loop,
+    /// independent of the video plane — managed separately when `audio` is on.
+    #[cfg(feature = "audio")]
+    #[derive(Default)]
+    pub struct AudioState(pub Mutex<Option<mod_audio_mixer::AudioMixer>>);
+
     #[derive(Serialize)]
     pub struct MediaStatus {
         pub running: bool,
@@ -375,6 +381,104 @@ mod media {
             })
             .unwrap_or(false)
     }
+
+    // ── audio mixer (CHR-107) ───────────────────────────────────────────────
+    // Gated on `audio` (separate engine/state). The audio mixer replaces the
+    // web AudioContext: per-channel fader/mute/gain/balance + real VU meters.
+
+    /// Start the audio mixer (idempotent) — master bus + silent base channel.
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    pub fn start_audio(state: tauri::State<'_, AudioState>) -> Result<(), String> {
+        let mut guard = state.0.lock().map_err(|_| "audio state poisoned")?;
+        if guard.is_none() {
+            *guard = Some(mod_audio_mixer::AudioMixer::start().map_err(|e| e.to_string())?);
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    pub fn stop_audio(state: tauri::State<'_, AudioState>) {
+        if let Ok(mut guard) = state.0.lock() {
+            if let Some(mixer) = guard.take() {
+                mixer.stop();
+            }
+        }
+    }
+
+    /// Add a demo tone channel (v1 — real per-source audio + file channels are a
+    /// follow-up). `freq` Hz; the channel id keys its fader/VU.
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    pub fn add_audio_tone(
+        state: tauri::State<'_, AudioState>,
+        id: String,
+        freq: f64,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
+        let mixer = guard.as_ref().ok_or("audio mixer not running")?;
+        mixer
+            .add_channel(
+                id,
+                mod_audio_mixer::ChannelSettings::default(),
+                Box::new(move || mod_audio_mixer::tone_source(freq)),
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    pub fn remove_audio_channel(
+        state: tauri::State<'_, AudioState>,
+        id: String,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
+        let mixer = guard.as_ref().ok_or("audio mixer not running")?;
+        mixer.remove_channel(&id).map_err(|e| e.to_string())
+    }
+
+    /// Set a channel's fader (0–100) / mute / gain (dB) / balance (−100…+100), live.
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_audio_channel(
+        state: tauri::State<'_, AudioState>,
+        id: String,
+        fader: f64,
+        muted: bool,
+        gain_db: f64,
+        balance: f64,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
+        let mixer = guard.as_ref().ok_or("audio mixer not running")?;
+        mixer
+            .set_channel(
+                &id,
+                mod_audio_mixer::ChannelSettings {
+                    fader,
+                    muted,
+                    gain_db,
+                    balance,
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Latest peak level (dB) per channel id (+ `"master"`) — the real VU, read
+    /// off the GStreamer `level` elements (never via the DOM/webaudio).
+    #[cfg(feature = "audio")]
+    #[tauri::command]
+    pub fn audio_levels(
+        state: tauri::State<'_, AudioState>,
+    ) -> std::collections::HashMap<String, f64> {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|m| m.levels()))
+            .unwrap_or_default()
+    }
 }
 
 /// The scene document + persistence (CHR-102). This is the pure `studio-core`
@@ -517,14 +621,14 @@ fn main() {
         Ok(())
     });
 
-    // Two arms only: with `media`, every source command is present (bodies are
-    // cfg-gated per module inside `mod media`); without it, just the studio
-    // document (persistence works with zero media plane).
+    // With `media`, every source command is present (bodies cfg-gated per module
+    // inside `mod media`). The audio mixer has its own state, so it's the one
+    // axis that adds a handler arm; a macro keeps the big common list DRY.
+    // Without `media`, just the studio document (persistence with zero media).
     #[cfg(feature = "media")]
-    let builder =
-        builder
-            .manage(media::MediaState::default())
-            .invoke_handler(tauri::generate_handler![
+    macro_rules! media_handler {
+        ($($extra:path),* $(,)?) => {
+            tauri::generate_handler![
                 get_capabilities,
                 studio::get_studio_state,
                 studio::apply_command,
@@ -544,7 +648,28 @@ fn main() {
                 media::show_overlay,
                 media::hide_overlay,
                 media::overlay_active
-            ]);
+                $(, $extra)*
+            ]
+        };
+    }
+
+    #[cfg(all(feature = "media", feature = "audio"))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .manage(media::AudioState::default())
+        .invoke_handler(media_handler![
+            media::start_audio,
+            media::stop_audio,
+            media::add_audio_tone,
+            media::remove_audio_channel,
+            media::set_audio_channel,
+            media::audio_levels,
+        ]);
+
+    #[cfg(all(feature = "media", not(feature = "audio")))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .invoke_handler(media_handler![]);
 
     #[cfg(not(feature = "media"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
