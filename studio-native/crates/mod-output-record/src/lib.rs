@@ -5,7 +5,7 @@
 //! branch that taps [`studio_media`]'s programme `tee`:
 //!
 //! ```text
-//!   [tee] → queue → videoconvert → x264enc → h264parse → mux → filesink(path)
+//!   [tee] → queue → videoconvert → <encoder> → h264parse → mux → filesink(path)
 //! ```
 //!
 //! as a `gst::Bin` with a ghost **sink** pad. The engine attaches it live and,
@@ -14,21 +14,23 @@
 //!
 //! Container by extension: `.mp4`/`.m4v` → `mp4mux` (fragmented, so a crash
 //! still leaves a playable file), anything else → `matroskamux` (`.mkv`, robust
-//! to truncation). x264 is the universal software encoder (CHR-111 later makes
-//! this hardware-selectable). **Video only in v1** — muxing the audio mixer in
-//! needs the shared-clock A/V unification, a later step.
+//! to truncation). The `<encoder>` comes from [`mod_encoder`] (CHR-111) —
+//! hardware where available, x264 fallback — configured by the caller's
+//! [`mod_encoder::EncoderConfig`]. **Video only in v1** — muxing the audio mixer
+//! in needs the shared-clock A/V unification, a later step.
 //!
 //! Removable module: absent ⇒ no REC button, the live pipeline is untouched.
 
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use gstreamer as gst;
+use mod_encoder::EncoderConfig;
 use std::path::Path;
 
-/// Whether local recording can run here (the x264 software encoder is present).
+/// Whether local recording can run here (an H.264 encoder + a muxer are present).
 pub fn is_available() -> bool {
     let _ = gst::init();
-    gst::ElementFactory::find("x264enc").is_some()
+    !mod_encoder::list_h264().is_empty()
         && (gst::ElementFactory::find("mp4mux").is_some()
             || gst::ElementFactory::find("matroskamux").is_some())
 }
@@ -56,10 +58,11 @@ fn make_muxer(path: &Path) -> Result<gst::Element> {
         .context("make matroskamux")
 }
 
-/// Build the recording output bin (ghost `sink` pad) writing to `path`. Matches
+/// Build the recording output bin (ghost `sink` pad) writing to `path`, encoding
+/// per `cfg` (hardware where available, x264 fallback). Matches
 /// [`studio_media::OutputBuilder`]; the shell hands
-/// `move || build_record_bin(&path)` to `MediaEngine::attach_output`.
-pub fn build_record_bin(path: &Path) -> Result<gst::Bin> {
+/// `move || build_record_bin(&path, &cfg)` to `MediaEngine::attach_output`.
+pub fn build_record_bin(path: &Path, cfg: &EncoderConfig) -> Result<gst::Bin> {
     let _ = gst::init();
     let queue = gst::ElementFactory::make("queue")
         // Absorb encoder stalls without back-pressuring the shared tee.
@@ -69,14 +72,7 @@ pub fn build_record_bin(path: &Path) -> Result<gst::Bin> {
         .build()
         .context("make queue")?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
-    let enc = gst::ElementFactory::make("x264enc")
-        // Low-latency-ish, constant quality; keyframes every ~2 s so fragments
-        // and seeks behave.
-        .property_from_str("tune", "zerolatency")
-        .property_from_str("speed-preset", "veryfast")
-        .property("key-int-max", 120u32)
-        .build()
-        .context("make x264enc")?;
+    let enc = mod_encoder::build_h264(cfg).context("build encoder")?;
     let parse = gst::ElementFactory::make("h264parse").build()?;
     let mux = make_muxer(path)?;
     let sink = gst::ElementFactory::make("filesink")
@@ -116,7 +112,7 @@ mod tests {
             "x264 + a muxer should be present on the dev box"
         );
         let path = std::env::temp_dir().join("chr108-build-only.mp4");
-        let bin = build_record_bin(&path).expect("build record bin");
+        let bin = build_record_bin(&path, &EncoderConfig::default()).expect("build record bin");
         assert!(
             bin.static_pad("sink").is_some(),
             "record bin needs a ghost sink pad"
@@ -141,7 +137,10 @@ mod tests {
         }
         let p = path.clone();
         engine
-            .attach_output("record", Box::new(move || build_record_bin(&p)))
+            .attach_output(
+                "record",
+                Box::new(move || build_record_bin(&p, &EncoderConfig::default())),
+            )
             .expect("attach record");
         assert!(engine.is_output_active("record"));
 

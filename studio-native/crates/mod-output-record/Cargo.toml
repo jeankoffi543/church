@@ -9,6 +9,8 @@ description = "CHR-108 — local recording Output. Program tap → x264 → mp4/
 [dependencies]
 gstreamer = "0.23"
 anyhow = "1"
+# Encoder selection + hardware/software fallback (CHR-111).
+mod-encoder = { path = "../mod-encoder" }
 
 [dev-dependencies]
 studio-media = { path = "../studio-media" }

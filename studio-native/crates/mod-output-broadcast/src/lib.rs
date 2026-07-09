@@ -34,19 +34,22 @@
 use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use gstreamer as gst;
+use mod_encoder::EncoderConfig;
 
 /// Whether external broadcast can run here — the full RTMP(S) chain is present.
 pub fn is_available() -> bool {
     let _ = gst::init();
-    ["x264enc", "flvmux", "rtmp2sink", "voaacenc", "h264parse"]
-        .iter()
-        .all(|e| gst::ElementFactory::find(e).is_some())
+    !mod_encoder::list_h264().is_empty()
+        && ["flvmux", "rtmp2sink", "voaacenc", "h264parse"]
+            .iter()
+            .all(|e| gst::ElementFactory::find(e).is_some())
 }
 
 /// Build the broadcast output bin (ghost `sink` pad, video in from the tee)
-/// publishing to `rtmp_url` (e.g. `rtmps://live-api-s.facebook.com:443/rtmp/KEY`).
-/// Matches [`studio_media::OutputBuilder`].
-pub fn build_broadcast_bin(rtmp_url: &str) -> Result<gst::Bin> {
+/// publishing to `rtmp_url` (e.g. `rtmps://live-api-s.facebook.com:443/rtmp/KEY`),
+/// encoding per `cfg` (hardware where available, x264 fallback). Matches
+/// [`studio_media::OutputBuilder`].
+pub fn build_broadcast_bin(rtmp_url: &str, cfg: &EncoderConfig) -> Result<gst::Bin> {
     let _ = gst::init();
     let bin = gst::Bin::new();
 
@@ -57,14 +60,7 @@ pub fn build_broadcast_bin(rtmp_url: &str) -> Result<gst::Bin> {
         .build()
         .context("make video queue")?;
     let vconvert = gst::ElementFactory::make("videoconvert").build()?;
-    let x264 = gst::ElementFactory::make("x264enc")
-        .property_from_str("tune", "zerolatency")
-        .property_from_str("speed-preset", "veryfast")
-        // A ~2 s keyframe interval + a sane bitrate ceiling for Facebook.
-        .property("key-int-max", 120u32)
-        .property("bitrate", 4000u32) // kbps
-        .build()
-        .context("make x264enc")?;
+    let x264 = mod_encoder::build_h264(cfg).context("build encoder")?;
     let h264parse = gst::ElementFactory::make("h264parse").build()?;
 
     // ── silent audio branch (Facebook needs an audio track) ──
@@ -130,7 +126,8 @@ mod tests {
             is_available(),
             "x264/flvmux/rtmp2sink/voaacenc should be present"
         );
-        let bin = build_broadcast_bin("rtmp://127.0.0.1:1/live/x").expect("build broadcast bin");
+        let bin = build_broadcast_bin("rtmp://127.0.0.1:1/live/x", &EncoderConfig::default())
+            .expect("build broadcast bin");
         assert!(
             bin.static_pad("sink").is_some(),
             "broadcast bin needs a ghost sink pad"
@@ -157,7 +154,9 @@ mod tests {
         engine
             .attach_output(
                 "broadcast",
-                Box::new(|| build_broadcast_bin("rtmp://127.0.0.1:1/live/x")),
+                Box::new(|| {
+                    build_broadcast_bin("rtmp://127.0.0.1:1/live/x", &EncoderConfig::default())
+                }),
             )
             .expect("attach broadcast");
 

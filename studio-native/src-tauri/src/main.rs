@@ -124,6 +124,12 @@ mod media {
     #[derive(Default)]
     pub struct AudioState(pub Mutex<Option<mod_audio_mixer::AudioMixer>>);
 
+    /// The current encoder settings (CHR-111), shared by every Output. Outputs
+    /// read this when they attach, so the record + broadcast bins encode with the
+    /// selected encoder/bitrate/preset.
+    #[derive(Default)]
+    pub struct EncoderState(pub Mutex<mod_encoder::EncoderConfig>);
+
     #[derive(Serialize)]
     pub struct MediaStatus {
         pub running: bool,
@@ -401,6 +407,45 @@ mod media {
             .unwrap_or(false)
     }
 
+    // ── encoder settings (CHR-111) ──────────────────────────────────────────
+
+    /// The H.264 encoders this machine can run (hardware first), e.g.
+    /// `["vaapi", "x264"]`. The UI offers these plus `"auto"`.
+    #[tauri::command]
+    pub fn list_encoders() -> Vec<String> {
+        mod_encoder::list_h264()
+    }
+
+    /// The current encoder settings, and what `kind` (honouring `auto`) actually
+    /// resolves to on this machine — so the UI can show "auto → x264".
+    #[derive(Serialize)]
+    pub struct EncoderInfo {
+        pub config: mod_encoder::EncoderConfig,
+        pub resolved: Option<String>,
+    }
+
+    #[tauri::command]
+    pub fn get_encoder_config(enc: tauri::State<'_, EncoderState>) -> EncoderInfo {
+        let config = enc.0.lock().map(|c| c.clone()).unwrap_or_default();
+        let resolved = mod_encoder::resolve_kind(&config.kind);
+        EncoderInfo { config, resolved }
+    }
+
+    #[tauri::command]
+    pub fn set_encoder_config(
+        enc: tauri::State<'_, EncoderState>,
+        config: mod_encoder::EncoderConfig,
+    ) -> Result<(), String> {
+        let mut c = enc.0.lock().map_err(|_| "encoder state poisoned")?;
+        *c = config;
+        Ok(())
+    }
+
+    /// Read the active encoder config (or the default if unset/poisoned).
+    fn current_encoder(enc: &tauri::State<'_, EncoderState>) -> mod_encoder::EncoderConfig {
+        enc.0.lock().map(|c| c.clone()).unwrap_or_default()
+    }
+
     // ── local recording output (CHR-108) ────────────────────────────────────
     const RECORD_ID: &str = "record";
 
@@ -410,6 +455,7 @@ mod media {
     #[tauri::command]
     pub fn start_recording(
         state: tauri::State<'_, MediaState>,
+        enc: tauri::State<'_, EncoderState>,
         path: Option<String>,
     ) -> Result<String, String> {
         #[cfg(feature = "record")]
@@ -417,6 +463,7 @@ mod media {
             if !mod_output_record::is_available() {
                 return Err("encodeur/muxer d'enregistrement indisponible".into());
             }
+            let cfg = current_encoder(&enc);
             let path = path.unwrap_or_else(|| {
                 let base = std::env::var("HOME")
                     .or_else(|_| std::env::var("USERPROFILE"))
@@ -433,14 +480,14 @@ mod media {
             engine
                 .attach_output(
                     RECORD_ID,
-                    Box::new(move || mod_output_record::build_record_bin(&p)),
+                    Box::new(move || mod_output_record::build_record_bin(&p, &cfg)),
                 )
                 .map_err(|e| e.to_string())?;
             Ok(path)
         }
         #[cfg(not(feature = "record"))]
         {
-            let _ = (state, path);
+            let _ = (state, enc, path);
             Err("module enregistrement non compilé".into())
         }
     }
@@ -473,6 +520,7 @@ mod media {
     #[tauri::command]
     pub fn start_broadcast(
         state: tauri::State<'_, MediaState>,
+        enc: tauri::State<'_, EncoderState>,
         rtmp_url: String,
     ) -> Result<(), String> {
         #[cfg(feature = "broadcast")]
@@ -483,18 +531,19 @@ mod media {
             if rtmp_url.trim().is_empty() {
                 return Err("URL RTMP vide".into());
             }
+            let cfg = current_encoder(&enc);
             let guard = state.0.lock().map_err(|_| "media state poisoned")?;
             let engine = guard.as_ref().ok_or("no media engine running")?;
             engine
                 .attach_output(
                     BROADCAST_ID,
-                    Box::new(move || mod_output_broadcast::build_broadcast_bin(&rtmp_url)),
+                    Box::new(move || mod_output_broadcast::build_broadcast_bin(&rtmp_url, &cfg)),
                 )
                 .map_err(|e| e.to_string())
         }
         #[cfg(not(feature = "broadcast"))]
         {
-            let _ = (state, rtmp_url);
+            let _ = (state, enc, rtmp_url);
             Err("module diffusion non compilé".into())
         }
     }
@@ -787,7 +836,10 @@ fn main() {
                 media::recording_active,
                 media::start_broadcast,
                 media::stop_broadcast,
-                media::broadcast_status
+                media::broadcast_status,
+                media::list_encoders,
+                media::get_encoder_config,
+                media::set_encoder_config
                 $(, $extra)*
             ]
         };
@@ -797,6 +849,7 @@ fn main() {
     let builder = builder
         .manage(media::MediaState::default())
         .manage(media::AudioState::default())
+        .manage(media::EncoderState::default())
         .invoke_handler(media_handler![
             media::start_audio,
             media::stop_audio,
@@ -809,6 +862,7 @@ fn main() {
     #[cfg(all(feature = "media", not(feature = "audio")))]
     let builder = builder
         .manage(media::MediaState::default())
+        .manage(media::EncoderState::default())
         .invoke_handler(media_handler![]);
 
     #[cfg(not(feature = "media"))]

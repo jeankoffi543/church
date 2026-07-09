@@ -2062,11 +2062,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-encoder"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gstreamer",
+ "serde",
+]
+
+[[package]]
 name = "mod-output-broadcast"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "gstreamer",
+ "mod-encoder",
  "studio-media",
 ]
 
@@ -2076,6 +2086,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "gstreamer",
+ "mod-encoder",
  "studio-media",
 ]
 
@@ -3310,6 +3321,7 @@ dependencies = [
  "base64 0.22.1",
  "mod-audio-mixer",
  "mod-camera",
+ "mod-encoder",
  "mod-output-broadcast",
  "mod-output-record",
  "mod-overlays",
