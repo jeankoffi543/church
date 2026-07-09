@@ -1,0 +1,12 @@
+[package]
+name = "mod-encoder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-111 — H.264 encoder selection + hardware/software fallback (NVENC/QSV/VAAPI/AMF/VideoToolbox → x264), with normalised bitrate/preset/keyframe settings. Outputs (record, broadcast) build their encoder through this."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }

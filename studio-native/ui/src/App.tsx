@@ -22,6 +22,14 @@ type SourceStatus = {
 
 /** Mirror of the Rust `mod_camera::CameraDevice` (CHR-105). */
 type CameraDevice = { id: string; label: string };
+// Mirrors mod_encoder::EncoderConfig (serde kebab-case for `preset`).
+type EncoderConfig = {
+  kind: string;
+  bitrate_kbps: number;
+  preset: "speed" | "balanced" | "quality";
+  keyframe_interval: number;
+};
+type EncoderInfo = { config: EncoderConfig; resolved: string | null };
 
 const SCREEN_SOURCE_ID = "screen";
 
@@ -94,6 +102,9 @@ export function App() {
   const [rtmpUrl, setRtmpUrl] = useState("");
   const [live, setLive] = useState(false);
   const [liveEnded, setLiveEnded] = useState<string | null>(null);
+  const [encoders, setEncoders] = useState<string[]>([]);
+  const [encCfg, setEncCfg] = useState<EncoderConfig | null>(null);
+  const [encResolved, setEncResolved] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
   const [audioChannels, setAudioChannels] = useState<
     { id: string; fader: number; muted: boolean }[]
@@ -130,6 +141,28 @@ export function App() {
         setCameraDeviceId((id) => id || list[0]?.id || "");
       })
       .catch(() => {});
+    // Encoder settings (CHR-111): the machine's H.264 encoders + current config.
+    invoke<string[]>("list_encoders").then(setEncoders).catch(() => {});
+    invoke<EncoderInfo>("get_encoder_config")
+      .then((info) => {
+        setEncCfg(info.config);
+        setEncResolved(info.resolved);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Persist an encoder-settings change, then refresh what `auto` resolves to.
+  const updateEncoder = useCallback((patch: Partial<EncoderConfig>) => {
+    setEncCfg((prev) => {
+      const next = { ...(prev ?? {
+        kind: "auto", bitrate_kbps: 4000, preset: "balanced" as const, keyframe_interval: 120,
+      }), ...patch };
+      invoke("set_encoder_config", { config: next })
+        .then(() => invoke<EncoderInfo>("get_encoder_config"))
+        .then((info) => setEncResolved(info.resolved))
+        .catch((e) => setError(String(e)));
+      return next;
+    });
   }, []);
 
   // Every scene edit goes through the Rust store, which persists to disk and
@@ -402,6 +435,57 @@ export function App() {
               Arrêter
             </button>
           </div>
+
+          {(caps?.outputs.includes("record") || caps?.outputs.includes("broadcast")) &&
+            encCfg && (
+              <div className="encoder">
+                <label>
+                  Encodeur
+                  <select
+                    value={encCfg.kind}
+                    onChange={(e) => updateEncoder({ kind: e.target.value })}
+                  >
+                    <option value="auto">
+                      auto{encResolved ? ` (→ ${encResolved})` : ""}
+                    </option>
+                    {encoders.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Débit
+                  <input
+                    type="number"
+                    min={500}
+                    max={20000}
+                    step={500}
+                    value={encCfg.bitrate_kbps}
+                    onChange={(e) =>
+                      updateEncoder({ bitrate_kbps: Number(e.target.value) || 4000 })
+                    }
+                  />
+                  kbps
+                </label>
+                <label>
+                  Qualité
+                  <select
+                    value={encCfg.preset}
+                    onChange={(e) =>
+                      updateEncoder({
+                        preset: e.target.value as EncoderConfig["preset"],
+                      })
+                    }
+                  >
+                    <option value="speed">Vitesse</option>
+                    <option value="balanced">Équilibré</option>
+                    <option value="quality">Qualité</option>
+                  </select>
+                </label>
+              </div>
+            )}
 
           {caps?.outputs.includes("record") && (
             <div className="btnrow">

@@ -18,7 +18,7 @@ tauri-build = { version = "2", features = [] }
 # reports zero encoders (CHR-101 behaviour) — the modular guarantee, at the
 # compile level.
 default = ["media", "screen", "camera", "overlays", "audio", "record", "broadcast"]
-media = ["dep:studio-media", "dep:base64"]
+media = ["dep:studio-media", "dep:base64", "dep:mod-encoder"]
 # Screen capture is its own removable module; it needs the media plane.
 screen = ["media", "dep:mod-screen-capture"]
 # Camera / capture-card is its own removable module; it needs the media plane.
@@ -49,6 +49,7 @@ mod-overlays = { path = "../crates/mod-overlays", optional = true }
 # Audio mixer module — optional, behind the `audio` feature.
 mod-audio-mixer = { path = "../crates/mod-audio-mixer", optional = true }
 # Local recording output module — optional, behind the `record` feature.
+mod-encoder = { path = "../crates/mod-encoder", optional = true }
 mod-output-record = { path = "../crates/mod-output-record", optional = true }
 # External broadcast output module — optional, behind the `broadcast` feature.
 mod-output-broadcast = { path = "../crates/mod-output-broadcast", optional = true }
