@@ -263,3 +263,19 @@ code {
 .btn:disabled:hover {
   background: rgba(94, 176, 208, 0.14);
 }
+
+.mini {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mini:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

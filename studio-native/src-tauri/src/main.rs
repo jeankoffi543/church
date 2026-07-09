@@ -21,6 +21,13 @@
 //! `screen_status` surfaces whether it's active plus the reason if it was
 //! auto-detached (a capture failure) — the "partage arrêté" parity for the web
 //! app's `captureActive`/`ended` events.
+//!
+//! CHR-102 backfill (persistence): the `studio` module makes the pure
+//! `studio-core` document durable. `get_studio_state` / `apply_command` route
+//! every scene/layer edit through [`studio_core::Studio::apply`], persisting the
+//! result to `studio.json` in the OS app-data dir. It is feature-independent —
+//! the scene document survives a restart whether or not any media module is
+//! compiled in.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -222,8 +229,145 @@ mod media {
     }
 }
 
+/// The scene document + persistence (CHR-102). This is the pure `studio-core`
+/// store made durable: the shell loads it from the app-data dir on start, routes
+/// every IPC mutation through [`studio_core::Studio::apply`], and writes it back
+/// after each change. It is **feature-independent** — the studio document lives
+/// whether or not any media module is compiled in (the "core runs with no media
+/// plane" guarantee, now with persistence).
+mod studio {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    use studio_core::{Command, Studio};
+
+    /// Load the persisted studio, or a fresh one if the file is absent or
+    /// unreadable/corrupt (never fails — a broken file must not brick the app).
+    pub fn load_studio(path: &Path) -> Studio {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<Studio>(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Write the studio to disk (pretty JSON), best-effort. Creates the parent
+    /// dir if needed. A failed write is logged-by-return, never a panic.
+    pub fn persist_studio(path: &Path, studio: &Studio) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(studio)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(path, json)
+    }
+
+    /// The managed studio: the in-memory document + where it persists.
+    pub struct StudioState {
+        pub studio: Mutex<Studio>,
+        pub path: PathBuf,
+    }
+
+    impl StudioState {
+        pub fn load(path: PathBuf) -> Self {
+            StudioState {
+                studio: Mutex::new(load_studio(&path)),
+                path,
+            }
+        }
+    }
+
+    /// The current studio document — the frontend renders scenes/layers from it.
+    #[tauri::command]
+    pub fn get_studio_state(state: tauri::State<'_, StudioState>) -> Result<Studio, String> {
+        Ok(state.studio.lock().map_err(|_| "studio poisoned")?.clone())
+    }
+
+    /// Apply a command to the store, persist the result, and hand the new
+    /// document back so the UI re-renders. Events (for the media plane) are
+    /// produced by `apply` and dropped here for now — later branches (overlays /
+    /// audio) will route them to the compositor.
+    #[tauri::command]
+    pub fn apply_command(
+        state: tauri::State<'_, StudioState>,
+        command: Command,
+    ) -> Result<Studio, String> {
+        let mut guard = state.studio.lock().map_err(|_| "studio poisoned")?;
+        let _events = guard.apply(command);
+        // Persistence is best-effort: an edit still takes effect in-memory even
+        // if the disk write fails (read-only FS, etc.).
+        let _ = persist_studio(&state.path, &guard);
+        Ok(guard.clone())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use studio_core::{Command, LayerKind};
+
+        fn temp_path(tag: &str) -> PathBuf {
+            let mut p = std::env::temp_dir();
+            p.push(format!(
+                "studio-native-test-{tag}-{}.json",
+                std::process::id()
+            ));
+            p
+        }
+
+        #[test]
+        fn missing_file_loads_a_fresh_studio() {
+            let p = temp_path("missing");
+            let _ = std::fs::remove_file(&p);
+            let s = load_studio(&p);
+            assert_eq!(s.scenes.len(), 1);
+        }
+
+        #[test]
+        fn a_layer_added_then_persisted_survives_a_reload() {
+            // The CHR-102 acceptance: "CRUD calques persisté". Add a layer, write
+            // to disk, reload from that same file → the layer is still there.
+            let p = temp_path("persist");
+            let _ = std::fs::remove_file(&p);
+
+            let mut studio = load_studio(&p); // fresh
+            studio.apply(Command::AddLayer {
+                kind: LayerKind::Text,
+                id: "t-1".into(),
+                parent_id: None,
+            });
+            persist_studio(&p, &studio).expect("write");
+
+            let reloaded = load_studio(&p);
+            assert_eq!(reloaded, studio);
+            assert!(reloaded.current_scene().get("t-1").is_some());
+
+            let _ = std::fs::remove_file(&p);
+        }
+
+        #[test]
+        fn a_corrupt_file_degrades_to_a_fresh_studio() {
+            let p = temp_path("corrupt");
+            std::fs::write(&p, b"{ not valid json").unwrap();
+            let s = load_studio(&p); // must not panic
+            assert_eq!(s.scenes.len(), 1);
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+}
+
 fn main() {
-    let builder = tauri::Builder::default();
+    use tauri::Manager;
+
+    let builder = tauri::Builder::default().setup(|app| {
+        // The studio document persists in the OS app-data dir; fall back to a
+        // temp path if it can't be resolved (headless/dev), so the app still runs.
+        let path = app
+            .path()
+            .app_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("studio.json");
+        app.manage(studio::StudioState::load(path));
+        Ok(())
+    });
 
     #[cfg(all(feature = "media", feature = "screen"))]
     let builder =
@@ -231,6 +375,8 @@ fn main() {
             .manage(media::MediaState::default())
             .invoke_handler(tauri::generate_handler![
                 get_capabilities,
+                studio::get_studio_state,
+                studio::apply_command,
                 media::start_preview,
                 media::stop_preview,
                 media::media_status,
@@ -248,6 +394,8 @@ fn main() {
             .manage(media::MediaState::default())
             .invoke_handler(tauri::generate_handler![
                 get_capabilities,
+                studio::get_studio_state,
+                studio::apply_command,
                 media::start_preview,
                 media::stop_preview,
                 media::media_status,
@@ -257,7 +405,11 @@ fn main() {
             ]);
 
     #[cfg(not(feature = "media"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![get_capabilities]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        get_capabilities,
+        studio::get_studio_state,
+        studio::apply_command
+    ]);
 
     builder
         .run(tauri::generate_context!())
