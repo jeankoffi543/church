@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Sparkles, Italic, Underline, X, Camera, RefreshCw, Volume2, VolumeX } from "lucide-react";
+import { Sparkles, Italic, Underline, X, Camera, RefreshCw, Volume2, VolumeX, FolderOpen, Music } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Slider } from "./Slider";
 import { layerMeta } from "../lib/studio-layers";
@@ -244,30 +244,106 @@ function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p:
       </div>
     );
   }
-  if (layer.kind === "audio") {
-    return (
-      <>
-        <div>
-          <Label className="mb-1.5">Fichier / URL audio</Label>
-          <input
-            value={(layer.audioFileUrl as string) ?? ""}
-            onChange={(e) => patchData({ audioFileUrl: e.target.value } as Partial<StudioLayer>)}
-            placeholder="file:///chemin/son.mp3  ·  https://…/audio.mp3"
-            className={MONO_FIELD}
-          />
-        </div>
-        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
-          Rendez la source visible (œil) : le fichier est décodé dans la table de mixage (VU réel) et
-          porté par l&apos;enregistrement / la diffusion. Réglez volume / gain / balance dans le Mixage.
-        </div>
-      </>
-    );
-  }
+  if (layer.kind === "audio") return <AudioContent layer={layer} patchData={patchData} />;
   return (
     <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[11px] leading-relaxed text-white/50">
       Réglez le style dans les onglets ci-dessus.
     </div>
   );
+}
+
+/* ── Contenu · Audio (sélecteur de fichier local natif + saisie URL) ── */
+function AudioContent({ layer, patchData }: { layer: StudioLayer; patchData: (p: Partial<StudioLayer>) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const url = (layer.audioFileUrl as string) ?? "";
+  // Friendly name = decoded last path segment (no separate stored field needed).
+  const fileName = url ? safeDecode(url.split(/[\\/]/).pop() || url) : "";
+
+  const browse = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const picked = await api.pickAudioFile();
+      if (picked) patchData({ audioFileUrl: picked.uri } as Partial<StudioLayer>);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Impossible d'ouvrir le sélecteur de fichier.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {/* Local file picker — the primary path, matching the web's file input. */}
+      <div>
+        <Label className="mb-1.5">Fichier audio local</Label>
+        {url ? (
+          <div className="flex items-center gap-2 rounded-[9px] border border-studio-onair/30 bg-studio-onair/10 px-2.5 py-2">
+            <Music className="size-4 shrink-0 text-studio-onair" />
+            <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-white" title={fileName}>
+              {fileName}
+            </span>
+            <button
+              type="button"
+              onClick={browse}
+              disabled={busy}
+              className="rounded-md px-2 py-1 text-[10px] font-bold text-white/60 hover:bg-white/10 hover:text-white disabled:opacity-50"
+            >
+              Changer
+            </button>
+            <button
+              type="button"
+              onClick={() => patchData({ audioFileUrl: "", audioPlaying: false } as Partial<StudioLayer>)}
+              className="rounded-md p-1 text-white/50 hover:bg-white/10 hover:text-white"
+              title="Retirer"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={browse}
+            disabled={busy}
+            className={cn(
+              "flex w-full items-center justify-center gap-2 rounded-[9px] border border-dashed border-white/15",
+              "bg-white/[0.03] px-3 py-3 text-[11px] font-bold text-white/70 transition",
+              "hover:border-studio-purple/40 hover:bg-white/[0.06] hover:text-white disabled:opacity-50",
+            )}
+          >
+            <FolderOpen className="size-4" />
+            {busy ? "Ouverture…" : "Parcourir… (MP3, WAV, M4A…)"}
+          </button>
+        )}
+        {err && <p className="mt-1.5 text-[10px] text-red-400">{err}</p>}
+      </div>
+
+      {/* Manual URL entry, for a remote stream/file. */}
+      <div>
+        <Label className="mb-1.5">…ou lien distant</Label>
+        <input
+          value={url}
+          onChange={(e) => patchData({ audioFileUrl: e.target.value } as Partial<StudioLayer>)}
+          placeholder="https://…/audio.mp3  ·  file:///chemin/son.mp3"
+          className={MONO_FIELD}
+        />
+      </div>
+
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        Rendez la source visible (œil) : le fichier est décodé dans la table de mixage (VU réel) et
+        porté par l&apos;enregistrement / la diffusion. Réglez volume / gain / balance dans le Mixage.
+      </div>
+    </div>
+  );
+}
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
 }
 
 /* ── Contenu · Caméra (sélecteur de périphérique natif via list_cameras) ── */

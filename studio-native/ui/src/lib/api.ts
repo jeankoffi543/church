@@ -185,6 +185,33 @@ export const mixerChannelSet = (
 ) => invoke("mixer_channel_set", { id, fader, gainDb, muted, balance });
 export const mixerLevels = () => invoke<Record<string, number>>("mixer_levels");
 
+// CHR-126: native file-open dialog for a LOCAL audio file. Returns the file URI
+// (file://…, percent-encoded so GStreamer's uridecodebin accepts it) or null if
+// the operator cancelled. Uses the tauri-plugin-dialog IPC directly (no npm dep).
+export async function pickAudioFile(): Promise<{ uri: string; name: string } | null> {
+  const path = await invoke<string | null>("plugin:dialog|open", {
+    options: {
+      title: "Choisir un fichier audio",
+      multiple: false,
+      directory: false,
+      filters: [
+        { name: "Audio", extensions: ["mp3", "wav", "m4a", "aac", "ogg", "oga", "flac", "opus"] },
+      ],
+    },
+  });
+  if (!path) return null;
+  return { uri: pathToFileUri(path), name: path.split(/[\\/]/).pop() || path };
+}
+
+// Absolute local path → a strict file:// URI (each segment percent-encoded so
+// spaces/accents survive). Already-schemed inputs (http, file) pass through.
+export function pathToFileUri(p: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) return p;
+  const norm = p.replace(/\\/g, "/");
+  const abs = norm.startsWith("/") ? norm : "/" + norm;
+  return "file://" + abs.split("/").map(encodeURIComponent).join("/");
+}
+
 // French labels for source/layer kinds.
 export const KIND_LABELS: Record<string, string> = {
   bible: "Bible",

@@ -65,9 +65,15 @@ fn video_devices() -> Vec<gst::Device> {
     devices
 }
 
-/// The connected cameras, for the UI picker. Empty when none are present (the
-/// source then never appears — the removable-module guarantee).
-pub fn list_cameras() -> Vec<CameraDevice> {
+/// Cached device list. Enumerating a v4l2 device while it is **already
+/// streaming** blocks (the provider re-opens the busy `/dev/videoN`) — which
+/// froze the UI the moment the operator opened a live camera's inspector. So we
+/// enumerate ONCE, on the first call (primed at engine start, before any camera
+/// streams), and reuse it. Trade-off: hot-plugged cameras need [`refresh_cameras`]
+/// (only safe with no camera live) or an app restart.
+static CAMERA_CACHE: std::sync::OnceLock<Vec<CameraDevice>> = std::sync::OnceLock::new();
+
+fn enumerate_cameras() -> Vec<CameraDevice> {
     video_devices()
         .into_iter()
         .map(|d| {
@@ -80,9 +86,22 @@ pub fn list_cameras() -> Vec<CameraDevice> {
         .collect()
 }
 
-/// Whether this machine has at least one camera/capture device right now.
+/// The connected cameras, for the UI picker (cached — never re-probes a busy
+/// device, so it is safe to call while a camera is live). Empty when none.
+pub fn list_cameras() -> Vec<CameraDevice> {
+    CAMERA_CACHE.get_or_init(enumerate_cameras).clone()
+}
+
+/// Populate the camera cache eagerly (call at engine start, before any camera
+/// streams). Idempotent — after this, [`list_cameras`] never touches hardware.
+pub fn prime_cameras() {
+    let _ = CAMERA_CACHE.get_or_init(enumerate_cameras);
+}
+
+/// Whether this machine has at least one camera/capture device (cached — safe to
+/// call while a camera is live).
 pub fn is_available() -> bool {
-    !video_devices().is_empty()
+    !list_cameras().is_empty()
 }
 
 /// Build the camera source as a self-contained `gst::Bin` with a ghost `src`

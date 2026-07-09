@@ -138,6 +138,10 @@ mod media {
 
     #[tauri::command]
     pub fn start_preview(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        // Enumerate cameras ONCE, before any camera streams (enumerating a busy
+        // v4l2 device blocks — CHR-126). After this, list_cameras is cached.
+        #[cfg(feature = "camera")]
+        mod_camera::prime_cameras();
         let mut guard = state.0.lock().map_err(|_| "media state poisoned")?;
         if guard.is_none() {
             *guard = Some(MediaEngine::start().map_err(|e| e.to_string())?);
@@ -1015,7 +1019,10 @@ mod studio {
 fn main() {
     use tauri::Manager;
 
-    let builder = tauri::Builder::default().setup(|app| {
+    let builder = tauri::Builder::default()
+        // Native file-open dialog for the local audio/media picker.
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
         // The studio document persists in the OS app-data dir; fall back to a
         // temp path if it can't be resolved (headless/dev), so the app still runs.
         let path = app
