@@ -89,6 +89,8 @@ export function App() {
   const [shownOverlays, setShownOverlays] = useState<Set<string>>(new Set());
   // Audio mixer (CHR-107): running flag, channel strips, and the real VU levels
   // (dB per channel id + "master") polled from the Rust `level` elements.
+  const [recording, setRecording] = useState(false);
+  const [recPath, setRecPath] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
   const [audioChannels, setAudioChannels] = useState<
     { id: string; fader: number; muted: boolean }[]
@@ -390,6 +392,44 @@ export function App() {
               Arrêter
             </button>
           </div>
+
+          {caps?.outputs.includes("record") && (
+            <div className="btnrow">
+              {!recording ? (
+                <button
+                  className="btn"
+                  onClick={() =>
+                    invoke<string>("start_recording", { path: null })
+                      .then((p) => {
+                        setRecording(true);
+                        setRecPath(p);
+                      })
+                      .catch((e) => setError(String(e)))
+                  }
+                >
+                  ⏺ Enregistrer
+                </button>
+              ) : (
+                <button
+                  className="btn"
+                  style={{ background: "rgba(240,120,120,0.18)", borderColor: "rgba(240,120,120,0.4)", color: "#f0a8a8" }}
+                  onClick={() =>
+                    invoke("stop_recording")
+                      .then(() => setRecording(false))
+                      .catch((e) => setError(String(e)))
+                  }
+                >
+                  ⏹ Arrêter l&apos;enregistrement
+                </button>
+              )}
+            </div>
+          )}
+          {recPath && (
+            <div className="banner">
+              {recording ? "Enregistrement en cours → " : "Enregistré : "}
+              <code>{recPath}</code>
+            </div>
+          )}
 
           {caps?.sources.includes(SCREEN_SOURCE_ID) && (
             <div className="btnrow">

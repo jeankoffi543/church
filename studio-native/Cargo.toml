@@ -7,6 +7,7 @@ members = [
     "crates/mod-camera",
     "crates/mod-overlays",
     "crates/mod-audio-mixer",
+    "crates/mod-output-record",
     "crates/poc-pipeline",
     "src-tauri",
 ]

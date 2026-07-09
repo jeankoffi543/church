@@ -1,0 +1,14 @@
+[package]
+name = "mod-output-record"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-108 — local recording Output. Program tap → x264 → mp4/mkv muxer → filesink, finalised on EOS (native duration). Removable: absent ⇒ no REC, live broadcast intact."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"
+
+[dev-dependencies]
+studio-media = { path = "../studio-media" }

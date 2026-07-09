@@ -84,6 +84,12 @@ fn current_capabilities() -> Capabilities {
         caps.sources.push(studio_core::LayerKind::Bible);
         caps.sources.push(studio_core::LayerKind::Song);
     }
+    #[cfg(feature = "record")]
+    {
+        if mod_output_record::is_available() {
+            caps.outputs.push("record".into());
+        }
+    }
     caps
 }
 
@@ -382,6 +388,68 @@ mod media {
             .unwrap_or(false)
     }
 
+    // ── local recording output (CHR-108) ────────────────────────────────────
+    const RECORD_ID: &str = "record";
+
+    /// Start recording the programme feed to `path` (or a generated one under the
+    /// home dir), tapping the compositor `tee`. Returns the file path. The
+    /// muxer finalises natively on stop — no duration patch needed.
+    #[tauri::command]
+    pub fn start_recording(
+        state: tauri::State<'_, MediaState>,
+        path: Option<String>,
+    ) -> Result<String, String> {
+        #[cfg(feature = "record")]
+        {
+            if !mod_output_record::is_available() {
+                return Err("encodeur/muxer d'enregistrement indisponible".into());
+            }
+            let path = path.unwrap_or_else(|| {
+                let base = std::env::var("HOME")
+                    .or_else(|_| std::env::var("USERPROFILE"))
+                    .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into_owned());
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                format!("{base}/culte-{ts}.mp4")
+            });
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            let p = std::path::PathBuf::from(&path);
+            engine
+                .attach_output(
+                    RECORD_ID,
+                    Box::new(move || mod_output_record::build_record_bin(&p)),
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(path)
+        }
+        #[cfg(not(feature = "record"))]
+        {
+            let _ = (state, path);
+            Err("module enregistrement non compilé".into())
+        }
+    }
+
+    /// Stop recording — finalises the file (EOS → muxer trailer) then detaches.
+    #[tauri::command]
+    pub fn stop_recording(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine.detach_output(RECORD_ID).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn recording_active(state: tauri::State<'_, MediaState>) -> bool {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|e| e.is_output_active(RECORD_ID)))
+            .unwrap_or(false)
+    }
+
     // ── audio mixer (CHR-107) ───────────────────────────────────────────────
     // Gated on `audio` (separate engine/state). The audio mixer replaces the
     // web AudioContext: per-channel fader/mute/gain/balance + real VU meters.
@@ -647,7 +715,10 @@ fn main() {
                 media::camera_status,
                 media::show_overlay,
                 media::hide_overlay,
-                media::overlay_active
+                media::overlay_active,
+                media::start_recording,
+                media::stop_recording,
+                media::recording_active
                 $(, $extra)*
             ]
         };
