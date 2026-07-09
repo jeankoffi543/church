@@ -5,19 +5,22 @@
 //! branch that taps [`studio_media`]'s programme `tee`:
 //!
 //! ```text
-//!   [tee] → queue → videoconvert → <encoder> → h264parse → mux → filesink(path)
+//!   [tee]       → queue → videoconvert → <encoder> → h264parse ┐
+//!                                                              ├ mux → filesink(path)
+//!   [audio-tee] → audio_sink ghost → convert → voaacenc → aacparse ┘
 //! ```
 //!
-//! as a `gst::Bin` with a ghost **sink** pad. The engine attaches it live and,
-//! on stop, sends it EOS so the muxer writes a real trailer (`moov`/duration) —
-//! the file is natively finalised, so the web's duration patch is unnecessary.
+//! as a `gst::Bin` with ghost **sink** pads (video + `audio_sink`). The engine
+//! attaches it live and, on stop, sends it EOS so the muxer writes a real trailer
+//! (`moov`/duration) — the file is natively finalised, so the web's duration
+//! patch is unnecessary.
 //!
 //! Container by extension: `.mp4`/`.m4v` → `mp4mux` (fragmented, so a crash
 //! still leaves a playable file), anything else → `matroskamux` (`.mkv`, robust
 //! to truncation). The `<encoder>` comes from [`mod_encoder`] (CHR-111) —
-//! hardware where available, x264 fallback — configured by the caller's
-//! [`mod_encoder::EncoderConfig`]. **Video only in v1** — muxing the audio mixer
-//! in needs the shared-clock A/V unification, a later step.
+//! hardware where available, x264 fallback. **A/V (CHR-116)**: the audio comes
+//! from studio-media's shared `audio-tee` via the `audio_sink` pad — one pipeline,
+//! one clock, so the recorded A/V is synced by construction.
 //!
 //! Removable module: absent ⇒ no REC button, the live pipeline is untouched.
 
@@ -88,11 +91,28 @@ pub fn build_record_bin(path: &Path, cfg: &EncoderConfig) -> Result<gst::Bin> {
         .build()
         .context("make filesink")?;
 
+    // Audio branch (CHR-116): fed from studio-media's shared audio-tee via the
+    // `audio_sink` ghost pad, muxed alongside the video (one clock ⇒ A/V synced).
+    let aqueue = gst::ElementFactory::make("queue").build()?;
+    let aconvert = gst::ElementFactory::make("audioconvert").build()?;
+    let aresample = gst::ElementFactory::make("audioresample").build()?;
+    let aenc = gst::ElementFactory::make("voaacenc")
+        .property("bitrate", 128000i32)
+        .build()
+        .context("make voaacenc")?;
+    let aparse = gst::ElementFactory::make("aacparse").build()?;
+
     let bin = gst::Bin::new();
     bin.add_many([&queue, &convert, &enc, &parse, &mux, &sink])
         .context("add record elements")?;
-    gst::Element::link_many([&queue, &convert, &enc, &parse, &mux, &sink])
-        .context("link record chain")?;
+    bin.add_many([&aqueue, &aconvert, &aresample, &aenc, &aparse])
+        .context("add record audio elements")?;
+    gst::Element::link_many([&queue, &convert, &enc, &parse, &mux])
+        .context("link record video chain")?;
+    gst::Element::link_many([&mux, &sink]).context("link mux → filesink")?;
+    gst::Element::link_many([&aqueue, &aconvert, &aresample, &aenc, &aparse])
+        .context("link record audio chain")?;
+    aparse.link(&mux).context("link aac → mux")?;
 
     let sink_pad = queue
         .static_pad("sink")
@@ -100,6 +120,18 @@ pub fn build_record_bin(path: &Path, cfg: &EncoderConfig) -> Result<gst::Bin> {
     let ghost = gst::GhostPad::with_target(&sink_pad).context("create ghost sink pad")?;
     ghost.set_active(true).context("activate ghost pad")?;
     bin.add_pad(&ghost).context("add ghost sink pad")?;
+
+    let asink_pad = aqueue
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("audio queue has no sink pad"))?;
+    let aghost = gst::GhostPad::builder_with_target(&asink_pad)
+        .context("target audio ghost")?
+        .name("audio_sink")
+        .build();
+    aghost
+        .set_active(true)
+        .context("activate audio ghost pad")?;
+    bin.add_pad(&aghost).context("add audio ghost sink pad")?;
     Ok(bin)
 }
 
@@ -138,6 +170,12 @@ mod tests {
                 break;
             }
         }
+        // A/V unification (CHR-116): put a real tone on the audio bus so the
+        // recording carries a genuine (non-silent) audio track, synced to video
+        // by the shared pipeline clock.
+        engine
+            .add_audio_channel("mic", Some(440.0))
+            .expect("add audio channel");
         let p = path.clone();
         engine
             .attach_output(
@@ -159,12 +197,18 @@ mod tests {
             "recording is suspiciously small ({} bytes)",
             meta.len()
         );
-        // MP4 files start with an `ftyp` box: bytes 4..8 == "ftyp".
         let head = std::fs::read(&path).expect("read file");
+        // MP4 files start with an `ftyp` box: bytes 4..8 == "ftyp".
         assert_eq!(
             &head[4..8],
             b"ftyp",
             "not a valid finalised MP4 (no ftyp box)"
+        );
+        // A/V unification proof: the muxed file carries an AAC audio track — the
+        // `mp4a` sample-description atom is present alongside the H.264 video.
+        assert!(
+            head.windows(4).any(|w| w == b"mp4a"),
+            "recording has no audio track (CHR-116 A/V unification): no mp4a atom"
         );
         let _ = std::fs::remove_file(&path);
     }

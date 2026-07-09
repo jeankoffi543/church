@@ -714,26 +714,45 @@ mod media {
     #[tauri::command]
     pub fn add_audio_tone(
         state: tauri::State<'_, AudioState>,
+        media: tauri::State<'_, MediaState>,
         id: String,
         freq: f64,
     ) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
-        let mixer = guard.as_ref().ok_or("audio mixer not running")?;
-        mixer
-            .add_channel(
-                id,
-                mod_audio_mixer::ChannelSettings::default(),
-                Box::new(move || mod_audio_mixer::tone_source(freq)),
-            )
-            .map_err(|e| e.to_string())
+        {
+            let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
+            let mixer = guard.as_ref().ok_or("audio mixer not running")?;
+            mixer
+                .add_channel(
+                    id.clone(),
+                    mod_audio_mixer::ChannelSettings::default(),
+                    Box::new(move || mod_audio_mixer::tone_source(freq)),
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        // Also put it on the engine's audio bus so it reaches record/broadcast
+        // (CHR-116). The rich fader/mute/balance still live on the VU mixer above;
+        // consolidating the two into one mixer that both meters AND feeds the
+        // outputs is the labelled next step.
+        if let Ok(g) = media.0.lock() {
+            if let Some(engine) = g.as_ref() {
+                let _ = engine.add_audio_channel(id, Some(freq));
+            }
+        }
+        Ok(())
     }
 
     #[cfg(feature = "audio")]
     #[tauri::command]
     pub fn remove_audio_channel(
         state: tauri::State<'_, AudioState>,
+        media: tauri::State<'_, MediaState>,
         id: String,
     ) -> Result<(), String> {
+        if let Ok(g) = media.0.lock() {
+            if let Some(engine) = g.as_ref() {
+                let _ = engine.remove_audio_channel(&id);
+            }
+        }
         let guard = state.0.lock().map_err(|_| "audio state poisoned")?;
         let mixer = guard.as_ref().ok_or("audio mixer not running")?;
         mixer.remove_channel(&id).map_err(|e| e.to_string())

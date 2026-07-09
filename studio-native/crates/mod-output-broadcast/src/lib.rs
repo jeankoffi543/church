@@ -5,9 +5,9 @@
 //! **RTMPS, directly**:
 //!
 //! ```text
-//!   [tee] → queue → videoconvert → x264enc → h264parse ┐
-//!                                                       ├─ flvmux → queue → rtmp2sink(rtmps://…)
-//!   audiotestsrc(silence) → aconv → voaacenc → aacparse ┘
+//!   [tee]       → queue → videoconvert → x264enc → h264parse ┐
+//!                                                            ├─ flvmux → queue → rtmp2sink(rtmps://…)
+//!   [audio-tee] → audio_sink ghost → aconv → voaacenc → aacparse ┘
 //! ```
 //!
 //! ## Why RTMPS direct, not WHIP → SRS
@@ -19,10 +19,10 @@
 //! work but needs a plugin not shipped in the base install — RTMPS direct is
 //! simpler, lower-latency, and uses stock elements.)
 //!
-//! Facebook Live rejects a video-only RTMP stream, so v1 muxes a **silent AAC**
-//! track alongside the video. The real programme audio (from mod-audio-mixer)
-//! replaces the silence once the A/V pipelines are unified on a shared clock — a
-//! later step. Video codec is x264 (CHR-111 makes it hardware-selectable).
+//! Facebook Live requires an audio track; **CHR-116** feeds it the real mixed
+//! audio from studio-media's shared `audio-tee` (via the `audio_sink` pad), so
+//! the broadcast A/V is synced by the shared pipeline clock. Video codec is x264
+//! (CHR-111 makes it hardware-selectable).
 //!
 //! A broadcast is an [`studio_media::OutputBuilder`]; the engine attaches it hot
 //! and, crucially, **survives it dropping** — if the connection dies, the bus
@@ -93,12 +93,8 @@ fn build_with_sink(sink: gst::Element, cfg: &EncoderConfig) -> Result<gst::Bin> 
         .name("stats-tap")
         .build()?;
 
-    // ── silent audio branch (Facebook needs an audio track) ──
-    let asrc = gst::ElementFactory::make("audiotestsrc")
-        .property("is-live", true)
-        .property_from_str("wave", "silence")
-        .build()
-        .context("make audiotestsrc (silence)")?;
+    // ── audio branch: fed from studio-media's shared audio-tee via the
+    //    `audio_sink` ghost pad (CHR-116), replacing the old silent track.
     let aconvert = gst::ElementFactory::make("audioconvert").build()?;
     let aresample = gst::ElementFactory::make("audioresample").build()?;
     let aac = gst::ElementFactory::make("voaacenc")
@@ -115,8 +111,9 @@ fn build_with_sink(sink: gst::Element, cfg: &EncoderConfig) -> Result<gst::Bin> 
         .context("make flvmux")?;
     let oqueue = gst::ElementFactory::make("queue").build()?;
 
+    let aqueue = gst::ElementFactory::make("queue").build()?;
     bin.add_many([
-        &vqueue, &vconvert, &x264, &h264parse, &asrc, &aconvert, &aresample, &aac, &aacparse,
+        &vqueue, &vconvert, &x264, &h264parse, &aqueue, &aconvert, &aresample, &aac, &aacparse,
         &flvmux, &oqueue, &sink,
     ])
     .context("add broadcast elements")?;
@@ -124,19 +121,32 @@ fn build_with_sink(sink: gst::Element, cfg: &EncoderConfig) -> Result<gst::Bin> 
     // Linear links, then the two branches into the muxer (link auto-requests a
     // compatible flvmux pad), then mux → queue → sink.
     gst::Element::link_many([&vqueue, &vconvert, &x264, &h264parse]).context("link video chain")?;
-    gst::Element::link_many([&asrc, &aconvert, &aresample, &aac, &aacparse])
+    gst::Element::link_many([&aqueue, &aconvert, &aresample, &aac, &aacparse])
         .context("link audio chain")?;
     h264parse.link(&flvmux).context("link h264 → flvmux")?;
     aacparse.link(&flvmux).context("link aac → flvmux")?;
     gst::Element::link_many([&flvmux, &oqueue, &sink]).context("link flvmux → sink")?;
 
-    // Video-only ghost sink pad — the tap point off the programme tee.
+    // Video ghost sink pad — the tap point off the programme tee.
     let sink_pad = vqueue
         .static_pad("sink")
         .ok_or_else(|| anyhow!("video queue has no sink pad"))?;
     let ghost = gst::GhostPad::with_target(&sink_pad).context("create ghost sink pad")?;
     ghost.set_active(true).context("activate ghost pad")?;
     bin.add_pad(&ghost).context("add ghost sink pad")?;
+
+    // Audio ghost sink pad — fed from the shared audio-tee (CHR-116).
+    let asink_pad = aqueue
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("audio queue has no sink pad"))?;
+    let aghost = gst::GhostPad::builder_with_target(&asink_pad)
+        .context("target audio ghost")?
+        .name("audio_sink")
+        .build();
+    aghost
+        .set_active(true)
+        .context("activate audio ghost pad")?;
+    bin.add_pad(&aghost).context("add audio ghost sink pad")?;
     Ok(bin)
 }
 

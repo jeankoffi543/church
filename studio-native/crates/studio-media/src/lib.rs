@@ -168,6 +168,9 @@ pub struct OutputStats {
 struct OutputHandle {
     bin: gst::Bin,
     tee_pad: gst::Pad,
+    /// The audio-tee request pad feeding this output's `audio_sink`, if it takes
+    /// audio (CHR-116). Released alongside the video pad on teardown.
+    audio_tee_pad: Option<gst::Pad>,
     stats: Option<Arc<StatsInner>>,
 }
 
@@ -189,6 +192,10 @@ struct Ready {
     preview_sources: SourceMap,
     preview_frames: Arc<AtomicU64>,
     preview_latest: FrameSlot,
+    // Audio bus: mixer + tee the outputs tap, and its channels (CHR-116).
+    audio_mixer: gst::Element,
+    audio_tee: gst::Element,
+    audio_channels: SourceMap,
 }
 
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
@@ -215,6 +222,12 @@ pub struct MediaEngine {
     preview_sources: SourceMap,
     preview_frames: Arc<AtomicU64>,
     preview_latest: FrameSlot,
+    /// The audio bus (CHR-116): `audiomixer` + `audio-tee` the outputs tap, and
+    /// the channels feeding it. Same pipeline as the video ⇒ shared clock ⇒ the
+    /// recorded/broadcast A/V is synced by construction.
+    audio_mixer: gst::Element,
+    audio_tee: gst::Element,
+    audio_channels: SourceMap,
     /// Per-source animation epoch (CHR-110). Each new entrance/reaction bumps its
     /// source's counter; a running animation thread stops as soon as its captured
     /// epoch is superseded, so a re-trigger cleanly cancels the previous one.
@@ -254,6 +267,9 @@ impl MediaEngine {
                 preview_sources: r.preview_sources,
                 preview_frames: r.preview_frames,
                 preview_latest: r.preview_latest,
+                audio_mixer: r.audio_mixer,
+                audio_tee: r.audio_tee,
+                audio_channels: r.audio_channels,
                 anim_epochs: Arc::new(Mutex::new(HashMap::new())),
                 thread: Some(thread),
             }),
@@ -343,7 +359,51 @@ impl MediaEngine {
     /// request a tee pad, link it, and sync state. Errors if `id` is already
     /// attached or the builder fails.
     pub fn attach_output(&self, id: impl Into<String>, builder: OutputBuilder) -> Result<()> {
-        attach_output_impl(&self.pipeline, &self.tee, &self.outputs, id.into(), builder)
+        attach_output_impl(
+            &self.pipeline,
+            &self.tee,
+            &self.audio_tee,
+            &self.outputs,
+            id.into(),
+            builder,
+        )
+    }
+
+    /// Add a tone (`Some(hz)`) or silent (`None`) audio channel to the bus
+    /// (CHR-116), so it reaches the outputs' muxers. Full mic/media channel types
+    /// + the UI mixer routing are the labelled next step.
+    pub fn add_audio_channel(&self, id: impl Into<String>, freq: Option<f64>) -> Result<()> {
+        let bin = audio_channel_bin(freq)?;
+        attach_audio_channel(
+            &self.pipeline,
+            &self.audio_mixer,
+            id.into(),
+            bin,
+            &self.audio_channels,
+        )
+    }
+
+    pub fn remove_audio_channel(&self, id: &str) -> Result<()> {
+        let handle = {
+            self.audio_channels
+                .lock()
+                .map_err(|_| anyhow!("audio channels lock poisoned"))?
+                .remove(id)
+                .ok_or_else(|| anyhow!("no such audio channel: {id}"))?
+        };
+        // Release the mixer pad + drop the channel bin.
+        self.audio_mixer.release_request_pad(&handle.pad);
+        let _ = handle.bin.set_state(gst::State::Null);
+        let _ = self.pipeline.remove(&handle.bin);
+        Ok(())
+    }
+
+    /// Whether audio channel `id` is attached to the bus.
+    pub fn is_audio_channel_active(&self, id: &str) -> bool {
+        self.audio_channels
+            .lock()
+            .map(|c| c.contains_key(id))
+            .unwrap_or(false)
     }
 
     /// Detach an output, live, **finalising it first**: the branch is sent EOS so
@@ -766,6 +826,7 @@ fn detach_source(pipeline: &gst::Pipeline, compositor: &gst::Element, handle: So
 fn attach_output_impl(
     pipeline: &gst::Pipeline,
     tee: &gst::Element,
+    audio_tee: &gst::Element,
     outputs: &OutputMap,
     id: String,
     builder: OutputBuilder,
@@ -791,6 +852,21 @@ fn attach_output_impl(
     tee_pad
         .link(&bin_sink)
         .with_context(|| format!("link tee → output '{id}'"))?;
+
+    // A/V unification (CHR-116): if the output exposes an `audio_sink` ghost pad,
+    // feed it the mixed audio off the shared audio-tee — one pipeline, one clock,
+    // so the muxed A/V is synced by construction.
+    let audio_tee_pad = match bin.static_pad("audio_sink") {
+        Some(audio_sink) => {
+            let ap = audio_tee
+                .request_pad_simple("src_%u")
+                .ok_or_else(|| anyhow!("audio tee request pad failed"))?;
+            ap.link(&audio_sink)
+                .with_context(|| format!("link audio-tee → output '{id}'"))?;
+            Some(ap)
+        }
+        None => None,
+    };
 
     // Encoded-stream stats (CHR-112): if the output named its post-encoder
     // parser `stats-tap`, count buffers + bytes off its src pad. Best-effort —
@@ -825,10 +901,24 @@ fn attach_output_impl(
             OutputHandle {
                 bin,
                 tee_pad,
+                audio_tee_pad,
                 stats,
             },
         );
     Ok(())
+}
+
+/// Release an output's audio-tee request pad (CHR-116), via the pad's own parent
+/// tee — called during teardown so the audio branch doesn't leak a pad.
+fn release_audio_pad(audio_tee_pad: Option<gst::Pad>) {
+    if let Some(pad) = audio_tee_pad {
+        if let Some(peer) = pad.peer() {
+            let _ = pad.unlink(&peer);
+        }
+        if let Some(tee) = pad.parent().and_then(|p| p.downcast::<gst::Element>().ok()) {
+            tee.release_request_pad(&pad);
+        }
+    }
 }
 
 /// Finalise + detach an output branch. **Blocks** the tee pad, injects EOS into
@@ -837,10 +927,16 @@ fn attach_output_impl(
 /// Runs on the caller's thread (the Tauri command thread), never the streaming
 /// thread — safe to block.
 fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
-    let OutputHandle { bin, tee_pad, .. } = handle;
+    let OutputHandle {
+        bin,
+        tee_pad,
+        audio_tee_pad,
+        ..
+    } = handle;
     let bin_sink = match bin.static_pad("sink") {
         Some(p) => p,
         None => {
+            release_audio_pad(audio_tee_pad);
             let _ = pipeline.remove(&bin);
             return;
         }
@@ -902,6 +998,7 @@ fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputH
 
     // Release the tee pad (drops the block + unlinks the branch), then tear down.
     tee.release_request_pad(&tee_pad);
+    release_audio_pad(audio_tee_pad);
     let _ = bin.set_state(gst::State::Null);
     let _ = bin.state(gst::ClockTime::from_seconds(2));
     let _ = pipeline.remove(&bin);
@@ -921,7 +1018,13 @@ fn take_output(outputs: &OutputMap, id: &str) -> Result<OutputHandle> {
 /// just unlink, release the tee pad, and drop the bin. (Clean stops go through
 /// [`finalise_output`], which EOS-flushes the muxer first.)
 fn teardown_output_now(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
-    let OutputHandle { bin, tee_pad, .. } = handle;
+    let OutputHandle {
+        bin,
+        tee_pad,
+        audio_tee_pad,
+        ..
+    } = handle;
+    release_audio_pad(audio_tee_pad);
     let pipeline = pipeline.clone();
     let tee = tee.clone();
     tee_pad.add_probe(gst::PadProbeType::IDLE, move |pad, _info| {
@@ -1070,6 +1173,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let preview_latest: FrameSlot = Arc::new(Mutex::new(None));
         let preview_sources: SourceMap = Arc::new(Mutex::new(HashMap::new()));
         let preview_compositor = build_edit_branch(&pipeline, &preview_frames, &preview_latest)?;
+
+        // Audio bus in the SAME pipeline (CHR-116) — outputs tap this.
+        let (audio_mixer, audio_tee, audio_channels) = build_audio_bus(&pipeline)?;
 
         add_source_impl(
             &pipeline,
@@ -1226,6 +1332,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                 preview_sources: preview_sources.clone(),
                 preview_frames: preview_frames.clone(),
                 preview_latest: preview_latest.clone(),
+                audio_mixer: audio_mixer.clone(),
+                audio_tee: audio_tee.clone(),
+                audio_channels: audio_channels.clone(),
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
@@ -1490,6 +1599,106 @@ fn build_edit_branch(
             .build(),
     );
     Ok(compositor)
+}
+
+/// A single audio channel bin (CHR-116): `audiotestsrc → audioconvert →
+/// audioresample`, ghost `src` pad. `freq = None` is silence (the always-on base
+/// that keeps the live `audiomixer` aggregator producing), `Some(hz)` a tone.
+fn audio_channel_bin(freq: Option<f64>) -> Result<gst::Bin> {
+    let builder = gst::ElementFactory::make("audiotestsrc").property("is-live", true);
+    let src = match freq {
+        Some(f) => builder.property("freq", f),
+        None => builder.property_from_str("wave", "silence"),
+    }
+    .build()
+    .context("make audiotestsrc (audio channel)")?;
+    let convert = gst::ElementFactory::make("audioconvert").build()?;
+    let resample = gst::ElementFactory::make("audioresample").build()?;
+    wrap_in_bin(&[&src, &convert, &resample])
+}
+
+/// The **audio bus** (CHR-116): `audiomixer → convert → resample → caps → tee`,
+/// living in the video pipeline so audio and video share ONE clock — the outputs
+/// tap this `audio-tee` and the recording is A/V-synced by construction. A
+/// `fakesink` keeps the tee live when no output is attached; a silent base
+/// channel keeps the aggregator flowing. Returns (audiomixer, audio_tee, channels).
+fn build_audio_bus(pipeline: &gst::Pipeline) -> Result<(gst::Element, gst::Element, SourceMap)> {
+    let mixer = gst::ElementFactory::make("audiomixer")
+        .name("audiomix")
+        .build()
+        .context("make audiomixer")?;
+    let convert = gst::ElementFactory::make("audioconvert").build()?;
+    let resample = gst::ElementFactory::make("audioresample").build()?;
+    let caps = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("audio/x-raw")
+                .field("rate", 48000i32)
+                .field("channels", 2i32)
+                .build(),
+        )
+        .build()?;
+    let tee = gst::ElementFactory::make("tee")
+        .name("audio-tee")
+        .property("allow-not-linked", true)
+        .build()
+        .context("make audio tee")?;
+    let keepalive = gst::ElementFactory::make("fakesink")
+        .property("sync", false)
+        .property("async", false)
+        .build()?;
+
+    pipeline.add_many([&mixer, &convert, &resample, &caps, &tee, &keepalive])?;
+    gst::Element::link_many([&mixer, &convert, &resample, &caps, &tee])?;
+    let ka_pad = tee
+        .request_pad_simple("src_%u")
+        .ok_or_else(|| anyhow!("audio tee keepalive pad failed"))?;
+    ka_pad
+        .link(
+            &keepalive
+                .static_pad("sink")
+                .ok_or_else(|| anyhow!("fakesink no sink"))?,
+        )
+        .context("link audio tee → keepalive")?;
+
+    let channels: SourceMap = Arc::new(Mutex::new(HashMap::new()));
+    attach_audio_channel(
+        pipeline,
+        &mixer,
+        "audio-base".into(),
+        audio_channel_bin(None)?,
+        &channels,
+    )?;
+    Ok((mixer, tee, channels))
+}
+
+/// Attach an audio channel bin to the bus mixer, live. Mirrors `add_source_impl`
+/// on the audio side; the handle's `pad` is the audiomixer request pad.
+fn attach_audio_channel(
+    pipeline: &gst::Pipeline,
+    mixer: &gst::Element,
+    id: String,
+    bin: gst::Bin,
+    channels: &SourceMap,
+) -> Result<()> {
+    pipeline
+        .add(&bin)
+        .context("add audio channel to pipeline")?;
+    let mix_pad = mixer
+        .request_pad_simple("sink_%u")
+        .ok_or_else(|| anyhow!("audiomixer request pad failed"))?;
+    let bin_src = bin
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("audio channel has no src pad"))?;
+    bin_src
+        .link(&mix_pad)
+        .context("link audio channel → mixer")?;
+    bin.sync_state_with_parent().context("sync audio channel")?;
+    channels
+        .lock()
+        .map_err(|_| anyhow!("audio channels lock poisoned"))?
+        .insert(id, SourceHandle { bin, pad: mix_pad });
+    Ok(())
 }
 
 #[cfg(test)]
