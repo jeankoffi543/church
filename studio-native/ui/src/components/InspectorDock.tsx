@@ -244,6 +244,25 @@ function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p:
       </div>
     );
   }
+  if (layer.kind === "audio") {
+    return (
+      <>
+        <div>
+          <Label className="mb-1.5">Fichier / URL audio</Label>
+          <input
+            value={(layer.audioFileUrl as string) ?? ""}
+            onChange={(e) => patchData({ audioFileUrl: e.target.value } as Partial<StudioLayer>)}
+            placeholder="file:///chemin/son.mp3  ·  https://…/audio.mp3"
+            className={MONO_FIELD}
+          />
+        </div>
+        <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+          Rendez la source visible (œil) : le fichier est décodé dans la table de mixage (VU réel) et
+          porté par l&apos;enregistrement / la diffusion. Réglez volume / gain / balance dans le Mixage.
+        </div>
+      </>
+    );
+  }
   return (
     <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[11px] leading-relaxed text-white/50">
       Réglez le style dans les onglets ci-dessus.

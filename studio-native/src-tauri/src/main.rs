@@ -692,15 +692,22 @@ mod media {
         state: tauri::State<'_, MediaState>,
         id: String,
         freq: Option<f64>,
+        uri: Option<String>,
     ) -> Result<(), String> {
         let guard = state.0.lock().map_err(|_| "media state poisoned")?;
         let engine = guard.as_ref().ok_or("no media engine running")?;
         if engine.is_audio_channel_active(&id) {
             return Ok(());
         }
-        engine
-            .add_audio_channel(id, freq)
-            .map_err(|e| e.to_string())
+        // A real audio FILE (CHR-125) when a uri is given, else a tone stand-in.
+        match uri.as_deref().filter(|u| !u.trim().is_empty()) {
+            Some(u) => engine
+                .add_audio_file_channel(id, u)
+                .map_err(|e| e.to_string()),
+            None => engine
+                .add_audio_channel(id, freq)
+                .map_err(|e| e.to_string()),
+        }
     }
 
     #[tauri::command]
