@@ -1,4 +1,4 @@
-//! # studio-media (CHR-102)
+//! # studio-media (CHR-102/103/104)
 //!
 //! The media runtime. It owns the GStreamer pipeline and runs a **glib
 //! `MainLoop` on a dedicated thread** — the concrete realisation of the glib↔tokio
@@ -6,15 +6,30 @@
 //! media plane lives entirely here, and the two talk through channels + shared
 //! state (never a shared `&mut`).
 //!
-//! CHR-102 scope:
+//! Scope so far:
 //!   * [`probe_encoders`] — real capability probe (which H.264 encoder elements
 //!     actually exist on this machine), feeding the module-agnostic UI negotiation.
-//!   * [`MediaEngine`] — starts a `compositor` pipeline and exposes its output as
-//!     **JPEG preview frames** (compositor → downscale → `jpegenc` → `appsink`).
-//!     The frames are pushed to the webview as a data-URL — an embedded,
-//!     cross-platform preview that needs no native-window surgery. (The zero-copy
-//!     GPU path to the *encoder/WHIP* is a later, program-feed concern.)
+//!   * [`MediaEngine`] — starts a `compositor` pipeline at a fixed 1080p60
+//!     programme canvas ([`canvas_size`]) and exposes its output as **JPEG
+//!     preview frames** (compositor → downscale → `jpegenc` → `appsink`). The
+//!     frames are pushed to the webview as a data-URL — an embedded,
+//!     cross-platform preview that needs no native-window surgery. (The
+//!     zero-copy GPU path to the *encoder/WHIP* is a later, program-feed
+//!     concern.)
+//!   * [`MediaEngine::set_layer_transform`] — moves/resizes a source's
+//!     compositor pad live, while `Playing`.
+//!   * [`MediaEngine::add_source`] / [`MediaEngine::remove_source`] (CHR-104) —
+//!     **hot** add/remove of a [`SourceBuilder`] while the pipeline runs, the
+//!     harder half of the architecture's "isolation des pannes" principle: each
+//!     source is its own `gst::Bin`, plugged into a compositor request pad and
+//!     unplugged again without touching the rest of the graph. A source that
+//!     **ends** (EOS — the "stop sharing" case) or **errors** (device gone) is
+//!     auto-detached the same way, and its reason recorded for
+//!     [`MediaEngine::take_ended_reason`] — the `captureActive`/`ended` parity.
+//!     The programme keeps running throughout (see the bus watch in
+//!     [`run_media_thread`]).
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
@@ -29,11 +44,15 @@ use gstreamer_app as gst_app;
 /// callback (streaming thread) and the reader (Tauri command thread).
 type FrameSlot = Arc<Mutex<Option<Vec<u8>>>>;
 
-/// A pluggable video source. Given the pipeline, it adds its own elements and
-/// returns the tail element whose `src` pad feeds a compositor layer. This is the
-/// seam every source module (CHR-103 screen, CHR-104 camera, …) plugs into — the
-/// engine never hardcodes what produces the pixels. Runs on the media thread.
-pub type SourceBuilder = Box<dyn FnOnce(&gst::Pipeline) -> Result<gst::Element> + Send>;
+/// A pluggable video source: builds a **self-contained** `gst::Bin` with a
+/// ghost `src` pad, not yet attached to anything. This is the seam every source
+/// module (screen, camera, overlays, …) plugs into — the engine never
+/// hardcodes what produces the pixels. Being a standalone `Bin` (rather than
+/// loose elements added straight to the pipeline) is what makes a source hot
+/// add-/removable: the engine only ever has to add/remove *one* object. Runs on
+/// whatever thread calls [`MediaEngine::add_source`] (or the media thread, for
+/// the engine's own startup source).
+pub type SourceBuilder = Box<dyn FnOnce() -> Result<gst::Bin> + Send>;
 
 /// The compositor's own canvas — this is the "programme" resolution the CHR-103
 /// acceptance criteria target (mire/couleur 1080p60 stable). Layer pads
@@ -47,6 +66,16 @@ const OUTPUT_FPS: i32 = 60;
 /// programme resolution, only the JPEG shipped to the webview is shrunk.
 const PREVIEW_W: i32 = 960;
 const PREVIEW_H: i32 = 540;
+
+/// The id the engine's own always-on background/test-pattern layer is
+/// registered under. Reserved — a module's own source id should never collide
+/// with it (today only `"screen"`, from mod-screen-capture, is used).
+const BACKGROUND_SOURCE_ID: &str = "background";
+
+/// Name of the custom `Application` bus message a source's EOS probe posts so
+/// the (main-thread) bus watch can auto-detach it — a per-source EOS never
+/// reaches the bus on its own. Carries a `source-id` string field.
+const SOURCE_ENDED_MSG: &str = "studio-source-ended";
 
 /// The programme canvas resolution — the coordinate space `MediaEngine::
 /// set_layer_transform` positions layers in. Exposed so callers (the Tauri
@@ -90,12 +119,30 @@ pub fn probe_encoders() -> Vec<String> {
     out
 }
 
+/// A live source: its self-contained bin, and the compositor request pad its
+/// ghost `src` pad feeds. Removing a source means tearing down exactly these
+/// two things — nothing else in the graph is touched.
+struct SourceHandle {
+    bin: gst::Bin,
+    pad: gst::Pad,
+}
+
+type SourceMap = Arc<Mutex<HashMap<String, SourceHandle>>>;
+/// Reasons the most recent auto-detach happened, keyed by source id — read
+/// (and cleared) via [`MediaEngine::take_ended_reason`]. The CHR-104 parity for
+/// the web app's `captureActive`/`ended` events: a source dying no longer takes
+/// the whole preview down with it, so the UI needs a way to notice and explain.
+type EndedMap = Arc<Mutex<HashMap<String, String>>>;
+
 /// Handles handed back from the media thread once the pipeline is `Playing`.
 struct Ready {
     main_loop: glib::MainLoop,
     frames: Arc<AtomicU64>,
     latest: FrameSlot,
-    layer_pad: gst::Pad,
+    pipeline: gst::Pipeline,
+    compositor: gst::Element,
+    sources: SourceMap,
+    ended: EndedMap,
 }
 
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
@@ -105,30 +152,26 @@ pub struct MediaEngine {
     main_loop: glib::MainLoop,
     frames: Arc<AtomicU64>,
     latest: FrameSlot,
-    /// The compositor's request pad for the (single, for now) source layer.
-    /// `xpos`/`ypos`/`width`/`height` are plain GObject properties on this pad —
-    /// GStreamer applies them to the next buffer with no PAUSED round-trip, which
-    /// is what lets the UI move/resize a layer live while the pipeline runs.
-    layer_pad: gst::Pad,
+    pipeline: gst::Pipeline,
+    compositor: gst::Element,
+    /// Currently-attached sources, keyed by caller-chosen id (e.g. `"screen"`).
+    /// Always contains [`BACKGROUND_SOURCE_ID`] while the engine is alive.
+    sources: SourceMap,
+    ended: EndedMap,
     thread: Option<JoinHandle<()>>,
 }
 
 impl MediaEngine {
-    /// Start with the built-in test-pattern source.
+    /// Start with just the built-in background test-pattern source
+    /// (`BACKGROUND_SOURCE_ID`). Additional sources (screen, camera, …) attach
+    /// afterwards, hot, via [`MediaEngine::add_source`].
     pub fn start() -> Result<MediaEngine> {
-        Self::start_with_source(Box::new(default_source))
-    }
-
-    /// Start with a pluggable [`SourceBuilder`] (e.g. screen capture). Blocks only
-    /// until the media thread has the pipeline in `Playing` (or errors during
-    /// setup), then returns while frames flow.
-    pub fn start_with_source(source: SourceBuilder) -> Result<MediaEngine> {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<Ready, String>>();
 
         let thread = std::thread::Builder::new()
             .name("studio-media".into())
             .spawn(move || {
-                if let Err(e) = run_media_thread(&ready_tx, source) {
+                if let Err(e) = run_media_thread(&ready_tx) {
                     // If we failed before signalling ready, report it back.
                     let _ = ready_tx.send(Err(e.to_string()));
                 }
@@ -140,7 +183,10 @@ impl MediaEngine {
                 main_loop: r.main_loop,
                 frames: r.frames,
                 latest: r.latest,
-                layer_pad: r.layer_pad,
+                pipeline: r.pipeline,
+                compositor: r.compositor,
+                sources: r.sources,
+                ended: r.ended,
                 thread: Some(thread),
             }),
             Ok(Err(e)) => bail!("media engine setup: {e}"),
@@ -158,18 +204,77 @@ impl MediaEngine {
         self.latest.lock().ok().and_then(|g| g.clone())
     }
 
-    /// Move/resize the (single, for now) source layer within the `OUTPUT_W` ×
-    /// `OUTPUT_H` programme canvas, live, while the pipeline is `Playing`. This is
-    /// the runtime pad manipulation the CHR-103 acceptance criteria call for —
-    /// distinct from (harder) dynamic pad add/remove, which stays a later concern.
-    pub fn set_layer_transform(&self, xpos: i32, ypos: i32, width: i32, height: i32) -> Result<()> {
+    /// Attach a new source, live, while the pipeline is `Playing`: builds its
+    /// self-contained bin, adds it to the pipeline, requests a compositor pad
+    /// (default: full-canvas, stacked above whatever is already attached), and
+    /// syncs its state with the (already-running) pipeline. Errors if `id` is
+    /// already attached, or if the builder itself fails (e.g. the platform has
+    /// no capture element — the module-unavailable / permission-denied case).
+    pub fn add_source(&self, id: impl Into<String>, builder: SourceBuilder) -> Result<()> {
+        add_source_impl(
+            &self.pipeline,
+            &self.compositor,
+            &self.sources,
+            id.into(),
+            builder,
+        )
+    }
+
+    /// Detach a source, live, without touching the rest of the pipeline: blocks
+    /// its compositor pad, then — once flow has actually stopped — unlinks,
+    /// releases the request pad, tears the bin down to `Null`, and removes it.
+    /// This is the same teardown a source's own error triggers automatically
+    /// (see the bus watch in [`run_media_thread`]); calling it directly is the
+    /// UI-initiated "stop sharing" path.
+    pub fn remove_source(&self, id: &str) -> Result<()> {
+        let handle = take_source(&self.sources, id)?;
+        detach_source(&self.pipeline, &self.compositor, handle);
+        Ok(())
+    }
+
+    /// Whether `id` is currently attached.
+    pub fn is_source_active(&self, id: &str) -> bool {
+        self.sources
+            .lock()
+            .map(|s| s.contains_key(id))
+            .unwrap_or(false)
+    }
+
+    /// Take (and clear) the reason `id` was last auto-detached due to one of
+    /// its own elements erroring — `None` if it hasn't happened (or was already
+    /// read). Poll this after noticing `is_source_active(id)` went from true to
+    /// false without your own `remove_source` call.
+    pub fn take_ended_reason(&self, id: &str) -> Option<String> {
+        self.ended.lock().ok()?.remove(id)
+    }
+
+    /// Move/resize a source's layer within the `OUTPUT_W` × `OUTPUT_H`
+    /// programme canvas, live, while the pipeline is `Playing`. This is the
+    /// runtime pad manipulation the CHR-103 acceptance criteria call for —
+    /// distinct from (harder) dynamic pad add/remove, which CHR-104 covers via
+    /// [`MediaEngine::add_source`]/[`MediaEngine::remove_source`].
+    pub fn set_layer_transform(
+        &self,
+        id: &str,
+        xpos: i32,
+        ypos: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
         if width <= 0 || height <= 0 {
             bail!("layer width/height must be positive, got {width}x{height}");
         }
-        self.layer_pad.set_property("xpos", xpos);
-        self.layer_pad.set_property("ypos", ypos);
-        self.layer_pad.set_property("width", width);
-        self.layer_pad.set_property("height", height);
+        let sources = self
+            .sources
+            .lock()
+            .map_err(|_| anyhow!("sources lock poisoned"))?;
+        let handle = sources
+            .get(id)
+            .ok_or_else(|| anyhow!("no such source: {id}"))?;
+        handle.pad.set_property("xpos", xpos);
+        handle.pad.set_property("ypos", ypos);
+        handle.pad.set_property("width", width);
+        handle.pad.set_property("height", height);
         Ok(())
     }
 
@@ -192,12 +297,181 @@ impl Drop for MediaEngine {
     }
 }
 
-/// Runs entirely on the dedicated media thread: build the pipeline, attach the
-/// glib bus watch, go `Playing`, signal ready, then run the loop until quit.
-fn run_media_thread(
-    ready: &mpsc::Sender<Result<Ready, String>>,
-    source: SourceBuilder,
+/// Shared by the engine's own startup add (before `Playing`) and hot adds from
+/// any other thread afterwards — same recipe either way, `sync_state_with_parent`
+/// is a no-op if the pipeline isn't running yet.
+fn add_source_impl(
+    pipeline: &gst::Pipeline,
+    compositor: &gst::Element,
+    sources: &SourceMap,
+    id: String,
+    builder: SourceBuilder,
 ) -> Result<()> {
+    let zorder = {
+        let guard = sources
+            .lock()
+            .map_err(|_| anyhow!("sources lock poisoned"))?;
+        if guard.contains_key(&id) {
+            bail!("source '{id}' already active");
+        }
+        guard.len() as i32
+    };
+
+    let bin = builder().with_context(|| format!("build source '{id}'"))?;
+    pipeline
+        .add(&bin)
+        .with_context(|| format!("add source '{id}' to pipeline"))?;
+
+    let comp_pad = compositor
+        .request_pad_simple("sink_%u")
+        .ok_or_else(|| anyhow!("compositor request pad failed"))?;
+    comp_pad.set_property("xpos", 0i32);
+    comp_pad.set_property("ypos", 0i32);
+    comp_pad.set_property("width", OUTPUT_W);
+    comp_pad.set_property("height", OUTPUT_H);
+    comp_pad.set_property("zorder", zorder as u32);
+
+    let bin_src = bin
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("source '{id}' bin has no ghost src pad"))?;
+    bin_src
+        .link(&comp_pad)
+        .with_context(|| format!("link source '{id}' → compositor"))?;
+
+    // Relay a clean end-of-stream from this source to the bus watch. The OS
+    // "stop sharing" button ends the capture as EOS, not an error — and a
+    // per-source EOS is otherwise invisible (the compositor swallows it until
+    // *all* its pads are EOS, so it never reaches the bus). We forward it as a
+    // custom application message the watch turns into the same auto-detach the
+    // error path uses.
+    if let Some(bus) = pipeline.bus() {
+        let eos_id = id.clone();
+        bin_src.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+            if let Some(gst::EventView::Eos(_)) = info.event().map(|e| e.view()) {
+                let s = gst::Structure::builder(SOURCE_ENDED_MSG)
+                    .field("source-id", eos_id.as_str())
+                    .build();
+                let _ = bus.post(gst::message::Application::builder(s).build());
+            }
+            gst::PadProbeReturn::Ok
+        });
+    }
+
+    bin.sync_state_with_parent()
+        .with_context(|| format!("sync source '{id}' state with pipeline"))?;
+
+    sources
+        .lock()
+        .map_err(|_| anyhow!("sources lock poisoned"))?
+        .insert(id, SourceHandle { bin, pad: comp_pad });
+    Ok(())
+}
+
+/// Removes `id` from the map and hands back its handle for [`detach_source`] —
+/// split out so the bus watch (auto-detach on error) and
+/// [`MediaEngine::remove_source`] (explicit "stop sharing") share the exact
+/// same teardown.
+fn take_source(sources: &SourceMap, id: &str) -> Result<SourceHandle> {
+    sources
+        .lock()
+        .map_err(|_| anyhow!("sources lock poisoned"))?
+        .remove(id)
+        .ok_or_else(|| anyhow!("no such source: {id}"))
+}
+
+/// Auto-detach a source that ended (EOS) or errored, recording why. Shared by
+/// the bus watch's error and `SOURCE_ENDED_MSG` branches.
+///
+/// The map removal and the reason recording happen **together under the sources
+/// lock**, before the (possibly synchronous) `detach_source`. That ordering
+/// matters: after an EOS the source's pad is already idle, so `detach_source`'s
+/// `IDLE` probe runs inline — a chunk of pad surgery. If we recorded the reason
+/// only after that, an observer polling `is_source_active` (→ false the instant
+/// we remove it) could read `take_ended_reason` → `None` in the gap. Doing both
+/// atomically means "source gone" always implies "reason available". Removing
+/// first also makes a double-signal (EOS *and* error) tear down only once.
+fn auto_detach(
+    pipeline: &gst::Pipeline,
+    compositor: &gst::Element,
+    sources: &SourceMap,
+    ended: &EndedMap,
+    id: &str,
+    reason: String,
+) {
+    let handle = {
+        let mut guard = match sources.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        match guard.remove(id) {
+            Some(h) => {
+                // Nested sources→ended lock; this ordering is used nowhere in
+                // reverse, so it can't deadlock.
+                if let Ok(mut e) = ended.lock() {
+                    e.insert(id.to_string(), reason);
+                }
+                h
+            }
+            None => return,
+        }
+    };
+    detach_source(pipeline, compositor, handle);
+}
+
+/// Tears a source out of the live graph without disturbing the rest: an `IDLE`
+/// probe on the source's *own* src pad fires the moment that pad carries no
+/// data — immediately if the source has already stopped (an errored device, or
+/// post-EOS), otherwise between two buffers — then unlinks it, releases the
+/// compositor request pad, and drops the bin to `Null`. Nothing downstream (the
+/// rest of the compositor, the programme feed) ever sees a torn-down pad
+/// mid-buffer.
+///
+/// Why `IDLE` and not a data/`BLOCK` probe: a block-on-buffer probe only fires
+/// when a buffer arrives, so it would hang forever exactly in the cases we care
+/// about most — a source that has stopped pushing (device unplugged, or already
+/// EOS'd). `IDLE` is the idiom that also covers the stopped-source case.
+///
+/// Why `call_async` for the state change: the probe may fire on the source's
+/// own streaming thread, and setting its state to `Null` joins that thread —
+/// the classic GStreamer self-join deadlock. `call_async` hands the state
+/// change to a GStreamer-owned worker thread instead.
+fn detach_source(pipeline: &gst::Pipeline, compositor: &gst::Element, handle: SourceHandle) {
+    let SourceHandle { bin, pad: comp_pad } = handle;
+    let src_pad = match bin.static_pad("src") {
+        Some(p) => p,
+        None => return,
+    };
+    let pipeline = pipeline.clone();
+    let compositor = compositor.clone();
+    src_pad.add_probe(gst::PadProbeType::IDLE, move |src_pad, _info| {
+        let _ = src_pad.unlink(&comp_pad);
+        compositor.release_request_pad(&comp_pad);
+        let pipeline = pipeline.clone();
+        bin.call_async(move |bin| {
+            let _ = bin.set_state(gst::State::Null);
+            // `set_state` can return `Async` — the transition isn't necessarily
+            // done when it returns. Removing (and dropping) the bin before it
+            // has *actually* reached `Null` disposes it mid-transition (a
+            // GStreamer-CRITICAL). Safe to block here: this runs on a worker
+            // thread, not the streaming thread.
+            let _ = bin.state(gst::ClockTime::from_seconds(2));
+            let _ = pipeline.remove(bin);
+        });
+        gst::PadProbeReturn::Remove
+    });
+}
+
+/// Whether a bus message's source element lives inside (or *is*) `bin` — how
+/// the bus watch attributes an `Error` message to one of our tracked sources
+/// rather than to the shared compositor/encode chain.
+fn belongs_to(src_obj: &gst::Object, bin: &gst::Bin) -> bool {
+    let bin_obj: &gst::Object = bin.upcast_ref();
+    src_obj == bin_obj || src_obj.has_as_ancestor(bin)
+}
+
+/// Runs entirely on the dedicated media thread: build the pipeline, attach it,
+/// go `Playing`, signal ready, then run the loop until quit.
+fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
     ensure_init()?;
 
     // Own a MainContext for THIS thread so the bus watch and the MainLoop share it
@@ -205,24 +479,92 @@ fn run_media_thread(
     // as the thread-default for the whole scope — including the blocking run().
     let ctx = glib::MainContext::new();
     ctx.with_thread_default(|| -> Result<()> {
-        // Picks up `ctx` as the thread-default; the bus watch attaches to it too.
-        let main_loop = glib::MainLoop::new(None, false);
+        // `MainLoop::new(None, ..)` would bind to the *global* default context,
+        // not this thread's — a classic glib footgun. Passing `ctx` explicitly
+        // is what makes `main_loop.run()` actually pump the bus watch's source
+        // (attached to `ctx` below), instead of silently running an empty loop
+        // forever while bus messages pile up unread.
+        let main_loop = glib::MainLoop::new(Some(&ctx), false);
 
         let frames = Arc::new(AtomicU64::new(0));
         let latest: FrameSlot = Arc::new(Mutex::new(None));
-        let (pipeline, layer_pad) = build_preview_pipeline(source, &frames, &latest)?;
+        let sources: SourceMap = Arc::new(Mutex::new(HashMap::new()));
+        let ended: EndedMap = Arc::new(Mutex::new(HashMap::new()));
+        let (pipeline, compositor) = build_preview_pipeline(&frames, &latest)?;
+
+        add_source_impl(
+            &pipeline,
+            &compositor,
+            &sources,
+            BACKGROUND_SOURCE_ID.to_string(),
+            Box::new(default_source),
+        )
+        .context("attach background source")?;
 
         let bus = pipeline
             .bus()
             .ok_or_else(|| anyhow!("pipeline has no bus"))?;
         let loop_for_watch = main_loop.clone();
+        let pipeline_for_watch = pipeline.clone();
+        let compositor_for_watch = compositor.clone();
+        let sources_for_watch = sources.clone();
+        let ended_for_watch = ended.clone();
         let _watch = bus
             .add_watch(move |_, msg| {
                 use gst::MessageView;
                 match msg.view() {
-                    MessageView::Eos(_) | MessageView::Error(_) => {
+                    MessageView::Eos(_) => {
                         loop_for_watch.quit();
                         glib::ControlFlow::Break
+                    }
+                    MessageView::Error(err) => {
+                        // Does this error belong to one of our tracked, removable
+                        // sources (device gone, etc.)? If so, detach just that
+                        // source and keep going — the CHR-104 "partage arrêté"
+                        // parity — instead of taking the whole programme down.
+                        let owner = msg.src().and_then(|src_obj| {
+                            sources_for_watch.lock().ok().and_then(|guard| {
+                                guard
+                                    .iter()
+                                    .find(|(_, h)| belongs_to(src_obj, &h.bin))
+                                    .map(|(id, _)| id.clone())
+                            })
+                        });
+                        if let Some(id) = owner {
+                            auto_detach(
+                                &pipeline_for_watch,
+                                &compositor_for_watch,
+                                &sources_for_watch,
+                                &ended_for_watch,
+                                &id,
+                                err.error().to_string(),
+                            );
+                            return glib::ControlFlow::Continue;
+                        }
+                        // Unrecognised (compositor/convert/jpeg chain, pipeline-level)
+                        // → fatal, as before.
+                        loop_for_watch.quit();
+                        glib::ControlFlow::Break
+                    }
+                    // A source ended cleanly (EOS) — relayed here from its EOS
+                    // pad probe (see `add_source_impl`). The "stop sharing" half
+                    // of the captureActive/ended parity.
+                    MessageView::Application(_) => {
+                        if let Some(id) = msg.structure().and_then(|s| {
+                            (s.name() == SOURCE_ENDED_MSG)
+                                .then(|| s.get::<String>("source-id").ok())
+                                .flatten()
+                        }) {
+                            auto_detach(
+                                &pipeline_for_watch,
+                                &compositor_for_watch,
+                                &sources_for_watch,
+                                &ended_for_watch,
+                                &id,
+                                "flux terminé (partage arrêté)".to_string(),
+                            );
+                        }
+                        glib::ControlFlow::Continue
                     }
                     _ => glib::ControlFlow::Continue,
                 }
@@ -239,7 +581,10 @@ fn run_media_thread(
                 main_loop: main_loop.clone(),
                 frames: frames.clone(),
                 latest: latest.clone(),
-                layer_pad,
+                pipeline: pipeline.clone(),
+                compositor: compositor.clone(),
+                sources: sources.clone(),
+                ended: ended.clone(),
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
@@ -251,9 +596,26 @@ fn run_media_thread(
     .map_err(|e| anyhow!("with_thread_default: {e}"))?
 }
 
-/// The built-in test-pattern source (used when no module provides one). Adds its
-/// elements to `pipeline` and returns the tail element feeding the compositor.
-fn default_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
+/// Wraps a linear chain of elements in a self-contained `gst::Bin` with a ghost
+/// `src` pad on the last element — the shape every pluggable [`SourceBuilder`]
+/// takes, so the engine can add/remove it as a single object.
+fn wrap_in_bin(chain: &[&gst::Element]) -> Result<gst::Bin> {
+    let bin = gst::Bin::new();
+    bin.add_many(chain.iter().copied())
+        .context("add elements to source bin")?;
+    gst::Element::link_many(chain.iter().copied()).context("link source chain")?;
+    let tail = chain.last().ok_or_else(|| anyhow!("empty source chain"))?;
+    let tail_pad = tail
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("tail element has no src pad"))?;
+    let ghost = gst::GhostPad::with_target(&tail_pad).context("create ghost pad")?;
+    ghost.set_active(true).context("activate ghost pad")?;
+    bin.add_pad(&ghost).context("add ghost pad to bin")?;
+    Ok(bin)
+}
+
+/// The built-in test-pattern source (the engine's permanent background layer).
+fn default_source() -> Result<gst::Bin> {
     let src = gst::ElementFactory::make("videotestsrc")
         .property("is-live", true)
         .property_from_str("pattern", "smpte")
@@ -269,27 +631,21 @@ fn default_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
                 .build(),
         )
         .build()?;
-    pipeline.add_many([&src, &caps_in])?;
-    gst::Element::link_many([&src, &caps_in])?;
-    Ok(caps_in)
+    wrap_in_bin(&[&src, &caps_in])
 }
 
-/// <source> → compositor(1080p60 canvas) → caps → convert → scale(preview) →
-/// jpegenc → appsink. The compositor always runs at the full `OUTPUT_W` ×
-/// `OUTPUT_H` programme resolution — the JPEG shrink is a separate, later stage,
-/// so moving/resizing the layer pad is expressed in real programme coordinates
-/// regardless of how small the webview preview is. The appsink callback stores
-/// each JPEG frame in `latest` and bumps `frames`. One source for now; CHR-104+
-/// request/release additional compositor pads per scene layer.
+/// compositor(1080p60 canvas) → caps → convert → scale(preview) → jpegenc →
+/// appsink. The compositor always runs at the full `OUTPUT_W` × `OUTPUT_H`
+/// programme resolution — the JPEG shrink is a separate, later stage, so
+/// moving/resizing a layer pad is expressed in real programme coordinates
+/// regardless of how small the webview preview is. No source is attached here;
+/// callers add one via [`add_source_impl`]. The appsink callback stores each
+/// JPEG frame in `latest` and bumps `frames`.
 fn build_preview_pipeline(
-    source: SourceBuilder,
     frames: &Arc<AtomicU64>,
     latest: &FrameSlot,
-) -> Result<(gst::Pipeline, gst::Pad)> {
+) -> Result<(gst::Pipeline, gst::Element)> {
     let pipeline = gst::Pipeline::with_name("studio-preview");
-
-    // The pluggable source adds its own elements and hands back its tail.
-    let source_tail = source(&pipeline).context("build source")?;
 
     let compositor = gst::ElementFactory::make("compositor")
         .property_from_str("background", "black")
@@ -349,23 +705,6 @@ fn build_preview_pipeline(
     ])?;
     jpeg.link(&appsink).context("link jpegenc → appsink")?;
 
-    // Request a compositor pad and link the source's tail to it (the same API the
-    // scene→graph mapping drives per layer). Default: full-canvas, matching the
-    // programme size, so a freshly-added source fills the frame until the UI
-    // moves/resizes it.
-    let comp_pad = compositor
-        .request_pad_simple("sink_%u")
-        .ok_or_else(|| anyhow!("compositor request pad failed"))?;
-    comp_pad.set_property("xpos", 0i32);
-    comp_pad.set_property("ypos", 0i32);
-    comp_pad.set_property("width", OUTPUT_W);
-    comp_pad.set_property("height", OUTPUT_H);
-    source_tail
-        .static_pad("src")
-        .ok_or_else(|| anyhow!("source tail src pad"))?
-        .link(&comp_pad)
-        .context("link source → compositor")?;
-
     // Pull each encoded JPEG into the shared slot; count them (head-less proof).
     let f = frames.clone();
     let slot = latest.clone();
@@ -386,13 +725,21 @@ fn build_preview_pipeline(
             .build(),
     );
 
-    Ok((pipeline, comp_pad))
+    Ok((pipeline, compositor))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    /// `cargo test` runs tests in parallel by default; each of these spins up a
+    /// real GStreamer pipeline on its own thread, and several of them running
+    /// at once starve each other for CPU on a loaded box — timing-sensitive
+    /// polls below then occasionally see fewer frames than expected. This
+    /// serializes just the pipeline-running tests in this module without
+    /// forcing the whole workspace (or other crates) to `--test-threads=1`.
+    static ENGINE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn probe_encoders_finds_at_least_x264_on_a_dev_box() {
@@ -407,6 +754,7 @@ mod tests {
 
     #[test]
     fn engine_produces_jpeg_preview_frames() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = MediaEngine::start().expect("engine start");
         // Poll up to ~2s for the first encoded frame.
         let mut frame = None;
@@ -433,6 +781,7 @@ mod tests {
         // downscaled JPEG leaves the pipeline), but a stalled/misnegotiated 1080p60
         // canvas would starve the appsink — so a sustained frame rate over a
         // longer window is the observable proxy for "stable".
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = MediaEngine::start().expect("engine start");
         std::thread::sleep(Duration::from_millis(900));
         let n = engine.frames();
@@ -448,9 +797,8 @@ mod tests {
 
     #[test]
     fn set_layer_transform_moves_the_live_compositor_pad() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = MediaEngine::start().expect("engine start");
-        // Wait for at least one frame so the pad is actually flowing, not just
-        // requested.
         for _ in 0..40 {
             std::thread::sleep(Duration::from_millis(50));
             if engine.frames() > 0 {
@@ -459,13 +807,16 @@ mod tests {
         }
 
         engine
-            .set_layer_transform(100, 50, 800, 450)
+            .set_layer_transform(BACKGROUND_SOURCE_ID, 100, 50, 800, 450)
             .expect("set_layer_transform while Playing");
 
-        let xpos = engine.layer_pad.property::<i32>("xpos");
-        let ypos = engine.layer_pad.property::<i32>("ypos");
-        let width = engine.layer_pad.property::<i32>("width");
-        let height = engine.layer_pad.property::<i32>("height");
+        let sources = engine.sources.lock().unwrap();
+        let pad = &sources.get(BACKGROUND_SOURCE_ID).unwrap().pad;
+        let xpos = pad.property::<i32>("xpos");
+        let ypos = pad.property::<i32>("ypos");
+        let width = pad.property::<i32>("width");
+        let height = pad.property::<i32>("height");
+        drop(sources);
         engine.stop();
 
         assert_eq!((xpos, ypos, width, height), (100, 50, 800, 450));
@@ -473,9 +824,203 @@ mod tests {
 
     #[test]
     fn set_layer_transform_rejects_non_positive_size() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = MediaEngine::start().expect("engine start");
-        let err = engine.set_layer_transform(0, 0, 0, 100);
+        let err = engine.set_layer_transform(BACKGROUND_SOURCE_ID, 0, 0, 0, 100);
         engine.stop();
         assert!(err.is_err(), "expected zero width to be rejected");
+    }
+
+    #[test]
+    fn set_layer_transform_rejects_unknown_source() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        let err = engine.set_layer_transform("does-not-exist", 0, 0, 10, 10);
+        engine.stop();
+        assert!(err.is_err(), "expected an unknown source id to be rejected");
+    }
+
+    /// CHR-104's central technical claim: a second source can be plugged into
+    /// the compositor *while it is already Playing*, and unplugged again,
+    /// without disturbing the background layer's frame production.
+    #[test]
+    fn add_and_remove_source_hot_keeps_the_pipeline_alive() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        let before_add = engine.frames();
+
+        engine
+            .add_source(
+                "extra",
+                Box::new(|| {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .property_from_str("pattern", "ball")
+                        .build()?;
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("hot add while Playing");
+        assert!(engine.is_source_active("extra"));
+
+        std::thread::sleep(Duration::from_millis(300));
+        let after_add = engine.frames();
+        assert!(
+            after_add > before_add,
+            "pipeline should keep producing frames after a hot add"
+        );
+
+        engine
+            .remove_source("extra")
+            .expect("hot remove while Playing");
+        assert!(!engine.is_source_active("extra"));
+
+        std::thread::sleep(Duration::from_millis(300));
+        let after_remove = engine.frames();
+        engine.stop();
+
+        assert!(
+            after_remove > after_add,
+            "pipeline should keep producing frames after a hot remove"
+        );
+    }
+
+    /// CHR-104 parity for the web app's captureActive/ended events: a source
+    /// whose own element errors gets detached automatically, the engine keeps
+    /// running, and the reason is readable exactly once via
+    /// `take_ended_reason`.
+    #[test]
+    fn a_failing_source_is_auto_detached_without_killing_the_programme() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        let before = engine.frames();
+
+        let failing_elem: Arc<Mutex<Option<gst::Element>>> = Arc::new(Mutex::new(None));
+        let slot = failing_elem.clone();
+        engine
+            .add_source(
+                "flaky",
+                Box::new(move || {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .build()?;
+                    *slot.lock().unwrap() = Some(src.clone());
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("add the soon-to-fail source");
+        assert!(engine.is_source_active("flaky"));
+
+        // Simulate the source's own element hitting a real error, the way a
+        // disconnected capture device would.
+        let elem = failing_elem.lock().unwrap().take().unwrap();
+        elem.post_error_message(gst::error_msg!(
+            gst::CoreError::Failed,
+            ("synthetic failure for the test")
+        ));
+
+        // Give the bus watch a moment to process it and detach the source.
+        let mut detached = false;
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if !engine.is_source_active("flaky") {
+                detached = true;
+                break;
+            }
+        }
+        assert!(detached, "flaky source should have been auto-detached");
+
+        let reason = engine.take_ended_reason("flaky");
+        assert!(
+            reason
+                .as_deref()
+                .is_some_and(|r| r.contains("synthetic failure")),
+            "expected the ended reason to mention the synthetic failure, got {reason:?}"
+        );
+        // Reading it again should come back empty — it's a take, not a peek.
+        assert!(engine.take_ended_reason("flaky").is_none());
+
+        std::thread::sleep(Duration::from_millis(300));
+        let after = engine.frames();
+        engine.stop();
+
+        assert!(
+            after > before,
+            "the background layer should keep producing frames after another source's error"
+        );
+    }
+
+    /// The *clean-stop* half of the captureActive/ended parity: a source that
+    /// reaches EOS on its own (the GStreamer stand-in for the OS "stop sharing"
+    /// button) is auto-detached with a recorded reason, and the programme keeps
+    /// running. A per-source EOS never reaches the bus by itself — this proves
+    /// the EOS pad-probe → application-message → auto-detach relay works.
+    #[test]
+    fn a_source_that_reaches_eos_is_auto_detached_with_an_ended_reason() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        let before = engine.frames();
+
+        // `num-buffers` makes videotestsrc send EOS after N frames — a source
+        // that ends on its own, exactly like a screen share being stopped.
+        engine
+            .add_source(
+                "shortlived",
+                Box::new(|| {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .property("num-buffers", 10i32)
+                        .build()?;
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("add the short-lived source");
+        assert!(engine.is_source_active("shortlived"));
+
+        // It EOSes after ~10 frames; the engine should notice and detach it.
+        let mut detached = false;
+        for _ in 0..60 {
+            std::thread::sleep(Duration::from_millis(50));
+            if !engine.is_source_active("shortlived") {
+                detached = true;
+                break;
+            }
+        }
+        assert!(detached, "an EOS'd source should have been auto-detached");
+
+        let reason = engine.take_ended_reason("shortlived");
+        assert!(
+            reason.is_some(),
+            "expected an ended reason for the EOS'd source, got None"
+        );
+        // A take, not a peek.
+        assert!(engine.take_ended_reason("shortlived").is_none());
+
+        std::thread::sleep(Duration::from_millis(300));
+        let after = engine.frames();
+        engine.stop();
+
+        assert!(
+            after > before,
+            "the background layer should keep producing frames after a source EOSes"
+        );
     }
 }

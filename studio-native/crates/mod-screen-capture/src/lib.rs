@@ -1,4 +1,4 @@
-//! # mod-screen-capture (CHR-103)
+//! # mod-screen-capture (CHR-103/104)
 //!
 //! The first real [`studio_media::SourceBuilder`] — the OBS-style "Capture
 //! d'écran" source, ported from the web app's `getDisplayMedia`. It plugs a
@@ -11,6 +11,20 @@
 //! It is a **removable module**: if the crate (feature) is absent, or no capture
 //! element exists on this machine, the source simply never shows up in the UI —
 //! the capability negotiation handles it, no other code changes.
+//!
+//! CHR-104 adds hot lifecycle: the shell calls
+//! [`studio_media::MediaEngine::add_source`] / `remove_source` with this
+//! module's [`add_source`] builder to start/stop sharing while the pipeline
+//! keeps running (see the shell's `start_screen_source`/`stop_screen_source`
+//! commands), and reads back `MediaEngine::take_ended_reason` for the
+//! "partage arrêté" event if the capture element itself fails (e.g. the shared
+//! display/window goes away).
+//!
+//! Permissions: on Linux/X11 and Xvfb there is no OS consent gate, so
+//! `is_available()`/`add_source` failing (no element found) is the only
+//! "denied" signal this dev target can produce. Real per-OS permission
+//! handling (macOS ScreenCaptureKit TCC prompt, Windows consent UI) is
+//! out of scope here — platform-specific work for whichever OS branch adds it.
 
 use anyhow::{Context, Result};
 use gst::prelude::*;
@@ -44,9 +58,11 @@ pub fn is_available() -> bool {
     capture_element().is_some()
 }
 
-/// Build the screen-capture source into `pipeline` and return its tail element
-/// (whose `src` pad feeds a compositor layer). Matches [`studio_media::SourceBuilder`].
-pub fn add_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
+/// Build the screen-capture source as a self-contained `gst::Bin` with a ghost
+/// `src` pad. Matches [`studio_media::SourceBuilder`] — the caller (the Tauri
+/// shell) hands this to `MediaEngine::add_source("screen", ...)` to attach it
+/// live, and `MediaEngine::remove_source("screen")` to stop sharing, live.
+pub fn add_source() -> Result<gst::Bin> {
     let element = capture_element().context("no screen-capture element on this platform")?;
 
     let mut src = gst::ElementFactory::make(element);
@@ -70,9 +86,18 @@ pub fn add_source(pipeline: &gst::Pipeline) -> Result<gst::Element> {
         )
         .build()?;
 
-    pipeline.add_many([&src, &convert, &scale, &rate, &caps])?;
-    gst::Element::link_many([&src, &convert, &scale, &rate, &caps])?;
-    Ok(caps)
+    let bin = gst::Bin::new();
+    bin.add_many([&src, &convert, &scale, &rate, &caps])
+        .context("add screen-capture elements to bin")?;
+    gst::Element::link_many([&src, &convert, &scale, &rate, &caps])
+        .context("link screen-capture chain")?;
+    let tail_pad = caps
+        .static_pad("src")
+        .ok_or_else(|| anyhow::anyhow!("capsfilter has no src pad"))?;
+    let ghost = gst::GhostPad::with_target(&tail_pad).context("create ghost pad")?;
+    ghost.set_active(true).context("activate ghost pad")?;
+    bin.add_pad(&ghost).context("add ghost pad to bin")?;
+    Ok(bin)
 }
 
 #[cfg(test)]
@@ -86,9 +111,10 @@ mod tests {
         let _ = is_available();
     }
 
-    /// End-to-end capture proof. Needs a real display, so it self-skips when
-    /// `DISPLAY` is unset (headless `cargo test`); run it under `xvfb-run` to
-    /// exercise the actual ximagesrc → compositor → jpegenc path.
+    /// End-to-end capture proof, including the CHR-104 hot-attach path: needs a
+    /// real display, so it self-skips when `DISPLAY` is unset (headless
+    /// `cargo test`); run it under `xvfb-run` to exercise the actual
+    /// ximagesrc → compositor → jpegenc path.
     #[test]
     fn captures_real_frames_under_a_display() {
         if std::env::var("DISPLAY").is_err() {
@@ -100,8 +126,11 @@ mod tests {
             return;
         }
 
-        let engine = studio_media::MediaEngine::start_with_source(Box::new(add_source))
-            .expect("engine with screen source");
+        let engine = studio_media::MediaEngine::start().expect("engine start");
+        engine
+            .add_source("screen", Box::new(add_source))
+            .expect("hot-attach screen source");
+
         let mut frame = None;
         for _ in 0..60 {
             std::thread::sleep(Duration::from_millis(50));
@@ -111,6 +140,11 @@ mod tests {
             }
         }
         let n = engine.frames();
+        assert!(engine.is_source_active("screen"));
+
+        engine
+            .remove_source("screen")
+            .expect("hot-detach screen source");
         engine.stop();
 
         let frame = frame.expect("no captured frame produced");

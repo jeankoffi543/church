@@ -254,3 +254,12 @@ code {
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
 }
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  background: rgba(94, 176, 208, 0.14);
+}
