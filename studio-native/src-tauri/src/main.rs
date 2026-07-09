@@ -514,36 +514,41 @@ mod media {
     const BROADCAST_ID: &str = "broadcast";
 
     /// Go live to `rtmp_url` (RTMPS direct to Facebook), tapping the programme
-    /// `tee`. If the connection later drops, the engine auto-detaches this output
-    /// and keeps the programme + preview running (read the drop reason via
+    /// `tee`. With `sandbox = true` it's **Test mode** (CHR-112): the same encode
+    /// runs but terminates in a fakesink — real encoder stats, no network, no
+    /// Facebook. If a live connection later drops, the engine auto-detaches this
+    /// output and keeps the programme + preview running (reason via
     /// `broadcast_status`).
     #[tauri::command]
     pub fn start_broadcast(
         state: tauri::State<'_, MediaState>,
         enc: tauri::State<'_, EncoderState>,
         rtmp_url: String,
+        sandbox: bool,
     ) -> Result<(), String> {
         #[cfg(feature = "broadcast")]
         {
             if !mod_output_broadcast::is_available() {
                 return Err("chaîne de diffusion RTMP indisponible".into());
             }
-            if rtmp_url.trim().is_empty() {
-                return Err("URL RTMP vide".into());
-            }
             let cfg = current_encoder(&enc);
             let guard = state.0.lock().map_err(|_| "media state poisoned")?;
             let engine = guard.as_ref().ok_or("no media engine running")?;
+            let builder: studio_media::OutputBuilder = if sandbox {
+                Box::new(move || mod_output_broadcast::build_sandbox_bin(&cfg))
+            } else {
+                if rtmp_url.trim().is_empty() {
+                    return Err("URL RTMP vide".into());
+                }
+                Box::new(move || mod_output_broadcast::build_broadcast_bin(&rtmp_url, &cfg))
+            };
             engine
-                .attach_output(
-                    BROADCAST_ID,
-                    Box::new(move || mod_output_broadcast::build_broadcast_bin(&rtmp_url, &cfg)),
-                )
+                .attach_output(BROADCAST_ID, builder)
                 .map_err(|e| e.to_string())
         }
         #[cfg(not(feature = "broadcast"))]
         {
-            let _ = (state, enc, rtmp_url);
+            let _ = (state, enc, rtmp_url, sandbox);
             Err("module diffusion non compilé".into())
         }
     }
@@ -563,6 +568,29 @@ mod media {
     #[tauri::command]
     pub fn broadcast_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
         read_status(&state, BROADCAST_ID)
+    }
+
+    // ── encoder stats (CHR-112) ─────────────────────────────────────────────
+
+    /// Cumulative encoded-stream counters for an output (`"record"` /
+    /// `"broadcast"`), or `None` if it isn't active. The UI derives live
+    /// fps/bitrate from the delta between successive polls.
+    #[derive(Serialize)]
+    pub struct OutputStatsDto {
+        pub frames: u64,
+        pub bytes: u64,
+        pub elapsed_ms: u64,
+    }
+
+    #[tauri::command]
+    pub fn output_stats(state: tauri::State<'_, MediaState>, id: String) -> Option<OutputStatsDto> {
+        let guard = state.0.lock().ok()?;
+        let engine = guard.as_ref()?;
+        engine.output_stats(&id).map(|s| OutputStatsDto {
+            frames: s.frames,
+            bytes: s.bytes,
+            elapsed_ms: s.elapsed_ms,
+        })
     }
 
     // ── audio mixer (CHR-107) ───────────────────────────────────────────────
@@ -837,6 +865,7 @@ fn main() {
                 media::start_broadcast,
                 media::stop_broadcast,
                 media::broadcast_status,
+                media::output_stats,
                 media::list_encoders,
                 media::get_encoder_config,
                 media::set_encoder_config
