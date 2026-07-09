@@ -9,7 +9,9 @@ import { SourcesDock } from "./components/SourcesDock";
 import { MixerDock, MixChannel } from "./components/MixerDock";
 import { InspectorDock } from "./components/InspectorDock";
 import { ControlsDock } from "./components/ControlsDock";
-import { StatusBar } from "./components/StatusBar";
+import { StatusBar, EncoderStats } from "./components/StatusBar";
+import { StudioHeader } from "./components/StudioHeader";
+import { DockShell } from "./components/DockShell";
 import { TransformBox } from "./components/TransformBox";
 import type { StudioLayer } from "./lib/api";
 
@@ -30,8 +32,6 @@ function sourceIdFor(kind: string, id: string): string | null {
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [doc, setDoc] = useState<StudioDoc | null>(null);
-  const [running, setRunning] = useState(false);
-  const [fps, setFps] = useState(0);
   const [progFrame, setProgFrame] = useState<string | null>(null);
   const [prevFrame, setPrevFrame] = useState<string | null>(null);
   const [status, setStatus] = useState("Prêt");
@@ -63,7 +63,6 @@ export function App() {
   const [fadeMs, setFadeMs] = useState(400);
   const [outStats, setOutStats] = useState<{ fps: number; kbps: number } | null>(null);
   const statsPrev = useRef<{ id: string; frames: number; bytes: number; elapsed_ms: number } | null>(null);
-  const framePrev = useRef<{ frames: number; t: number } | null>(null);
 
   const fail = useCallback((e: unknown) => setStatus(String(e)), []);
   const black = doc?.program?.black ?? false;
@@ -84,13 +83,6 @@ export function App() {
   // ── slow poll: status + stats ─────────────────────────────────────────────
   useEffect(() => {
     const t = setInterval(() => {
-      api.mediaStatus().then((m) => {
-        setRunning(m.running);
-        const now = performance.now();
-        const p = framePrev.current;
-        if (p && now > p.t) setFps(((m.frames - p.frames) * 1000) / (now - p.t));
-        framePrev.current = { frames: m.frames, t: now };
-      }).catch(() => {});
       api.screenStatus().then((s) => setScreenActive(s.active)).catch(() => {});
       api.cameraStatus().then((s) => setCameraActive(s.active)).catch(() => {});
       api.broadcastStatus().then((s) => {
@@ -237,18 +229,30 @@ export function App() {
       if (shownRef.current.has(l.id)) api.showOverlay(l.id).catch(() => {});
     }).catch(fail);
 
-  return (
-    <div className="regie">
-      <header className="topbar">
-        <span className="brand">Studio Native</span>
-        <span className="scene-name">{doc?.scenes.find((s) => s.id === doc.currentSceneId)?.name}</span>
-        <span className="topbar-spacer" />
-        <button className="chip" onClick={() => (running ? api.stopPreview() : api.startPreview().catch(fail))}>
-          {running ? "◼ Moteur" : "▶ Moteur"}
-        </button>
-      </header>
+  const encStats: EncoderStats = {
+    connected: (live || recording) && !!outStats,
+    codecName: encResolved ? encResolved.toUpperCase() : null,
+    profile: null,
+    bitrateKbps: outStats ? Math.round(outStats.kbps) : null,
+    fps: outStats ? Math.round(outStats.fps) : null,
+    droppedFrames: 0,
+    droppedPct: 0,
+    encodeLoadPct: null,
+  };
 
-      <div className="stage">
+  return (
+    <div className="flex h-full flex-col gap-3 overflow-hidden bg-studio-bg p-3 text-white md:p-4">
+      <StudioHeader
+        onAir={live}
+        onRequestStop={toggleLive}
+        busy={false}
+        sandbox={sandbox}
+        recording={recording}
+        recLabel=""
+        onOpenSettings={() => setStatus("Paramètres — à venir (CHR-122)")}
+      />
+
+      <section className="grid h-[clamp(280px,36vh,400px)] flex-none grid-cols-[1fr_124px_1fr] gap-3">
         <StageMonitor label="APERÇU" tone="preview" frame={prevFrame} />
         <TransitionBar black={black} fadeMs={fadeMs} onFadeMs={setFadeMs} onToggleBlack={toggleBlack} onCut={cut} />
         <StageMonitor
@@ -256,39 +260,118 @@ export function App() {
           tone="program"
           frame={progFrame}
           dim={black}
-          badge={live ? <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span> : recording ? <span className="onair rec">● REC</span> : undefined}
+          badge={
+            live ? (
+              <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span>
+            ) : recording ? (
+              <span className="onair rec">● REC</span>
+            ) : undefined
+          }
           overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
-        />
-      </div>
-
-      <section className="docks">
-        <ResizableRow
-          panels={[
-            { id: "scenes", label: "Scènes", node: <ScenesDock doc={doc} onSelect={(id) => cmd({ type: "selectScene", id })} onAdd={() => cmd({ type: "addScene", id: `scene-${(doc?.scenes.length ?? 0) + 1}` })} /> },
-            { id: "sources", label: "Sources", node: (
-              <SourcesDock doc={doc} caps={caps} cameras={cameras} cameraId={cameraId} onCameraId={setCameraId}
-                screenActive={screenActive} cameraActive={cameraActive} selectedId={selectedId}
-                onToggleScreen={toggleScreen} onToggleCamera={toggleCamera} onAddOverlay={addOverlay}
-                onSelectLayer={selectLayer} onToggleVisible={(id) => cmd({ type: "toggleVisible", id })} />
-            ) },
-            { id: "mixer", label: "Mixage", node: (
-              <MixerDock audioOn={audioOn} channels={channels} levels={levels} onToggleAudio={toggleAudio} onAddTone={addTone} onChange={changeChannel} />
-            ) },
-            { id: "inspector", label: "Inspecteur", node: (
-              <InspectorDock layer={currentLayer()} onChange={onLayerChange}
-                onToggleVisible={() => { const l = currentLayer(); if (l) cmd({ type: "toggleVisible", id: l.id }); }} />
-            ) },
-            { id: "controls", label: "Commandes", node: (
-              <ControlsDock caps={caps} encoders={encoders} encCfg={encCfg} encResolved={encResolved} onEncoder={setEncoder}
-                recording={recording} recPath={recPath} onToggleRecord={toggleRecord}
-                live={live} liveEnded={liveEnded} sandbox={sandbox} rtmpUrl={rtmpUrl}
-                onSandbox={setSandbox} onRtmpUrl={setRtmpUrl} onToggleLive={toggleLive} />
-            ) },
-          ]}
         />
       </section>
 
-      <StatusBar running={running} fps={fps} stats={outStats} live={live} sandbox={sandbox} recording={recording} message={status} />
+      <ResizableRow
+        storageKey="studio-native-docks"
+        className="flex min-h-0 flex-1 flex-col"
+        items={[
+          {
+            id: "scenes",
+            label: "Scènes",
+            node: (
+              <DockShell label="Scènes">
+                <ScenesDock
+                  doc={doc}
+                  onSelect={(id) => cmd({ type: "selectScene", id })}
+                  onAdd={() => cmd({ type: "addScene", id: `scene-${(doc?.scenes.length ?? 0) + 1}` })}
+                />
+              </DockShell>
+            ),
+          },
+          {
+            id: "sources",
+            label: "Sources",
+            node: (
+              <DockShell label="Sources">
+                <SourcesDock
+                  doc={doc}
+                  caps={caps}
+                  cameras={cameras}
+                  cameraId={cameraId}
+                  onCameraId={setCameraId}
+                  screenActive={screenActive}
+                  cameraActive={cameraActive}
+                  selectedId={selectedId}
+                  onToggleScreen={toggleScreen}
+                  onToggleCamera={toggleCamera}
+                  onAddOverlay={addOverlay}
+                  onSelectLayer={selectLayer}
+                  onToggleVisible={(id) => cmd({ type: "toggleVisible", id })}
+                />
+              </DockShell>
+            ),
+          },
+          {
+            id: "mixer",
+            label: "Mixage",
+            node: (
+              <DockShell label="Mixage">
+                <MixerDock
+                  audioOn={audioOn}
+                  channels={channels}
+                  levels={levels}
+                  onToggleAudio={toggleAudio}
+                  onAddTone={addTone}
+                  onChange={changeChannel}
+                />
+              </DockShell>
+            ),
+          },
+          {
+            id: "inspector",
+            label: "Style Pro",
+            node: (
+              <DockShell label="Style Pro">
+                <InspectorDock
+                  layer={currentLayer()}
+                  onChange={onLayerChange}
+                  onToggleVisible={() => {
+                    const l = currentLayer();
+                    if (l) cmd({ type: "toggleVisible", id: l.id });
+                  }}
+                />
+              </DockShell>
+            ),
+          },
+          {
+            id: "controls",
+            label: "Commandes",
+            node: (
+              <DockShell label="Commandes">
+                <ControlsDock
+                  caps={caps}
+                  encoders={encoders}
+                  encCfg={encCfg}
+                  encResolved={encResolved}
+                  onEncoder={setEncoder}
+                  recording={recording}
+                  recPath={recPath}
+                  onToggleRecord={toggleRecord}
+                  live={live}
+                  liveEnded={liveEnded}
+                  sandbox={sandbox}
+                  rtmpUrl={rtmpUrl}
+                  onSandbox={setSandbox}
+                  onRtmpUrl={setRtmpUrl}
+                  onToggleLive={toggleLive}
+                />
+              </DockShell>
+            ),
+          },
+        ]}
+      />
+
+      <StatusBar statusRight={status} stats={encStats} />
     </div>
   );
 }

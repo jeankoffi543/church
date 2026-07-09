@@ -1,46 +1,53 @@
-import { OutputStats } from "../lib/api";
+import { cn } from "../lib/cn";
 
-/** The bottom status strip: engine health on the left, live encoder throughput
- * (CHR-112) in the middle, a free-text status on the right. */
-export function StatusBar({
-  running,
-  fps,
-  stats,
-  live,
-  sandbox,
-  recording,
-  message,
-}: {
-  running: boolean;
-  fps: number;
-  stats: { fps: number; kbps: number } | null;
-  live: boolean;
-  sandbox: boolean;
-  recording: boolean;
-  message: string;
-}) {
+const MONO = "font-studio-mono";
+
+export type EncoderStats = {
+  connected: boolean;
+  codecName?: string | null;
+  profile?: string | null;
+  bitrateKbps: number | null;
+  fps: number | null;
+  droppedFrames: number;
+  droppedPct: number;
+  encodeLoadPct: number | null;
+};
+
+/**
+ * Bottom encoder/status strip — ported 1:1 from the web console's
+ * `status-bar.tsx`. Values are the real readout of the active output (our
+ * `output_stats`); a neutral idle state while not publishing.
+ */
+export function StatusBar({ statusRight, stats }: { statusRight: string; stats: EncoderStats }) {
+  const { connected, codecName, profile, bitrateKbps, fps, droppedFrames, droppedPct, encodeLoadPct } =
+    stats;
   return (
-    <div className="status-bar">
-      <span className="status-item">
-        <span className="dot" data-on={running ? "1" : "0"} />
-        {running ? "Moteur actif" : "Moteur arrêté"}
+    <footer
+      className={cn(
+        "flex flex-none flex-wrap items-center gap-x-[18px] gap-y-1 rounded-xl border border-white/6 bg-studio-rail px-3.5 py-2 text-[10.5px] text-white/50",
+        MONO,
+      )}
+    >
+      <span className="flex items-center gap-1.5">
+        <span className={cn("size-[7px] rounded-full", connected ? "bg-studio-preview" : "bg-white/25")} />
+        {connected
+          ? `ENCODEUR ${codecName ?? "—"}${profile ? ` · ${profile}` : ""}`
+          : "ENCODEUR · hors ligne"}
       </span>
-      <span className="status-item">{fps.toFixed(0)} fps programme</span>
-      {live && (
-        <span className="status-item status-live" data-sandbox={sandbox ? "1" : "0"}>
-          ● {sandbox ? "TEST" : "DIRECT"}
+      <span>{connected && bitrateKbps != null ? `${bitrateKbps} kb/s` : "—"}</span>
+      <span>{connected && fps != null ? `${fps} FPS` : "—"}</span>
+      <span className="text-white/70">
+        {connected
+          ? `${droppedFrames} image${droppedFrames > 1 ? "s" : ""} perdue${droppedFrames > 1 ? "s" : ""} (${droppedPct}%)`
+          : "0 image perdue"}
+      </span>
+      <span>
+        CHARGE ENCODAGE{" "}
+        <span className="text-studio-preview-bright">
+          {connected && encodeLoadPct != null ? `${encodeLoadPct}%` : "—"}
         </span>
-      )}
-      {recording && <span className="status-item status-rec">● REC</span>}
-      {stats && (
-        <span className="status-item">
-          sortie {stats.fps.toFixed(0)} fps · {stats.kbps.toFixed(0)} kbps
-        </span>
-      )}
-      <span className="status-spacer" />
-      <span className="status-item status-msg">{message}</span>
-    </div>
+      </span>
+      {statusRight && <span className="ml-auto text-gold/70">{statusRight}</span>}
+    </footer>
   );
 }
-
-export type { OutputStats };
