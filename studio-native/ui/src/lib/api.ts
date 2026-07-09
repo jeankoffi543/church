@@ -81,7 +81,7 @@ export type StudioDoc = {
   scenes: StudioScene[];
   currentSceneId: string;
   selectedLayerId: string | null;
-  program?: { black: boolean };
+  program?: { black: boolean; sceneId?: string };
 };
 export type StudioCommand = Record<string, unknown> & { type: string };
 
