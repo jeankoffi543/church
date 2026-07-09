@@ -1,0 +1,151 @@
+@import "tailwindcss";
+/* Bundled broadcast monospace (offline-safe under Tauri's CSP). */
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
+/* ── MFM Live Studio design tokens — ported 1:1 from church-client globals.css.
+   These `@theme` vars become Tailwind utilities: bg-studio-panel, text-gold,
+   font-studio-mono, animate-onair-pulse, … so the ported components reuse the
+   web console's exact class strings. ── */
+@theme {
+  --font-studio-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+
+  --color-studio-bg: #090514;
+  --color-studio-panel: #130d22;
+  --color-studio-rail: #0d0918;
+  --color-studio-field: #0d0820;
+  --color-studio-purple: #b270ff;
+  --color-studio-onair: #ef4444;
+  --color-studio-sandbox: #f5b301;
+  --color-studio-preview: #10b981;
+  --color-studio-preview-bright: #34d399;
+
+  --color-ink: #160f33;
+  --color-gold: #e2b85f;
+  --color-gold-dark: #c8902e;
+
+  --animate-onair-pulse: onairPulse 2s infinite;
+  --animate-studio-blink: studioBlink 1.1s infinite;
+  --animate-sandbox-flash: sandboxFlash 1.4s infinite;
+  --animate-rec-blink: recBlink 1s infinite;
+  --animate-studio-scan: studioScan 5.5s linear infinite;
+  --animate-modal-in: modalIn 0.22s ease-out;
+
+  @keyframes onairPulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+    }
+    70% {
+      box-shadow: 0 0 0 9px rgba(239, 68, 68, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+  }
+  @keyframes studioBlink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+  @keyframes sandboxFlash {
+    0%,
+    100% {
+      background: rgba(245, 179, 1, 0.16);
+      border-color: rgba(245, 179, 1, 0.5);
+    }
+    50% {
+      background: rgba(245, 179, 1, 0.32);
+      border-color: rgba(245, 179, 1, 0.9);
+    }
+  }
+  @keyframes recBlink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.2;
+    }
+  }
+  @keyframes studioScan {
+    0% {
+      transform: translateY(-100%);
+    }
+    100% {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes modalIn {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.99);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--color-studio-bg);
+  color: #fff;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+/* ── broadcast scrollbars & range sliders (1:1 with the web) ── */
+.studio-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.studio-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+.studio-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.studio-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+.studio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e2b85f;
+  cursor: pointer;
+  box-shadow: 0 0 0 3px rgba(226, 184, 95, 0.18);
+}
+.studio-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #e2b85f;
+  cursor: pointer;
+}
