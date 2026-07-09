@@ -1,328 +1,106 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import * as api from "./lib/api";
+import type { Capabilities, CameraDevice, EncoderConfig, StudioDoc } from "./lib/api";
+import { StageMonitor } from "./components/StageMonitor";
+import { TransitionBar } from "./components/TransitionBar";
+import { ResizableRow } from "./components/ResizableRow";
+import { ScenesDock } from "./components/ScenesDock";
+import { SourcesDock } from "./components/SourcesDock";
+import { MixerDock, MixChannel } from "./components/MixerDock";
+import { InspectorDock, Transform } from "./components/InspectorDock";
+import { ControlsDock } from "./components/ControlsDock";
+import { StatusBar } from "./components/StatusBar";
 
-/** Mirror of the Rust `CapabilitiesDto` — the module-agnostic UI contract. */
-type Capabilities = {
-  sources: string[];
-  outputs: string[];
-  encoders: string[];
-};
+const OVERLAY_KINDS = ["text", "bible", "song"];
+const genId = () => `layer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+const FULL: Transform = { x: 0, y: 0, w: 1, h: 1 };
 
-/** Mirror of the Rust `MediaStatus`. */
-type MediaStatus = {
-  running: boolean;
-  frames: number;
-};
-
-/** Mirror of the Rust `ScreenStatus` / `CameraStatus` — captureActive/ended parity. */
-type SourceStatus = {
-  active: boolean;
-  ended_reason: string | null;
-};
-
-/** Mirror of the Rust `mod_camera::CameraDevice` (CHR-105). */
-type CameraDevice = { id: string; label: string };
-// Mirrors mod_encoder::EncoderConfig (serde kebab-case for `preset`).
-type EncoderConfig = {
-  kind: string;
-  bitrate_kbps: number;
-  preset: "speed" | "balanced" | "quality";
-  keyframe_interval: number;
-};
-type EncoderInfo = { config: EncoderConfig; resolved: string | null };
-
-const SCREEN_SOURCE_ID = "screen";
-
-/** Minimal mirrors of the Rust `studio_core::Studio` (CHR-102). We only type the
- *  fields this panel renders; the full document carries far more per layer. */
-type StudioLayerLite = { id: string; kind: string; name: string; visible: boolean };
-type StudioScene = { id: string; name: string; layers: StudioLayerLite[] };
-type StudioDoc = {
-  scenes: StudioScene[];
-  currentSceneId: string;
-  selectedLayerId: string | null;
-  // Programme state (CHR-113). `black` drives the fade-to-black transition.
-  program?: { black: boolean };
-};
-
-/** A command for the Rust store's `apply_command` (internally-tagged JSON). */
-type StudioCommand = Record<string, unknown> & { type: string };
-
-const genId = () => `layer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-/** The layer's position/size as fractions (0..1) of the programme canvas —
- * resolution-independent, so it survives the webview resizing without any
- * recalculation: the overlay is rendered in CSS `%`, which the browser keeps in
- * sync with `.monitor`'s actual size on every resize for free. */
-type LayerTransform = { x: number; y: number; w: number; h: number };
-const FULL_LAYER: LayerTransform = { x: 0, y: 0, w: 1, h: 1 };
-const MIN_FRACTION = 0.08;
-
-function clampLayer(t: LayerTransform): LayerTransform {
-  const w = Math.min(1, Math.max(MIN_FRACTION, t.w));
-  const h = Math.min(1, Math.max(MIN_FRACTION, t.h));
-  const x = Math.min(1 - w, Math.max(0, t.x));
-  const y = Math.min(1 - h, Math.max(0, t.y));
-  return { x, y, w, h };
+/** The programme-compositor source id a store layer maps to, or null if it isn't
+ * a compositable source. Overlays live under `overlay:<id>`; devices are fixed. */
+function sourceIdFor(kind: string, id: string): string | null {
+  if (OVERLAY_KINDS.includes(kind)) return `overlay:${id}`;
+  if (kind === "screen") return "screen";
+  if (kind === "camera") return "camera";
+  return null;
 }
-
-/** French labels for known source kinds. Unknown ids still render (by id). */
-const SOURCE_LABELS: Record<string, string> = {
-  bible: "Bible",
-  text: "Texte",
-  song: "Chant",
-  image: "Image / Fond",
-  camera: "Caméra / Capture",
-  screen: "Capture d'écran",
-  video: "Vidéo",
-  embed: "Direct externe",
-  audio: "Audio",
-  group: "Groupe",
-};
 
 export function App() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [media, setMedia] = useState<MediaStatus | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [screen, setScreen] = useState<SourceStatus | null>(null);
-  // `screen_status` / `camera_status` *consume* the ended reason (take, not
-  // peek), so it appears in exactly one poll. Latch it so the "arrêté" banner
-  // stays up until the user acts, instead of flashing for one 500 ms cycle.
-  const [screenEnded, setScreenEnded] = useState<string | null>(null);
-  const [camera, setCamera] = useState<SourceStatus | null>(null);
-  const [cameraEnded, setCameraEnded] = useState<string | null>(null);
+  const [doc, setDoc] = useState<StudioDoc | null>(null);
+  const [running, setRunning] = useState(false);
+  const [fps, setFps] = useState(0);
+  const [frame, setFrame] = useState<string | null>(null);
+  const [status, setStatus] = useState("Prêt");
+
+  const [screenActive, setScreenActive] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
-  const [cameraDeviceId, setCameraDeviceId] = useState<string>("");
-  const [studio, setStudio] = useState<StudioDoc | null>(null);
-  // Overlay layer ids currently shown on the compositor (optimistic UI state).
+  const [cameraId, setCameraId] = useState("");
   const [shownOverlays, setShownOverlays] = useState<Set<string>>(new Set());
-  // Audio mixer (CHR-107): running flag, channel strips, and the real VU levels
-  // (dB per channel id + "master") polled from the Rust `level` elements.
-  const [recording, setRecording] = useState(false);
-  const [recPath, setRecPath] = useState<string | null>(null);
-  const [rtmpUrl, setRtmpUrl] = useState("");
-  const [live, setLive] = useState(false);
-  const [liveEnded, setLiveEnded] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [transform, setTransform] = useState<Transform>(FULL);
+
+  const [audioOn, setAudioOn] = useState(false);
+  const [channels, setChannels] = useState<MixChannel[]>([]);
+  const [levels, setLevels] = useState<Record<string, number>>({});
+
   const [encoders, setEncoders] = useState<string[]>([]);
   const [encCfg, setEncCfg] = useState<EncoderConfig | null>(null);
   const [encResolved, setEncResolved] = useState<string | null>(null);
+
+  const [recording, setRecording] = useState(false);
+  const [recPath, setRecPath] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
+  const [liveEnded, setLiveEnded] = useState<string | null>(null);
   const [sandbox, setSandbox] = useState(false);
-  const [outStats, setOutStats] = useState<{ id: string; fps: number; kbps: number } | null>(null);
+  const [rtmpUrl, setRtmpUrl] = useState("");
+
   const [fadeMs, setFadeMs] = useState(400);
-  const [audioOn, setAudioOn] = useState(false);
-  const [audioChannels, setAudioChannels] = useState<
-    { id: string; fader: number; muted: boolean }[]
-  >([]);
-  const [levels, setLevels] = useState<Record<string, number>>({});
-  const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
-  const monitorRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef({ w: 1920, h: 1080 });
-  // Previous encoder-stats sample, to derive live fps/bitrate by delta.
-  const statsPrev = useRef<{
-    id: string;
-    frames: number;
-    bytes: number;
-    elapsed_ms: number;
-  } | null>(null);
-  const dragRef = useRef<{
-    mode: "move" | "resize";
-    startX: number;
-    startY: number;
-    startLayer: LayerTransform;
-  } | null>(null);
+  const [outStats, setOutStats] = useState<{ fps: number; kbps: number } | null>(null);
+  const statsPrev = useRef<{ id: string; frames: number; bytes: number; elapsed_ms: number } | null>(null);
+  const framePrev = useRef<{ frames: number; t: number } | null>(null);
 
+  const fail = useCallback((e: unknown) => setStatus(String(e)), []);
+  const black = doc?.program?.black ?? false;
+
+  // ── boot: auto-start the engine + load contract/state ─────────────────────
   useEffect(() => {
-    invoke<Capabilities>("get_capabilities")
-      .then(setCaps)
-      .catch((e) => setError(String(e)));
-    invoke<[number, number]>("canvas_size")
-      .then(([w, h]) => {
-        canvasRef.current = { w, h };
-      })
-      .catch(() => {});
-    // The scene document is persisted in Rust — it's already populated here on a
-    // fresh launch (proving CHR-102 persistence: what you added survives a restart).
-    invoke<StudioDoc>("get_studio_state")
-      .then(setStudio)
-      .catch((e) => setError(String(e)));
-    // Enumerate cameras for the device picker (empty when the module is absent).
-    invoke<CameraDevice[]>("list_cameras")
-      .then((list) => {
-        setCameras(list);
-        setCameraDeviceId((id) => id || list[0]?.id || "");
-      })
-      .catch(() => {});
-    // Encoder settings (CHR-111): the machine's H.264 encoders + current config.
-    invoke<string[]>("list_encoders").then(setEncoders).catch(() => {});
-    invoke<EncoderInfo>("get_encoder_config")
-      .then((info) => {
-        setEncCfg(info.config);
-        setEncResolved(info.resolved);
-      })
-      .catch(() => {});
-  }, []);
+    api.startPreview().catch(fail);
+    api.getCapabilities().then(setCaps).catch(fail);
+    api.getStudioState().then(setDoc).catch(fail);
+    api.listCameras().then((l) => {
+      setCameras(l);
+      setCameraId((id) => id || l[0]?.id || "");
+    }).catch(() => {});
+    api.listEncoders().then(setEncoders).catch(() => {});
+    api.getEncoderConfig().then((i) => { setEncCfg(i.config); setEncResolved(i.resolved); }).catch(() => {});
+  }, [fail]);
 
-  // Persist an encoder-settings change, then refresh what `auto` resolves to.
-  const updateEncoder = useCallback((patch: Partial<EncoderConfig>) => {
-    setEncCfg((prev) => {
-      const next = { ...(prev ?? {
-        kind: "auto", bitrate_kbps: 4000, preset: "balanced" as const, keyframe_interval: 120,
-      }), ...patch };
-      invoke("set_encoder_config", { config: next })
-        .then(() => invoke<EncoderInfo>("get_encoder_config"))
-        .then((info) => setEncResolved(info.resolved))
-        .catch((e) => setError(String(e)));
-      return next;
-    });
-  }, []);
-
-  // Every scene edit goes through the Rust store, which persists to disk and
-  // hands back the new document to re-render from.
-  const applyCommand = useCallback((command: StudioCommand) => {
-    invoke<StudioDoc>("apply_command", { command })
-      .then(setStudio)
-      .catch((e) => setError(String(e)));
-  }, []);
-
-  // Poll the real VU levels while the mixer runs (~20 Hz — off the DOM).
+  // ── slow poll: status + stats ─────────────────────────────────────────────
   useEffect(() => {
-    if (!audioOn) return;
     const t = setInterval(() => {
-      invoke<Record<string, number>>("audio_levels")
-        .then(setLevels)
-        .catch(() => {});
-    }, 100);
-    return () => clearInterval(t);
-  }, [audioOn]);
-
-  const setAudioChannel = useCallback(
-    (id: string, patch: Partial<{ fader: number; muted: boolean }>) => {
-      setAudioChannels((prev) =>
-        prev.map((c) => {
-          if (c.id !== id) return c;
-          const next = { ...c, ...patch };
-          invoke("set_audio_channel", {
-            id,
-            fader: next.fader,
-            muted: next.muted,
-            gainDb: 0,
-            balance: 0,
-          }).catch((e) => setError(String(e)));
-          return next;
-        }),
-      );
-    },
-    [],
-  );
-
-  // Show/hide a text/bible/song layer on the compositor (CHR-106). The overlay
-  // is rendered from the store's layer by the Rust side (cairo+pango).
-  const toggleOverlay = useCallback((layerId: string, show: boolean) => {
-    const cmd = show ? "show_overlay" : "hide_overlay";
-    invoke(cmd, { layerId })
-      .then(() =>
-        setShownOverlays((prev) => {
-          const next = new Set(prev);
-          if (show) next.add(layerId);
-          else next.delete(layerId);
-          return next;
-        }),
-      )
-      .catch((e) => setError(String(e)));
-  }, []);
-
-  // Push the layer's fractional transform to the engine, in canvas pixels — the
-  // pad's `xpos`/`ypos`/`width`/`height` GObject properties, applied live while
-  // the pipeline runs (see `MediaEngine::set_layer_transform`).
-  const pushTransform = useCallback((t: LayerTransform) => {
-    const { w: cw, h: ch } = canvasRef.current;
-    invoke("set_layer_transform", {
-      id: SCREEN_SOURCE_ID,
-      xpos: Math.round(t.x * cw),
-      ypos: Math.round(t.y * ch),
-      width: Math.round(t.w * cw),
-      height: Math.round(t.h * ch),
-    }).catch((e) => setError(String(e)));
-  }, []);
-
-  const beginDrag = useCallback(
-    (mode: "move" | "resize") => (e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dragRef.current = { mode, startX: e.clientX, startY: e.clientY, startLayer: layer };
-      const onMove = (ev: PointerEvent) => {
-        const drag = dragRef.current;
-        const rect = monitorRef.current?.getBoundingClientRect();
-        if (!drag || !rect) return;
-        const dx = (ev.clientX - drag.startX) / rect.width;
-        const dy = (ev.clientY - drag.startY) / rect.height;
-        const next =
-          drag.mode === "move"
-            ? { ...drag.startLayer, x: drag.startLayer.x + dx, y: drag.startLayer.y + dy }
-            : {
-                ...drag.startLayer,
-                w: drag.startLayer.w + dx,
-                h: drag.startLayer.h + dy,
-              };
-        const clamped = clampLayer(next);
-        setLayer(clamped);
-        pushTransform(clamped);
-      };
-      const onUp = () => {
-        dragRef.current = null;
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [layer, pushTransform],
-  );
-
-  // Poll status (slow) + the live preview frame (fast) while the engine runs.
-  useEffect(() => {
-    const status = setInterval(() => {
-      invoke<MediaStatus>("media_status")
-        .then(setMedia)
-        .catch(() => {});
-      invoke<SourceStatus>("screen_status")
-        .then((s) => {
-          setScreen(s);
-          if (s.ended_reason) setScreenEnded(s.ended_reason);
-        })
-        .catch(() => {});
-      invoke<SourceStatus>("camera_status")
-        .then((s) => {
-          setCamera(s);
-          if (s.ended_reason) setCameraEnded(s.ended_reason);
-        })
-        .catch(() => {});
-      invoke<SourceStatus>("broadcast_status")
-        .then((s) => {
-          setLive(s.active);
-          // A drop (active flips false with a reason) — surface it and reset.
-          if (s.ended_reason) setLiveEnded(s.ended_reason);
-        })
-        .catch(() => {});
-      // Live encoder stats (CHR-112): only the active output returns a sample;
-      // derive fps/bitrate from the delta against the previous poll.
+      api.mediaStatus().then((m) => {
+        setRunning(m.running);
+        const now = performance.now();
+        const p = framePrev.current;
+        if (p && now > p.t) setFps(((m.frames - p.frames) * 1000) / (now - p.t));
+        framePrev.current = { frames: m.frames, t: now };
+      }).catch(() => {});
+      api.screenStatus().then((s) => setScreenActive(s.active)).catch(() => {});
+      api.cameraStatus().then((s) => setCameraActive(s.active)).catch(() => {});
+      api.broadcastStatus().then((s) => {
+        setLive(s.active);
+        if (s.ended_reason) setLiveEnded(s.ended_reason);
+      }).catch(() => {});
+      if (audioOn) api.audioLevels().then(setLevels).catch(() => {});
       (async () => {
         for (const id of ["broadcast", "record"]) {
-          const s = await invoke<{
-            frames: number;
-            bytes: number;
-            elapsed_ms: number;
-          } | null>("output_stats", { id }).catch(() => null);
+          const s = await api.outputStats(id).catch(() => null);
           if (!s) continue;
           const prev = statsPrev.current;
           if (prev && prev.id === id && s.elapsed_ms > prev.elapsed_ms) {
             const dt = (s.elapsed_ms - prev.elapsed_ms) / 1000;
-            setOutStats({
-              id,
-              fps: (s.frames - prev.frames) / dt,
-              kbps: ((s.bytes - prev.bytes) * 8) / dt / 1000,
-            });
+            setOutStats({ fps: (s.frames - prev.frames) / dt, kbps: ((s.bytes - prev.bytes) * 8) / dt / 1000 });
           }
           statsPrev.current = { id, ...s };
           return;
@@ -331,614 +109,142 @@ export function App() {
         setOutStats(null);
       })();
     }, 500);
-    const frame = setInterval(() => {
-      invoke<string | null>("preview_frame")
-        .then((url) => url && setPreview(url))
-        .catch(() => {});
+    const f = setInterval(() => {
+      api.previewFrame().then((u) => u && setFrame(u)).catch(() => {});
     }, 120);
-    return () => {
-      clearInterval(status);
-      clearInterval(frame);
-    };
-  }, []);
+    return () => { clearInterval(t); clearInterval(f); };
+  }, [audioOn]);
 
-  const hasMedia =
-    !!caps && caps.sources.length + caps.outputs.length + caps.encoders.length > 0;
+  // ── handlers ──────────────────────────────────────────────────────────────
+  const refreshDoc = (d: StudioDoc) => setDoc(d);
+  const cmd = (c: api.StudioCommand) => api.applyCommand(c).then(refreshDoc).catch(fail);
+
+  const selectLayer = (id: string) => {
+    setSelectedId(id);
+    setTransform(FULL);
+    cmd({ type: "selectLayer", id });
+  };
+  const addOverlay = (kind: string) => cmd({ type: "addLayer", kind, id: genId(), parentId: null });
+
+  const toggleScreen = () =>
+    (screenActive ? api.stopScreen() : api.startScreen()).catch(fail);
+  const toggleCamera = () =>
+    (cameraActive ? api.stopCamera() : api.startCamera(cameraId || null)).catch(fail);
+
+  const toggleOverlay = (id: string, show: boolean) => {
+    (show ? api.showOverlay(id) : api.hideOverlay(id))
+      .then(() => setShownOverlays((s) => {
+        const n = new Set(s);
+        show ? n.add(id) : n.delete(id);
+        return n;
+      }))
+      .catch(fail);
+  };
+
+  const applyTransform = (t: Transform) => {
+    setTransform(t);
+    const layer = currentLayer();
+    if (!layer) return;
+    const sid = sourceIdFor(layer.kind, layer.id);
+    if (!sid) return;
+    const [cw, ch] = [1920, 1080];
+    api.setLayerTransform(sid, Math.round(t.x * cw), Math.round(t.y * ch),
+      Math.max(1, Math.round(t.w * cw)), Math.max(1, Math.round(t.h * ch))).catch(() => {});
+  };
+
+  const setEncoder = (patch: Partial<EncoderConfig>) => {
+    setEncCfg((prev) => {
+      const next = { ...(prev ?? { kind: "auto", bitrate_kbps: 4000, preset: "balanced" as const, keyframe_interval: 120 }), ...patch };
+      api.setEncoderConfig(next).then(() => api.getEncoderConfig()).then((i) => setEncResolved(i.resolved)).catch(fail);
+      return next;
+    });
+  };
+
+  const toggleRecord = () => {
+    if (recording) api.stopRecording().then(() => setRecording(false)).catch(fail);
+    else api.startRecording(null).then((p) => { setRecording(true); setRecPath(p); }).catch(fail);
+  };
+  const toggleLive = () => {
+    if (live) api.stopBroadcast().then(() => setLive(false)).catch(fail);
+    else { setLiveEnded(null); api.startBroadcast(rtmpUrl, sandbox).then(() => setLive(true)).catch(fail); }
+  };
+
+  const toggleBlack = () =>
+    api.applyCommand({ type: "blackScreen" }).then((d) => {
+      refreshDoc(d);
+      return api.setProgramBlack(d.program?.black ?? false, fadeMs);
+    }).catch(fail);
+  const cut = () => cmd({ type: "cut" });
+
+  const toggleAudio = () => {
+    if (audioOn) api.stopAudio().then(() => { setAudioOn(false); setChannels([]); }).catch(fail);
+    else api.startAudio().then(() => setAudioOn(true)).catch(fail);
+  };
+  const addTone = () => {
+    const id = `tone-${channels.length + 1}`;
+    api.addAudioTone(id, 220 + channels.length * 110)
+      .then(() => setChannels((c) => [...c, { id, gain: 1, muted: false, balance: 0 }]))
+      .catch(fail);
+  };
+  const changeChannel = (ch: MixChannel) => {
+    setChannels((cs) => cs.map((c) => (c.id === ch.id ? ch : c)));
+    api.setAudioChannel(ch.id, ch.gain, ch.muted, ch.balance).catch(fail);
+  };
+
+  const currentLayer = () =>
+    doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === selectedId) ?? null;
 
   return (
-    <div className="shell">
+    <div className="regie">
       <header className="topbar">
-        <span className="brand">STUDIO&nbsp;NATIVE</span>
-        <span className="tag">Tauri · Rust · gstreamer-rs</span>
+        <span className="brand">Studio Native</span>
+        <span className="scene-name">{doc?.scenes.find((s) => s.id === doc.currentSceneId)?.name}</span>
+        <span className="topbar-spacer" />
+        <button className="chip" onClick={() => (running ? api.stopPreview() : api.startPreview().catch(fail))}>
+          {running ? "◼ Moteur" : "▶ Moteur"}
+        </button>
       </header>
 
-      <main className="stage">
-        <section className="panel">
-          <h1>Négociation des capacités</h1>
-          <p className="muted">
-            L&apos;interface se construit à partir de ce que le backend annonce —
-            aucun module n&apos;est câblé en dur. Retirez un module, il disparaît
-            d&apos;ici.
-          </p>
-
-          {error && (
-            <div className="banner err">
-              IPC indisponible : {error}
-              <div className="hint">
-                (normal hors du webview Tauri — lancez via <code>cargo tauri dev</code>)
-              </div>
-            </div>
-          )}
-
-          {!error && !caps && <div className="banner">Interrogation du backend…</div>}
-
-          {caps && (
-            <>
-              <div className="row">
-                <span className="k">Sources</span>
-                <span className="v">{caps.sources.length}</span>
-              </div>
-              <div className="row">
-                <span className="k">Sorties</span>
-                <span className="v">{caps.outputs.length}</span>
-              </div>
-              <div className="row">
-                <span className="k">Encodeurs</span>
-                <span className="v">{caps.encoders.length}</span>
-              </div>
-
-              {caps.encoders.length > 0 && (
-                <ul className="chips">
-                  {caps.encoders.map((e) => (
-                    <li key={e} className="chip">
-                      {e}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {caps.sources.length > 0 && (
-                <ul className="chips">
-                  {caps.sources.map((s) => (
-                    <li key={s} className="chip">
-                      + {SOURCE_LABELS[s] ?? s}
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {!hasMedia && (
-                <div className="banner empty">
-                  Aucun module média chargé. L&apos;app tourne : garantie modulaire à
-                  vide. Les modules apparaîtront ici automatiquement.
-                </div>
-              )}
-            </>
-          )}
-        </section>
-
-        <section className="panel">
-          <h1>Moteur média (CHR-104)</h1>
-          <p className="muted">
-            Compositeur GStreamer 1080p60, piloté par une boucle glib sur son
-            propre thread. Activez la capture d&apos;écran, puis
-            déplacez/redimensionnez le calque : le pad du compositor bouge en
-            direct, pipeline en <code>PLAYING</code> tout du long.
-          </p>
-
-          <div className="monitor" ref={monitorRef}>
-            {preview ? (
-              <img src={preview} alt="Aperçu programme" />
-            ) : (
-              <span className="monitor-empty">Aperçu arrêté</span>
-            )}
-            {screen?.active && (
-              <div
-                className="layer-box"
-                style={{
-                  left: `${layer.x * 100}%`,
-                  top: `${layer.y * 100}%`,
-                  width: `${layer.w * 100}%`,
-                  height: `${layer.h * 100}%`,
-                }}
-                onPointerDown={beginDrag("move")}
-              >
-                <div className="layer-handle" onPointerDown={beginDrag("resize")} />
-              </div>
-            )}
-          </div>
-
-          <div className="preview">
-            <div className="dot" data-on={media?.running ? "1" : "0"} />
-            <span>{media?.running ? "En cours" : "Arrêté"}</span>
-            <span className="frames">{media?.frames ?? 0} frames</span>
-          </div>
-
-          {screenEnded && (
-            <div className="banner err">Partage d&apos;écran arrêté : {screenEnded}</div>
-          )}
-
-          <div className="btnrow">
-            <button
-              className="btn"
-              onClick={() => invoke("start_preview").catch((e) => setError(String(e)))}
-            >
-              Démarrer l&apos;aperçu
-            </button>
-            <button
-              className="btn ghost"
-              onClick={() => invoke("stop_preview").catch(() => {})}
-            >
-              Arrêter
-            </button>
-          </div>
-
-          {media?.running && (
-            <div className="transition">
-              <button
-                className="btn"
-                data-black={studio?.program?.black ? "1" : "0"}
-                onClick={() =>
-                  invoke<StudioDoc>("apply_command", {
-                    command: { type: "blackScreen" },
-                  })
-                    .then((doc) => {
-                      setStudio(doc);
-                      return invoke("set_program_black", {
-                        black: doc.program?.black ?? false,
-                        fadeMs,
-                      });
-                    })
-                    .catch((e) => setError(String(e)))
-                }
-              >
-                {studio?.program?.black ? "☀ Rétablir le programme" : "⬛ Fondu au noir"}
-              </button>
-              <label>
-                Fondu
-                <input
-                  type="number"
-                  min={0}
-                  max={3000}
-                  step={100}
-                  value={fadeMs}
-                  onChange={(e) => setFadeMs(Number(e.target.value) || 0)}
-                />
-                ms
-              </label>
-            </div>
-          )}
-
-          {(caps?.outputs.includes("record") || caps?.outputs.includes("broadcast")) &&
-            encCfg && (
-              <div className="encoder">
-                <label>
-                  Encodeur
-                  <select
-                    value={encCfg.kind}
-                    onChange={(e) => updateEncoder({ kind: e.target.value })}
-                  >
-                    <option value="auto">
-                      auto{encResolved ? ` (→ ${encResolved})` : ""}
-                    </option>
-                    {encoders.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Débit
-                  <input
-                    type="number"
-                    min={500}
-                    max={20000}
-                    step={500}
-                    value={encCfg.bitrate_kbps}
-                    onChange={(e) =>
-                      updateEncoder({ bitrate_kbps: Number(e.target.value) || 4000 })
-                    }
-                  />
-                  kbps
-                </label>
-                <label>
-                  Qualité
-                  <select
-                    value={encCfg.preset}
-                    onChange={(e) =>
-                      updateEncoder({
-                        preset: e.target.value as EncoderConfig["preset"],
-                      })
-                    }
-                  >
-                    <option value="speed">Vitesse</option>
-                    <option value="balanced">Équilibré</option>
-                    <option value="quality">Qualité</option>
-                  </select>
-                </label>
-              </div>
-            )}
-
-          {caps?.outputs.includes("record") && (
-            <div className="btnrow">
-              {!recording ? (
-                <button
-                  className="btn"
-                  onClick={() =>
-                    invoke<string>("start_recording", { path: null })
-                      .then((p) => {
-                        setRecording(true);
-                        setRecPath(p);
-                      })
-                      .catch((e) => setError(String(e)))
-                  }
-                >
-                  ⏺ Enregistrer
-                </button>
-              ) : (
-                <button
-                  className="btn"
-                  style={{ background: "rgba(240,120,120,0.18)", borderColor: "rgba(240,120,120,0.4)", color: "#f0a8a8" }}
-                  onClick={() =>
-                    invoke("stop_recording")
-                      .then(() => setRecording(false))
-                      .catch((e) => setError(String(e)))
-                  }
-                >
-                  ⏹ Arrêter l&apos;enregistrement
-                </button>
-              )}
-            </div>
-          )}
-          {recPath && (
-            <div className="banner">
-              {recording ? "Enregistrement en cours → " : "Enregistré : "}
-              <code>{recPath}</code>
-            </div>
-          )}
-
-          {caps?.outputs.includes("broadcast") && (
-            <>
-              {liveEnded && !live && (
-                <div className="banner err">Diffusion interrompue : {liveEnded}</div>
-              )}
-              <label className="sandbox">
-                <input
-                  type="checkbox"
-                  checked={sandbox}
-                  disabled={live}
-                  onChange={(e) => setSandbox(e.target.checked)}
-                />
-                Mode Test (encode sans diffuser — ni Facebook ni réseau)
-              </label>
-              <input
-                className="picker"
-                type="text"
-                placeholder="rtmps://live-api-s.facebook.com:443/rtmp/CLÉ"
-                value={rtmpUrl}
-                disabled={live || sandbox}
-                onChange={(e) => setRtmpUrl(e.target.value)}
-              />
-              <div className="btnrow">
-                {!live ? (
-                  <button
-                    className="btn"
-                    disabled={!sandbox && !rtmpUrl.trim()}
-                    onClick={() => {
-                      setLiveEnded(null);
-                      invoke("start_broadcast", { rtmpUrl, sandbox })
-                        .then(() => setLive(true))
-                        .catch((e) => setError(String(e)));
-                    }}
-                  >
-                    {sandbox ? "🧪 Lancer le test" : "🔴 Passer en direct"}
-                  </button>
-                ) : (
-                  <button
-                    className="btn"
-                    style={{ background: "rgba(240,120,120,0.18)", borderColor: "rgba(240,120,120,0.4)", color: "#f0a8a8" }}
-                    onClick={() =>
-                      invoke("stop_broadcast")
-                        .then(() => setLive(false))
-                        .catch((e) => setError(String(e)))
-                    }
-                  >
-                    {sandbox ? "⏹ Arrêter le test" : "⏹ Arrêter le direct"}
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-
-          {outStats && (recording || live) && (
-            <div className="stats">
-              <span className="stats-dot" />
-              {outStats.id === "broadcast" ? (sandbox ? "Test" : "Direct") : "Enreg."} ·{" "}
-              {outStats.fps.toFixed(0)} fps · {outStats.kbps.toFixed(0)} kbps
-            </div>
-          )}
-
-          {caps?.sources.includes(SCREEN_SOURCE_ID) && (
-            <div className="btnrow">
-              <button
-                className="btn"
-                disabled={!!screen?.active}
-                onClick={() => {
-                  setScreenEnded(null);
-                  invoke("start_screen_source").catch((e) => setError(String(e)));
-                }}
-              >
-                Activer la capture d&apos;écran
-              </button>
-              <button
-                className="btn ghost"
-                disabled={!screen?.active}
-                onClick={() =>
-                  invoke("stop_screen_source").catch((e) => setError(String(e)))
-                }
-              >
-                Arrêter le partage
-              </button>
-            </div>
-          )}
-
-          {cameraEnded && (
-            <div className="banner err">Caméra arrêtée : {cameraEnded}</div>
-          )}
-
-          {caps?.sources.includes("camera") && (
-            <>
-              {cameras.length > 1 && (
-                <select
-                  className="picker"
-                  value={cameraDeviceId}
-                  disabled={!!camera?.active}
-                  onChange={(e) => setCameraDeviceId(e.target.value)}
-                >
-                  {cameras.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label || c.id}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <div className="btnrow">
-                <button
-                  className="btn"
-                  disabled={!!camera?.active}
-                  onClick={() => {
-                    setCameraEnded(null);
-                    invoke("start_camera_source", {
-                      deviceId: cameraDeviceId || null,
-                    }).catch((e) => setError(String(e)));
-                  }}
-                >
-                  Activer la caméra
-                </button>
-                <button
-                  className="btn ghost"
-                  disabled={!camera?.active}
-                  onClick={() =>
-                    invoke("stop_camera_source").catch((e) => setError(String(e)))
-                  }
-                >
-                  Arrêter la caméra
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className="panel">
-          <h1>Scène (CHR-102)</h1>
-          <p className="muted">
-            Le modèle de scène/calques vit dans <code>studio-core</code> (Rust
-            pur) et se persiste sur disque à chaque édition. Ce que vous ajoutez
-            ici survit à un redémarrage — la preuve du store porté.
-          </p>
-
-          {studio ? (
-            (() => {
-              const scene =
-                studio.scenes.find((s) => s.id === studio.currentSceneId) ??
-                studio.scenes[0];
-              return (
-                <>
-                  <div className="row">
-                    <span className="k">{scene?.name ?? "—"}</span>
-                    <span className="v">{scene?.layers.length ?? 0} calques</span>
-                  </div>
-
-                  {scene && scene.layers.length > 0 ? (
-                    <ul className="chips" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                      {scene.layers.map((l) => (
-                        <li
-                          key={l.id}
-                          className="chip"
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            opacity: l.visible ? 1 : 0.45,
-                          }}
-                        >
-                          <span>
-                            {SOURCE_LABELS[l.kind] ?? l.kind} · {l.name}
-                          </span>
-                          <span style={{ display: "flex", gap: 8 }}>
-                            {["text", "bible", "song"].includes(l.kind) &&
-                              (shownOverlays.has(l.id) ? (
-                                <button
-                                  className="mini"
-                                  onClick={() => toggleOverlay(l.id, false)}
-                                  title="Retirer de l'aperçu"
-                                >
-                                  ■
-                                </button>
-                              ) : (
-                                <button
-                                  className="mini"
-                                  onClick={() => toggleOverlay(l.id, true)}
-                                  title="Afficher sur l'aperçu"
-                                >
-                                  ▶
-                                </button>
-                              ))}
-                            <button
-                              className="mini"
-                              onClick={() => applyCommand({ type: "toggleVisible", id: l.id })}
-                              title={l.visible ? "Masquer" : "Afficher"}
-                            >
-                              {l.visible ? "◉" : "○"}
-                            </button>
-                            <button
-                              className="mini"
-                              onClick={() => {
-                                toggleOverlay(l.id, false);
-                                applyCommand({ type: "removeLayer", id: l.id });
-                              }}
-                              title="Supprimer"
-                            >
-                              ✕
-                            </button>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <div className="banner empty">
-                      Scène vide. Ajoutez un calque — il sera persisté.
-                    </div>
-                  )}
-
-                  <div className="btnrow">
-                    {(["text", "bible", "song"] as const).map((kind) => (
-                      <button
-                        key={kind}
-                        className="btn"
-                        onClick={() =>
-                          applyCommand({ type: "addLayer", kind, id: genId() })
-                        }
-                      >
-                        + {SOURCE_LABELS[kind]}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              );
-            })()
-          ) : (
-            <div className="banner">Chargement du document de scène…</div>
-          )}
-        </section>
-
-        <section className="panel">
-          <h1>Mixage (CHR-107)</h1>
-          <p className="muted">
-            Graphe audio GStreamer (audiomixer) sur sa propre boucle glib. Faders/
-            mute par canal, VU-mètres réels lus des éléments <code>level</code> —
-            l&apos;audio ne passe jamais par le DOM.
-          </p>
-
-          <VuBar label="Master" db={levels.master ?? -60} />
-
-          {audioChannels.map((c) => (
-            <div key={c.id} className="channel">
-              <div className="channel-head">
-                <span>{c.id}</span>
-                <span style={{ display: "flex", gap: 8 }}>
-                  <button
-                    className="mini"
-                    onClick={() => setAudioChannel(c.id, { muted: !c.muted })}
-                    title={c.muted ? "Réactiver" : "Couper"}
-                    style={{ color: c.muted ? "#f0a8a8" : undefined }}
-                  >
-                    {c.muted ? "🔇" : "🔊"}
-                  </button>
-                  <button
-                    className="mini"
-                    onClick={() => {
-                      invoke("remove_audio_channel", { id: c.id }).catch((e) =>
-                        setError(String(e)),
-                      );
-                      setAudioChannels((prev) => prev.filter((x) => x.id !== c.id));
-                    }}
-                    title="Retirer"
-                  >
-                    ✕
-                  </button>
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={c.fader}
-                onChange={(e) => setAudioChannel(c.id, { fader: Number(e.target.value) })}
-              />
-              <VuBar label={`${c.fader}%`} db={levels[c.id] ?? -60} />
-            </div>
-          ))}
-
-          <div className="btnrow">
-            {!audioOn ? (
-              <button
-                className="btn"
-                onClick={() =>
-                  invoke("start_audio")
-                    .then(() => setAudioOn(true))
-                    .catch((e) => setError(String(e)))
-                }
-              >
-                Démarrer le mixage
-              </button>
-            ) : (
-              <>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    const id = `tone-${400 + audioChannels.length * 110}`;
-                    const freq = 400 + audioChannels.length * 110;
-                    invoke("add_audio_tone", { id, freq })
-                      .then(() =>
-                        setAudioChannels((prev) => [...prev, { id, fader: 80, muted: false }]),
-                      )
-                      .catch((e) => setError(String(e)));
-                  }}
-                >
-                  + Tonalité
-                </button>
-                <button
-                  className="btn ghost"
-                  onClick={() =>
-                    invoke("stop_audio").then(() => {
-                      setAudioOn(false);
-                      setAudioChannels([]);
-                      setLevels({});
-                    })
-                  }
-                >
-                  Arrêter
-                </button>
-              </>
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
-  );
-}
-
-/** A simple VU bar: maps a peak dB (−60…0) to a 0–100% width. */
-function VuBar({ label, db }: { label: string; db: number }) {
-  const pct = Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
-  return (
-    <div className="vu">
-      <span className="vu-label">{label}</span>
-      <div className="vu-track">
-        <div className="vu-fill" style={{ width: `${pct}%` }} />
+      <div className="stage">
+        <StageMonitor label="APERÇU" tone="preview" frame={frame} />
+        <TransitionBar black={black} fadeMs={fadeMs} onFadeMs={setFadeMs} onToggleBlack={toggleBlack} onCut={cut} />
+        <StageMonitor
+          label="PROGRAMME"
+          tone="program"
+          frame={frame}
+          dim={black}
+          badge={live ? <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span> : recording ? <span className="onair rec">● REC</span> : undefined}
+        />
       </div>
+
+      <section className="docks">
+        <ResizableRow
+          panels={[
+            { id: "scenes", label: "Scènes", node: <ScenesDock doc={doc} onSelect={(id) => cmd({ type: "selectScene", id })} onAdd={() => cmd({ type: "addScene", id: `scene-${(doc?.scenes.length ?? 0) + 1}` })} /> },
+            { id: "sources", label: "Sources", node: (
+              <SourcesDock doc={doc} caps={caps} cameras={cameras} cameraId={cameraId} onCameraId={setCameraId}
+                screenActive={screenActive} cameraActive={cameraActive} shownOverlays={shownOverlays} selectedId={selectedId}
+                onToggleScreen={toggleScreen} onToggleCamera={toggleCamera} onAddOverlay={addOverlay}
+                onSelectLayer={selectLayer} onToggleOverlay={toggleOverlay} />
+            ) },
+            { id: "mixer", label: "Mixage", node: (
+              <MixerDock audioOn={audioOn} channels={channels} levels={levels} onToggleAudio={toggleAudio} onAddTone={addTone} onChange={changeChannel} />
+            ) },
+            { id: "inspector", label: "Inspecteur", node: (
+              <InspectorDock layer={currentLayer()} transform={transform} onTransform={applyTransform}
+                onToggleVisible={() => { const l = currentLayer(); if (l) cmd({ type: "toggleVisible", id: l.id }); }} />
+            ) },
+            { id: "controls", label: "Commandes", node: (
+              <ControlsDock caps={caps} encoders={encoders} encCfg={encCfg} encResolved={encResolved} onEncoder={setEncoder}
+                recording={recording} recPath={recPath} onToggleRecord={toggleRecord}
+                live={live} liveEnded={liveEnded} sandbox={sandbox} rtmpUrl={rtmpUrl}
+                onSandbox={setSandbox} onRtmpUrl={setRtmpUrl} onToggleLive={toggleLive} />
+            ) },
+          ]}
+        />
+      </section>
+
+      <StatusBar running={running} fps={fps} stats={outStats} live={live} sandbox={sandbox} recording={recording} message={status} />
     </div>
   );
 }
