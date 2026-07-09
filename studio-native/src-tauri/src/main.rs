@@ -222,6 +222,24 @@ mod media {
             .map_err(|e| e.to_string())
     }
 
+    /// Same, on the preview (edit) compositor — the drag surface is the Aperçu
+    /// monitor (CHR-118).
+    #[tauri::command]
+    pub fn set_preview_layer_transform(
+        state: tauri::State<'_, MediaState>,
+        id: String,
+        xpos: i32,
+        ypos: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .set_preview_layer_transform(&id, xpos, ypos, width, height)
+            .map_err(|e| e.to_string())
+    }
+
     /// The programme canvas resolution (1920×1080 today) — the frontend maps its
     /// draggable overlay's fractional coordinates through this before calling
     /// `set_layer_transform`, instead of hardcoding the resolution twice.
@@ -957,6 +975,7 @@ fn main() {
                 media::media_status,
                 media::preview_frame,
                 media::set_layer_transform,
+                media::set_preview_layer_transform,
                 media::canvas_size,
                 media::start_screen_source,
                 media::stop_screen_source,

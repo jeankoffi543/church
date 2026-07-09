@@ -60,7 +60,7 @@ export function App() {
   const [sandbox, setSandbox] = useState(false);
   const [rtmpUrl, setRtmpUrl] = useState("");
 
-  const [fadeMs, setFadeMs] = useState(400);
+  const fadeMs = 400; // fade-to-black duration (the web ÉCRAN VIDE is a toggle)
   const [outStats, setOutStats] = useState<{ fps: number; kbps: number } | null>(null);
   const statsPrev = useRef<{ id: string; frames: number; bytes: number; elapsed_ms: number } | null>(null);
 
@@ -171,7 +171,8 @@ export function App() {
     const sid = sourceIdFor(layer.kind, layer.id);
     if (!sid) return;
     const [cw, ch] = [1920, 1080];
-    api.setLayerTransform(sid, Math.round(t.x * cw), Math.round(t.y * ch),
+    // The drag surface is the Aperçu monitor → move the preview compositor pad.
+    api.setPreviewLayerTransform(sid, Math.round(t.x * cw), Math.round(t.y * ch),
       Math.max(1, Math.round(t.w * cw)), Math.max(1, Math.round(t.h * ch))).catch(() => {});
   };
 
@@ -215,11 +216,13 @@ export function App() {
 
   const currentLayer = () =>
     doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === selectedId) ?? null;
-  // Whether the selected layer has a live compositor pad we can drag on the monitor.
+  // A selected overlay that's staged on the preview compositor can be dragged on
+  // the Aperçu monitor.
   const draggableLayer = () => {
     const l = currentLayer();
-    return l ? sourceIdFor(l.kind, l.id) !== null : false;
+    return !!l && OVERLAY_KINDS.includes(l.kind) && shownRef.current.has(l.id);
   };
+  const sceneName = doc?.scenes.find((s) => s.id === doc.currentSceneId)?.name ?? "—";
 
   // Inspector edit → persist the whole layer, then re-render it on the
   // compositor if it's a currently-shown overlay (so style edits are live).
@@ -253,22 +256,15 @@ export function App() {
       />
 
       <section className="grid h-[clamp(280px,36vh,400px)] flex-none grid-cols-[1fr_124px_1fr] gap-3">
-        <StageMonitor label="APERÇU" tone="preview" frame={prevFrame} />
-        <TransitionBar black={black} fadeMs={fadeMs} onFadeMs={setFadeMs} onToggleBlack={toggleBlack} onCut={cut} />
         <StageMonitor
-          label="PROGRAMME"
-          tone="program"
-          frame={progFrame}
-          dim={black}
-          badge={
-            live ? (
-              <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span>
-            ) : recording ? (
-              <span className="onair rec">● REC</span>
-            ) : undefined
-          }
+          tone="preview"
+          frame={prevFrame}
+          sceneName={sceneName}
+          draggable={draggableLayer()}
           overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
         />
+        <TransitionBar onCut={cut} onBlack={toggleBlack} black={black} busy={false} canCut={true} />
+        <StageMonitor tone="program" frame={progFrame} sceneName={sceneName} black={black} />
       </section>
 
       <ResizableRow
