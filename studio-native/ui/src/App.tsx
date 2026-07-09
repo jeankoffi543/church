@@ -105,6 +105,8 @@ export function App() {
   const [encoders, setEncoders] = useState<string[]>([]);
   const [encCfg, setEncCfg] = useState<EncoderConfig | null>(null);
   const [encResolved, setEncResolved] = useState<string | null>(null);
+  const [sandbox, setSandbox] = useState(false);
+  const [outStats, setOutStats] = useState<{ id: string; fps: number; kbps: number } | null>(null);
   const [audioOn, setAudioOn] = useState(false);
   const [audioChannels, setAudioChannels] = useState<
     { id: string; fader: number; muted: boolean }[]
@@ -113,6 +115,13 @@ export function App() {
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef({ w: 1920, h: 1080 });
+  // Previous encoder-stats sample, to derive live fps/bitrate by delta.
+  const statsPrev = useRef<{
+    id: string;
+    frames: number;
+    bytes: number;
+    elapsed_ms: number;
+  } | null>(null);
   const dragRef = useRef<{
     mode: "move" | "resize";
     startX: number;
@@ -293,6 +302,31 @@ export function App() {
           if (s.ended_reason) setLiveEnded(s.ended_reason);
         })
         .catch(() => {});
+      // Live encoder stats (CHR-112): only the active output returns a sample;
+      // derive fps/bitrate from the delta against the previous poll.
+      (async () => {
+        for (const id of ["broadcast", "record"]) {
+          const s = await invoke<{
+            frames: number;
+            bytes: number;
+            elapsed_ms: number;
+          } | null>("output_stats", { id }).catch(() => null);
+          if (!s) continue;
+          const prev = statsPrev.current;
+          if (prev && prev.id === id && s.elapsed_ms > prev.elapsed_ms) {
+            const dt = (s.elapsed_ms - prev.elapsed_ms) / 1000;
+            setOutStats({
+              id,
+              fps: (s.frames - prev.frames) / dt,
+              kbps: ((s.bytes - prev.bytes) * 8) / dt / 1000,
+            });
+          }
+          statsPrev.current = { id, ...s };
+          return;
+        }
+        statsPrev.current = null;
+        setOutStats(null);
+      })();
     }, 500);
     const frame = setInterval(() => {
       invoke<string | null>("preview_frame")
@@ -530,27 +564,36 @@ export function App() {
               {liveEnded && !live && (
                 <div className="banner err">Diffusion interrompue : {liveEnded}</div>
               )}
+              <label className="sandbox">
+                <input
+                  type="checkbox"
+                  checked={sandbox}
+                  disabled={live}
+                  onChange={(e) => setSandbox(e.target.checked)}
+                />
+                Mode Test (encode sans diffuser — ni Facebook ni réseau)
+              </label>
               <input
                 className="picker"
                 type="text"
                 placeholder="rtmps://live-api-s.facebook.com:443/rtmp/CLÉ"
                 value={rtmpUrl}
-                disabled={live}
+                disabled={live || sandbox}
                 onChange={(e) => setRtmpUrl(e.target.value)}
               />
               <div className="btnrow">
                 {!live ? (
                   <button
                     className="btn"
-                    disabled={!rtmpUrl.trim()}
+                    disabled={!sandbox && !rtmpUrl.trim()}
                     onClick={() => {
                       setLiveEnded(null);
-                      invoke("start_broadcast", { rtmpUrl })
+                      invoke("start_broadcast", { rtmpUrl, sandbox })
                         .then(() => setLive(true))
                         .catch((e) => setError(String(e)));
                     }}
                   >
-                    🔴 Passer en direct
+                    {sandbox ? "🧪 Lancer le test" : "🔴 Passer en direct"}
                   </button>
                 ) : (
                   <button
@@ -562,11 +605,19 @@ export function App() {
                         .catch((e) => setError(String(e)))
                     }
                   >
-                    ⏹ Arrêter le direct
+                    {sandbox ? "⏹ Arrêter le test" : "⏹ Arrêter le direct"}
                   </button>
                 )}
               </div>
             </>
+          )}
+
+          {outStats && (recording || live) && (
+            <div className="stats">
+              <span className="stats-dot" />
+              {outStats.id === "broadcast" ? (sandbox ? "Test" : "Direct") : "Enreg."} ·{" "}
+              {outStats.fps.toFixed(0)} fps · {outStats.kbps.toFixed(0)} kbps
+            </div>
           )}
 
           {caps?.sources.includes(SCREEN_SOURCE_ID) && (

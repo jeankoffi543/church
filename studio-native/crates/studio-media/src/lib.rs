@@ -140,11 +140,31 @@ type EndedMap = Arc<Mutex<HashMap<String, String>>>;
 /// [`SourceBuilder`] on the sink side. Runs on the attaching thread.
 pub type OutputBuilder = Box<dyn FnOnce() -> Result<gst::Bin> + Send>;
 
-/// A live output: its bin + the tee request pad feeding it. Detaching finalises
-/// (EOS) then releases exactly these — nothing upstream is touched.
+/// Live counters for an output's *encoded* stream (CHR-112), fed by a buffer
+/// probe on the output's `stats-tap` element — the `h264parse` carrying encoded
+/// H.264, so `bytes` is the real post-compression size, not raw frames.
+struct StatsInner {
+    frames: AtomicU64,
+    bytes: AtomicU64,
+    start: std::time::Instant,
+}
+
+/// A snapshot of an output's encoded-stream stats: cumulative counters plus how
+/// long it's run, so the caller derives live fps/bitrate by delta between polls.
+#[derive(Clone, Copy, Debug)]
+pub struct OutputStats {
+    pub frames: u64,
+    pub bytes: u64,
+    pub elapsed_ms: u64,
+}
+
+/// A live output: its bin + the tee request pad feeding it, plus (if the bin
+/// exposed a `stats-tap`) its encoded-stream counters. Detaching finalises (EOS)
+/// then releases exactly these — nothing upstream is touched.
 struct OutputHandle {
     bin: gst::Bin,
     tee_pad: gst::Pad,
+    stats: Option<Arc<StatsInner>>,
 }
 
 type OutputMap = Arc<Mutex<HashMap<String, OutputHandle>>>;
@@ -290,6 +310,19 @@ impl MediaEngine {
             .lock()
             .map(|o| o.contains_key(id))
             .unwrap_or(false)
+    }
+
+    /// A snapshot of output `id`'s encoded-stream stats (CHR-112), or `None` if
+    /// it isn't attached or exposes no `stats-tap`. The caller derives live
+    /// fps/bitrate from the delta between successive snapshots.
+    pub fn output_stats(&self, id: &str) -> Option<OutputStats> {
+        let outputs = self.outputs.lock().ok()?;
+        let inner = outputs.get(id)?.stats.as_ref()?;
+        Some(OutputStats {
+            frames: inner.frames.load(Ordering::Relaxed),
+            bytes: inner.bytes.load(Ordering::Relaxed),
+            elapsed_ms: inner.start.elapsed().as_millis() as u64,
+        })
     }
 
     /// Whether `id` is currently attached.
@@ -625,12 +658,43 @@ fn attach_output_impl(
     tee_pad
         .link(&bin_sink)
         .with_context(|| format!("link tee → output '{id}'"))?;
+
+    // Encoded-stream stats (CHR-112): if the output named its post-encoder
+    // parser `stats-tap`, count buffers + bytes off its src pad. Best-effort —
+    // an output without the tap simply has no stats.
+    let stats = bin
+        .by_name("stats-tap")
+        .and_then(|el| el.static_pad("src"))
+        .map(|pad| {
+            let inner = Arc::new(StatsInner {
+                frames: AtomicU64::new(0),
+                bytes: AtomicU64::new(0),
+                start: std::time::Instant::now(),
+            });
+            let probe = inner.clone();
+            pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
+                if let Some(buf) = info.buffer() {
+                    probe.frames.fetch_add(1, Ordering::Relaxed);
+                    probe.bytes.fetch_add(buf.size() as u64, Ordering::Relaxed);
+                }
+                gst::PadProbeReturn::Ok
+            });
+            inner
+        });
+
     bin.sync_state_with_parent()
         .with_context(|| format!("sync output '{id}' state"))?;
     outputs
         .lock()
         .map_err(|_| anyhow!("outputs lock poisoned"))?
-        .insert(id, OutputHandle { bin, tee_pad });
+        .insert(
+            id,
+            OutputHandle {
+                bin,
+                tee_pad,
+                stats,
+            },
+        );
     Ok(())
 }
 
@@ -640,7 +704,7 @@ fn attach_output_impl(
 /// Runs on the caller's thread (the Tauri command thread), never the streaming
 /// thread — safe to block.
 fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
-    let OutputHandle { bin, tee_pad } = handle;
+    let OutputHandle { bin, tee_pad, .. } = handle;
     let bin_sink = match bin.static_pad("sink") {
         Some(p) => p,
         None => {
@@ -724,7 +788,7 @@ fn take_output(outputs: &OutputMap, id: &str) -> Result<OutputHandle> {
 /// just unlink, release the tee pad, and drop the bin. (Clean stops go through
 /// [`finalise_output`], which EOS-flushes the muxer first.)
 fn teardown_output_now(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
-    let OutputHandle { bin, tee_pad } = handle;
+    let OutputHandle { bin, tee_pad, .. } = handle;
     let pipeline = pipeline.clone();
     let tee = tee.clone();
     tee_pad.add_probe(gst::PadProbeType::IDLE, move |pad, _info| {

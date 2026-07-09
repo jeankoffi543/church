@@ -330,6 +330,37 @@ code {
   width: 76px;
 }
 
+.sandbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted, #9aa);
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.stats-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #58d06a;
+  box-shadow: 0 0 6px #58d06a;
+}
+
 .channel {
   margin-top: 14px;
   padding-top: 12px;

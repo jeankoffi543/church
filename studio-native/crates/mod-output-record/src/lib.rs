@@ -73,7 +73,10 @@ pub fn build_record_bin(path: &Path, cfg: &EncoderConfig) -> Result<gst::Bin> {
         .context("make queue")?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
     let enc = mod_encoder::build_h264(cfg).context("build encoder")?;
-    let parse = gst::ElementFactory::make("h264parse").build()?;
+    // Named so studio-media can tap it for encoded-stream stats (CHR-112).
+    let parse = gst::ElementFactory::make("h264parse")
+        .name("stats-tap")
+        .build()?;
     let mux = make_muxer(path)?;
     let sink = gst::ElementFactory::make("filesink")
         .name("record-filesink")

@@ -51,6 +51,33 @@ pub fn is_available() -> bool {
 /// [`studio_media::OutputBuilder`].
 pub fn build_broadcast_bin(rtmp_url: &str, cfg: &EncoderConfig) -> Result<gst::Bin> {
     let _ = gst::init();
+    let sink = gst::ElementFactory::make("rtmp2sink")
+        .name("broadcast-sink")
+        .property("location", rtmp_url)
+        .build()
+        .context("make rtmp2sink")?;
+    build_with_sink(sink, cfg)
+}
+
+/// **Sandbox / Test mode** (CHR-112, CHR-59 parity): the identical encode +
+/// mux chain, but terminating in a `fakesink` instead of `rtmp2sink` — it
+/// encodes the full programme (so the encoder stats are *real*) yet touches
+/// neither Facebook nor any relay. Nothing leaves the machine.
+pub fn build_sandbox_bin(cfg: &EncoderConfig) -> Result<gst::Bin> {
+    let _ = gst::init();
+    let sink = gst::ElementFactory::make("fakesink")
+        .name("broadcast-sink")
+        // Behave like a real live sink: honour the clock so the stats reflect
+        // true throughput rather than running as fast as the CPU allows.
+        .property("sync", true)
+        .build()
+        .context("make fakesink")?;
+    build_with_sink(sink, cfg)
+}
+
+/// Shared builder for both the live and sandbox variants — everything up to the
+/// terminal sink is identical, which is the whole point of Test mode.
+fn build_with_sink(sink: gst::Element, cfg: &EncoderConfig) -> Result<gst::Bin> {
     let bin = gst::Bin::new();
 
     // ── video branch (from the tee) ──
@@ -61,7 +88,10 @@ pub fn build_broadcast_bin(rtmp_url: &str, cfg: &EncoderConfig) -> Result<gst::B
         .context("make video queue")?;
     let vconvert = gst::ElementFactory::make("videoconvert").build()?;
     let x264 = mod_encoder::build_h264(cfg).context("build encoder")?;
-    let h264parse = gst::ElementFactory::make("h264parse").build()?;
+    // Named so studio-media can tap it for encoded-stream stats (CHR-112).
+    let h264parse = gst::ElementFactory::make("h264parse")
+        .name("stats-tap")
+        .build()?;
 
     // ── silent audio branch (Facebook needs an audio track) ──
     let asrc = gst::ElementFactory::make("audiotestsrc")
@@ -84,11 +114,6 @@ pub fn build_broadcast_bin(rtmp_url: &str, cfg: &EncoderConfig) -> Result<gst::B
         .build()
         .context("make flvmux")?;
     let oqueue = gst::ElementFactory::make("queue").build()?;
-    let sink = gst::ElementFactory::make("rtmp2sink")
-        .name("broadcast-sink")
-        .property("location", rtmp_url)
-        .build()
-        .context("make rtmp2sink")?;
 
     bin.add_many([
         &vqueue, &vconvert, &x264, &h264parse, &asrc, &aconvert, &aresample, &aac, &aacparse,
@@ -131,6 +156,53 @@ mod tests {
         assert!(
             bin.static_pad("sink").is_some(),
             "broadcast bin needs a ghost sink pad"
+        );
+        // The sandbox variant builds the same way (fakesink terminus).
+        let sb = build_sandbox_bin(&EncoderConfig::default()).expect("build sandbox bin");
+        assert!(
+            sb.static_pad("sink").is_some(),
+            "sandbox bin needs a ghost sink pad"
+        );
+    }
+
+    /// Test mode (CHR-112 / CHR-59 parity): the sandbox broadcast encodes the
+    /// full programme and reports *real* encoder stats, while touching no network
+    /// — end-to-end, headless. Proves both the sandbox terminus and the
+    /// encoded-stream stats probe (`stats-tap`).
+    #[test]
+    fn sandbox_encodes_and_reports_real_stats_without_network() {
+        let engine = studio_media::MediaEngine::start().expect("engine");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        engine
+            .attach_output(
+                "broadcast",
+                Box::new(|| build_sandbox_bin(&EncoderConfig::default())),
+            )
+            .expect("attach sandbox");
+        assert!(engine.is_output_active("broadcast"));
+
+        // Encode ~1.2 s of programme.
+        std::thread::sleep(Duration::from_millis(1200));
+        let stats = engine
+            .output_stats("broadcast")
+            .expect("stats present for a stats-tap output");
+        engine.detach_output("broadcast").expect("finalise sandbox");
+        engine.stop();
+
+        assert!(
+            stats.frames > 0,
+            "sandbox should encode frames, got {}",
+            stats.frames
+        );
+        assert!(
+            stats.bytes > 0,
+            "sandbox should produce encoded bytes, got {}",
+            stats.bytes
         );
     }
 
