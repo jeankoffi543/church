@@ -22,6 +22,21 @@ type ScreenStatus = {
 
 const SCREEN_SOURCE_ID = "screen";
 
+/** Minimal mirrors of the Rust `studio_core::Studio` (CHR-102). We only type the
+ *  fields this panel renders; the full document carries far more per layer. */
+type StudioLayerLite = { id: string; kind: string; name: string; visible: boolean };
+type StudioScene = { id: string; name: string; layers: StudioLayerLite[] };
+type StudioDoc = {
+  scenes: StudioScene[];
+  currentSceneId: string;
+  selectedLayerId: string | null;
+};
+
+/** A command for the Rust store's `apply_command` (internally-tagged JSON). */
+type StudioCommand = Record<string, unknown> & { type: string };
+
+const genId = () => `layer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
 /** The layer's position/size as fractions (0..1) of the programme canvas —
  * resolution-independent, so it survives the webview resizing without any
  * recalculation: the overlay is rendered in CSS `%`, which the browser keeps in
@@ -62,6 +77,7 @@ export function App() {
   // in exactly one poll. Latch it here so the "partage arrêté" banner stays up
   // until the user acts, instead of flashing for one 500 ms poll cycle.
   const [screenEnded, setScreenEnded] = useState<string | null>(null);
+  const [studio, setStudio] = useState<StudioDoc | null>(null);
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef({ w: 1920, h: 1080 });
@@ -81,6 +97,19 @@ export function App() {
         canvasRef.current = { w, h };
       })
       .catch(() => {});
+    // The scene document is persisted in Rust — it's already populated here on a
+    // fresh launch (proving CHR-102 persistence: what you added survives a restart).
+    invoke<StudioDoc>("get_studio_state")
+      .then(setStudio)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  // Every scene edit goes through the Rust store, which persists to disk and
+  // hands back the new document to re-render from.
+  const applyCommand = useCallback((command: StudioCommand) => {
+    invoke<StudioDoc>("apply_command", { command })
+      .then(setStudio)
+      .catch((e) => setError(String(e)));
   }, []);
 
   // Push the layer's fractional transform to the engine, in canvas pixels — the
@@ -308,6 +337,88 @@ export function App() {
                 Arrêter le partage
               </button>
             </div>
+          )}
+        </section>
+
+        <section className="panel">
+          <h1>Scène (CHR-102)</h1>
+          <p className="muted">
+            Le modèle de scène/calques vit dans <code>studio-core</code> (Rust
+            pur) et se persiste sur disque à chaque édition. Ce que vous ajoutez
+            ici survit à un redémarrage — la preuve du store porté.
+          </p>
+
+          {studio ? (
+            (() => {
+              const scene =
+                studio.scenes.find((s) => s.id === studio.currentSceneId) ??
+                studio.scenes[0];
+              return (
+                <>
+                  <div className="row">
+                    <span className="k">{scene?.name ?? "—"}</span>
+                    <span className="v">{scene?.layers.length ?? 0} calques</span>
+                  </div>
+
+                  {scene && scene.layers.length > 0 ? (
+                    <ul className="chips" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                      {scene.layers.map((l) => (
+                        <li
+                          key={l.id}
+                          className="chip"
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            opacity: l.visible ? 1 : 0.45,
+                          }}
+                        >
+                          <span>
+                            {SOURCE_LABELS[l.kind] ?? l.kind} · {l.name}
+                          </span>
+                          <span style={{ display: "flex", gap: 8 }}>
+                            <button
+                              className="mini"
+                              onClick={() => applyCommand({ type: "toggleVisible", id: l.id })}
+                              title={l.visible ? "Masquer" : "Afficher"}
+                            >
+                              {l.visible ? "◉" : "○"}
+                            </button>
+                            <button
+                              className="mini"
+                              onClick={() => applyCommand({ type: "removeLayer", id: l.id })}
+                              title="Supprimer"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="banner empty">
+                      Scène vide. Ajoutez un calque — il sera persisté.
+                    </div>
+                  )}
+
+                  <div className="btnrow">
+                    {(["text", "image", "bible"] as const).map((kind) => (
+                      <button
+                        key={kind}
+                        className="btn"
+                        onClick={() =>
+                          applyCommand({ type: "addLayer", kind, id: genId() })
+                        }
+                      >
+                        + {SOURCE_LABELS[kind]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              );
+            })()
+          ) : (
+            <div className="banner">Chargement du document de scène…</div>
           )}
         </section>
       </main>
