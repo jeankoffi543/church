@@ -295,3 +295,52 @@ code {
 .picker:disabled {
   opacity: 0.5;
 }
+
+.channel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.channel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.channel input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.vu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+.vu-label {
+  width: 56px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vu-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.vu-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5ee08a 0%, #e2d15f 70%, #f0787a 100%);
+  transition: width 80ms linear;
+}

@@ -87,6 +87,13 @@ export function App() {
   const [studio, setStudio] = useState<StudioDoc | null>(null);
   // Overlay layer ids currently shown on the compositor (optimistic UI state).
   const [shownOverlays, setShownOverlays] = useState<Set<string>>(new Set());
+  // Audio mixer (CHR-107): running flag, channel strips, and the real VU levels
+  // (dB per channel id + "master") polled from the Rust `level` elements.
+  const [audioOn, setAudioOn] = useState(false);
+  const [audioChannels, setAudioChannels] = useState<
+    { id: string; fader: number; muted: boolean }[]
+  >([]);
+  const [levels, setLevels] = useState<Record<string, number>>({});
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef({ w: 1920, h: 1080 });
@@ -127,6 +134,37 @@ export function App() {
       .then(setStudio)
       .catch((e) => setError(String(e)));
   }, []);
+
+  // Poll the real VU levels while the mixer runs (~20 Hz — off the DOM).
+  useEffect(() => {
+    if (!audioOn) return;
+    const t = setInterval(() => {
+      invoke<Record<string, number>>("audio_levels")
+        .then(setLevels)
+        .catch(() => {});
+    }, 100);
+    return () => clearInterval(t);
+  }, [audioOn]);
+
+  const setAudioChannel = useCallback(
+    (id: string, patch: Partial<{ fader: number; muted: boolean }>) => {
+      setAudioChannels((prev) =>
+        prev.map((c) => {
+          if (c.id !== id) return c;
+          const next = { ...c, ...patch };
+          invoke("set_audio_channel", {
+            id,
+            fader: next.fader,
+            muted: next.muted,
+            gainDb: 0,
+            balance: 0,
+          }).catch((e) => setError(String(e)));
+          return next;
+        }),
+      );
+    },
+    [],
+  );
 
   // Show/hide a text/bible/song layer on the compositor (CHR-106). The overlay
   // is rendered from the store's layer by the Rust side (cairo+pango).
@@ -526,7 +564,113 @@ export function App() {
             <div className="banner">Chargement du document de scène…</div>
           )}
         </section>
+
+        <section className="panel">
+          <h1>Mixage (CHR-107)</h1>
+          <p className="muted">
+            Graphe audio GStreamer (audiomixer) sur sa propre boucle glib. Faders/
+            mute par canal, VU-mètres réels lus des éléments <code>level</code> —
+            l&apos;audio ne passe jamais par le DOM.
+          </p>
+
+          <VuBar label="Master" db={levels.master ?? -60} />
+
+          {audioChannels.map((c) => (
+            <div key={c.id} className="channel">
+              <div className="channel-head">
+                <span>{c.id}</span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button
+                    className="mini"
+                    onClick={() => setAudioChannel(c.id, { muted: !c.muted })}
+                    title={c.muted ? "Réactiver" : "Couper"}
+                    style={{ color: c.muted ? "#f0a8a8" : undefined }}
+                  >
+                    {c.muted ? "🔇" : "🔊"}
+                  </button>
+                  <button
+                    className="mini"
+                    onClick={() => {
+                      invoke("remove_audio_channel", { id: c.id }).catch((e) =>
+                        setError(String(e)),
+                      );
+                      setAudioChannels((prev) => prev.filter((x) => x.id !== c.id));
+                    }}
+                    title="Retirer"
+                  >
+                    ✕
+                  </button>
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={c.fader}
+                onChange={(e) => setAudioChannel(c.id, { fader: Number(e.target.value) })}
+              />
+              <VuBar label={`${c.fader}%`} db={levels[c.id] ?? -60} />
+            </div>
+          ))}
+
+          <div className="btnrow">
+            {!audioOn ? (
+              <button
+                className="btn"
+                onClick={() =>
+                  invoke("start_audio")
+                    .then(() => setAudioOn(true))
+                    .catch((e) => setError(String(e)))
+                }
+              >
+                Démarrer le mixage
+              </button>
+            ) : (
+              <>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    const id = `tone-${400 + audioChannels.length * 110}`;
+                    const freq = 400 + audioChannels.length * 110;
+                    invoke("add_audio_tone", { id, freq })
+                      .then(() =>
+                        setAudioChannels((prev) => [...prev, { id, fader: 80, muted: false }]),
+                      )
+                      .catch((e) => setError(String(e)));
+                  }}
+                >
+                  + Tonalité
+                </button>
+                <button
+                  className="btn ghost"
+                  onClick={() =>
+                    invoke("stop_audio").then(() => {
+                      setAudioOn(false);
+                      setAudioChannels([]);
+                      setLevels({});
+                    })
+                  }
+                >
+                  Arrêter
+                </button>
+              </>
+            )}
+          </div>
+        </section>
       </main>
+    </div>
+  );
+}
+
+/** A simple VU bar: maps a peak dB (−60…0) to a 0–100% width. */
+function VuBar({ label, db }: { label: string; db: number }) {
+  const pct = Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
+  return (
+    <div className="vu">
+      <span className="vu-label">{label}</span>
+      <div className="vu-track">
+        <div className="vu-fill" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

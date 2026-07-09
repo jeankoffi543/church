@@ -1,0 +1,14 @@
+[package]
+name = "mod-audio-mixer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-107 — audio mixer (AudioNode). audiomixer graph with per-channel fader/mute/gain/balance and real VU meters (level element), on a dedicated glib loop. Replaces the web AudioContext/mixDest. Removable: absent ⇒ silent broadcast, the rest runs."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"
+
+[dev-dependencies]
+# (self-contained: channels are fed by audiotestsrc in tests — no device needed)
