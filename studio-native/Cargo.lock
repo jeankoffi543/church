@@ -2062,6 +2062,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-output-broadcast"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gstreamer",
+ "studio-media",
+]
+
+[[package]]
 name = "mod-output-record"
 version = "0.1.0"
 dependencies = [
@@ -3300,6 +3309,7 @@ dependencies = [
  "base64 0.22.1",
  "mod-audio-mixer",
  "mod-camera",
+ "mod-output-broadcast",
  "mod-output-record",
  "mod-overlays",
  "mod-screen-capture",

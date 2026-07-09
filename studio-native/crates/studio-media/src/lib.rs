@@ -631,6 +631,38 @@ fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputH
     let _ = pipeline.remove(&bin);
 }
 
+/// Remove an output from the map, for the error-teardown path in the bus watch.
+fn take_output(outputs: &OutputMap, id: &str) -> Result<OutputHandle> {
+    outputs
+        .lock()
+        .map_err(|_| anyhow!("outputs lock poisoned"))?
+        .remove(id)
+        .ok_or_else(|| anyhow!("no such output: {id}"))
+}
+
+/// Tear an output branch down **immediately, without EOS** — for when it has
+/// *errored* (the broadcast connection died): there's nothing to finalise, we
+/// just unlink, release the tee pad, and drop the bin. (Clean stops go through
+/// [`finalise_output`], which EOS-flushes the muxer first.)
+fn teardown_output_now(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
+    let OutputHandle { bin, tee_pad } = handle;
+    let pipeline = pipeline.clone();
+    let tee = tee.clone();
+    tee_pad.add_probe(gst::PadProbeType::IDLE, move |pad, _info| {
+        if let Some(peer) = pad.peer() {
+            let _ = pad.unlink(&peer);
+        }
+        tee.release_request_pad(pad);
+        let pipeline = pipeline.clone();
+        bin.call_async(move |bin| {
+            let _ = bin.set_state(gst::State::Null);
+            let _ = bin.state(gst::ClockTime::from_seconds(2));
+            let _ = pipeline.remove(bin);
+        });
+        gst::PadProbeReturn::Remove
+    });
+}
+
 /// Whether a bus message's source element lives inside (or *is*) `bin` — how
 /// the bus watch attributes an `Error` message to one of our tracked sources
 /// rather than to the shared compositor/encode chain.
@@ -678,7 +710,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let loop_for_watch = main_loop.clone();
         let pipeline_for_watch = pipeline.clone();
         let compositor_for_watch = compositor.clone();
+        let tee_for_watch = tee.clone();
         let sources_for_watch = sources.clone();
+        let outputs_for_watch = outputs.clone();
         let ended_for_watch = ended.clone();
         let _watch = bus
             .add_watch(move |_, msg| {
@@ -710,6 +744,28 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                                 &id,
                                 err.error().to_string(),
                             );
+                            return glib::ControlFlow::Continue;
+                        }
+                        // Or a tracked OUTPUT (a broadcast connection dropping,
+                        // a disk filling)? Tear that output down and keep the
+                        // programme + preview alive — a Facebook drop must never
+                        // kill the studio. The reason is readable via
+                        // `take_ended_reason(output_id)`.
+                        let out_owner = msg.src().and_then(|src_obj| {
+                            outputs_for_watch.lock().ok().and_then(|guard| {
+                                guard
+                                    .iter()
+                                    .find(|(_, h)| belongs_to(src_obj, &h.bin))
+                                    .map(|(id, _)| id.clone())
+                            })
+                        });
+                        if let Some(id) = out_owner {
+                            if let Ok(handle) = take_output(&outputs_for_watch, &id) {
+                                teardown_output_now(&pipeline_for_watch, &tee_for_watch, handle);
+                            }
+                            if let Ok(mut e) = ended_for_watch.lock() {
+                                e.insert(id, err.error().to_string());
+                            }
                             return glib::ControlFlow::Continue;
                         }
                         // Unrecognised (compositor/convert/jpeg chain, pipeline-level)

@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # The media plane is a REMOVABLE module. With it off, the shell still runs and
 # reports zero encoders (CHR-101 behaviour) — the modular guarantee, at the
 # compile level.
-default = ["media", "screen", "camera", "overlays", "audio", "record"]
+default = ["media", "screen", "camera", "overlays", "audio", "record", "broadcast"]
 media = ["dep:studio-media", "dep:base64"]
 # Screen capture is its own removable module; it needs the media plane.
 screen = ["media", "dep:mod-screen-capture"]
@@ -29,6 +29,8 @@ overlays = ["media", "dep:mod-overlays"]
 audio = ["media", "dep:mod-audio-mixer"]
 # Local recording output is its own removable module; needs media.
 record = ["media", "dep:mod-output-record"]
+# External broadcast (Facebook RTMPS) output is its own removable module.
+broadcast = ["media", "dep:mod-output-broadcast"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -48,5 +50,7 @@ mod-overlays = { path = "../crates/mod-overlays", optional = true }
 mod-audio-mixer = { path = "../crates/mod-audio-mixer", optional = true }
 # Local recording output module — optional, behind the `record` feature.
 mod-output-record = { path = "../crates/mod-output-record", optional = true }
+# External broadcast output module — optional, behind the `broadcast` feature.
+mod-output-broadcast = { path = "../crates/mod-output-broadcast", optional = true }
 # Preview frames are shipped to the webview as base64 data-URLs.
 base64 = { version = "0.22", optional = true }
