@@ -31,17 +31,26 @@ function dbLabel(level: number) {
 const gainLabel = (g: number) => `${g > 0 ? "+" : ""}${g} dB`;
 const panLabel = (p: number) => (p === 0 ? "Centre" : p < 0 ? `G ${Math.abs(p)}` : `D ${p}`);
 
-/** Animated VU bar — DOM-driven (no React re-render), synthesised for active
- * audio channels (real per-layer metering is a later engine step). Ported from
- * the web VuMeter. */
-function VuMeter({ channel }: { channel: StudioLayer }) {
+/** Animated VU bar. Uses the REAL engine level (dB peak → %) when the channel has
+ * a bus channel (CHR-124); otherwise synthesises for active audio. DOM-driven
+ * (no React re-render on the hot path). Ported from the web VuMeter. */
+function VuMeter({ channel, levelDb }: { channel: StudioLayer; levelDb: number | null }) {
   const barRef = useRef<HTMLDivElement>(null);
   const peakRef = useRef(0);
   const channelRef = useRef(channel);
+  const hasReal = levelDb != null && Number.isFinite(levelDb);
   useEffect(() => {
     channelRef.current = channel;
   }, [channel]);
+  // Real level: drive the bar from the polled dB peak.
   useEffect(() => {
+    if (!hasReal || !barRef.current) return;
+    const pct = Math.max(0, Math.min(100, (((levelDb as number) + 60) / 60) * 100));
+    barRef.current.style.transform = `scaleX(${(100 - pct) / 100})`;
+  }, [levelDb, hasReal]);
+  // Synthesised fallback only when there's no real bus channel.
+  useEffect(() => {
+    if (hasReal) return;
     const timer = setInterval(() => {
       const ch = channelRef.current;
       const target = isAudioActive(ch) ? Math.random() * ((ch.audioLevel ?? 80) * 0.9) : 0;
@@ -52,7 +61,7 @@ function VuMeter({ channel }: { channel: StudioLayer }) {
       }
     }, 70);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasReal]);
   return (
     <div className="relative h-[9px] overflow-hidden rounded-[5px] border border-white/6 bg-[#0a0613]">
       <div className="absolute inset-0 bg-gradient-to-r from-studio-preview via-[#fbbf24] to-studio-onair" />
@@ -72,9 +81,11 @@ function VuMeter({ channel }: { channel: StudioLayer }) {
  */
 export function MixerDock({
   channels,
+  levels = {},
   onChange,
 }: {
   channels: StudioLayer[];
+  levels?: Record<string, number>;
   onChange: (id: string, patch: AudioPatch) => void;
 }) {
   const [monitorMuted, setMonitorMuted] = useState(false);
@@ -163,7 +174,7 @@ export function MixerDock({
                   )}
                 </div>
 
-                <VuMeter channel={ch} />
+                <VuMeter channel={ch} levelDb={ch.id in levels ? levels[ch.id] : null} />
 
                 <div className="flex items-center gap-2.5">
                   <button

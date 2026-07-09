@@ -58,6 +58,8 @@ export function App() {
   const [rtmpsUrl, setRtmpsUrl] = useState("");
   const [streamKey, setStreamKey] = useState("");
 
+  const [levels, setLevels] = useState<Record<string, number>>({});
+  const audioChanRef = useRef<Set<string>>(new Set());
   const [dualLayout, setDualLayout] = useState(true);
   const [dockResetNonce, setDockResetNonce] = useState(0);
   const [replayOnCut, setReplayOnCut] = useState(true);
@@ -112,6 +114,7 @@ export function App() {
     const f = setInterval(() => {
       api.programFrame().then((u) => u && setProgFrame(u)).catch(() => {});
       api.previewMonitorFrame().then((u) => u && setPrevFrame(u)).catch(() => {});
+      api.mixerLevels().then(setLevels).catch(() => {});
     }, 120);
     return () => { clearInterval(t); clearInterval(f); };
   }, []);
@@ -157,6 +160,20 @@ export function App() {
     // Start the camera with the LAYER's chosen device (inspector picker, CHR-123).
     if (camLayer && !cameraActive) api.startCamera(((camLayer.deviceId as string) || cameraId) || null).catch(() => {});
     if (!camLayer && cameraActive) api.stopCamera().catch(() => {});
+
+    // Audio bus channels (CHR-124): each visible "audio" source gets a real bus
+    // channel (a tone stand-in until real input capture) that the mixer drives
+    // and the outputs carry. Reconcile against what's attached.
+    const wantAudio = new Set(layers.filter((l) => l.kind === "audio" && l.visible).map((l) => l.id));
+    const curAudio = audioChanRef.current;
+    for (const l of layers) {
+      if (wantAudio.has(l.id) && !curAudio.has(l.id)) {
+        api.mixerChannelAdd(l.id, 220).catch(() => {});
+        api.mixerChannelSet(l.id, (l.audioLevel as number) ?? 80, (l.audioGain as number) ?? 0, (l.audioMuted as boolean) ?? false, (l.audioBalance as number) ?? 0).catch(() => {});
+      }
+    }
+    for (const id of curAudio) if (!wantAudio.has(id)) api.mixerChannelRemove(id).catch(() => {});
+    audioChanRef.current = wantAudio;
   }, [doc, screenActive, cameraActive, cameraId]);
 
   // CUT: promote the preview's staged overlays to the PROGRAMME (on-air +
@@ -221,7 +238,11 @@ export function App() {
   const onLayerAudio = (id: string, patch: AudioPatch) => {
     const layer = doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === id);
     if (!layer) return;
-    cmd({ type: "replaceLayer", layer: { ...layer, ...patch } });
+    const next = { ...layer, ...patch };
+    cmd({ type: "replaceLayer", layer: next });
+    // Drive the engine bus channel live (real audio in the outputs, CHR-124).
+    // No-op / caught for layers without a bus channel yet (camera/screen/video).
+    api.mixerChannelSet(id, next.audioLevel ?? 80, next.audioGain ?? 0, next.audioMuted ?? false, next.audioBalance ?? 0).catch(() => {});
   };
 
   const currentLayer = () =>
@@ -332,7 +353,7 @@ export function App() {
           {
             id: "mixer",
             label: "Mixage",
-            node: <MixerDock channels={mixerChannels()} onChange={onLayerAudio} />,
+            node: <MixerDock channels={mixerChannels()} levels={levels} onChange={onLayerAudio} />,
           },
           {
             id: "inspector",

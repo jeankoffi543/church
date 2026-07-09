@@ -192,10 +192,11 @@ struct Ready {
     preview_sources: SourceMap,
     preview_frames: Arc<AtomicU64>,
     preview_latest: FrameSlot,
-    // Audio bus: mixer + tee the outputs tap, and its channels (CHR-116).
+    // Audio bus: mixer + tee the outputs tap, its channels, and the VU levels.
     audio_mixer: gst::Element,
     audio_tee: gst::Element,
-    audio_channels: SourceMap,
+    audio_channels: AudioChannelMap,
+    audio_levels: LevelMap,
 }
 
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
@@ -227,7 +228,9 @@ pub struct MediaEngine {
     /// recorded/broadcast A/V is synced by construction.
     audio_mixer: gst::Element,
     audio_tee: gst::Element,
-    audio_channels: SourceMap,
+    audio_channels: AudioChannelMap,
+    /// Real VU peaks per channel id (+ `"master"`), from `level` bus messages.
+    audio_levels: LevelMap,
     /// Per-source animation epoch (CHR-110). Each new entrance/reaction bumps its
     /// source's counter; a running animation thread stops as soon as its captured
     /// epoch is superseded, so a re-trigger cleanly cancels the previous one.
@@ -270,6 +273,7 @@ impl MediaEngine {
                 audio_mixer: r.audio_mixer,
                 audio_tee: r.audio_tee,
                 audio_channels: r.audio_channels,
+                audio_levels: r.audio_levels,
                 anim_epochs: Arc::new(Mutex::new(HashMap::new())),
                 thread: Some(thread),
             }),
@@ -369,33 +373,68 @@ impl MediaEngine {
         )
     }
 
-    /// Add a tone (`Some(hz)`) or silent (`None`) audio channel to the bus
-    /// (CHR-116), so it reaches the outputs' muxers. Full mic/media channel types
-    /// + the UI mixer routing are the labelled next step.
+    /// Add a tone (`Some(hz)`) or silent (`None`) audio channel to the bus, with
+    /// its own volume/pan/level chain — the mixer faders drive it live (CHR-124)
+    /// and it reaches the outputs' muxers (CHR-116).
     pub fn add_audio_channel(&self, id: impl Into<String>, freq: Option<f64>) -> Result<()> {
-        let bin = audio_channel_bin(freq)?;
         attach_audio_channel(
             &self.pipeline,
             &self.audio_mixer,
             id.into(),
-            bin,
+            freq,
             &self.audio_channels,
         )
     }
 
     pub fn remove_audio_channel(&self, id: &str) -> Result<()> {
-        let handle = {
+        let ch = {
             self.audio_channels
                 .lock()
                 .map_err(|_| anyhow!("audio channels lock poisoned"))?
                 .remove(id)
                 .ok_or_else(|| anyhow!("no such audio channel: {id}"))?
         };
-        // Release the mixer pad + drop the channel bin.
-        self.audio_mixer.release_request_pad(&handle.pad);
-        let _ = handle.bin.set_state(gst::State::Null);
-        let _ = self.pipeline.remove(&handle.bin);
+        self.audio_mixer.release_request_pad(&ch.mixer_pad);
+        let _ = ch.bin.set_state(gst::State::Null);
+        let _ = self.pipeline.remove(&ch.bin);
+        if let Ok(mut m) = self.audio_levels.lock() {
+            m.remove(id);
+        }
         Ok(())
+    }
+
+    /// Set an audio channel's fader (0..100) / gain (dB) / mute / balance
+    /// (−100..+100), live (CHR-124) — the real audio the outputs carry.
+    pub fn set_audio_channel(
+        &self,
+        id: &str,
+        fader: f64,
+        gain_db: f64,
+        muted: bool,
+        balance: f64,
+    ) -> Result<()> {
+        let channels = self
+            .audio_channels
+            .lock()
+            .map_err(|_| anyhow!("audio channels lock poisoned"))?;
+        let ch = channels
+            .get(id)
+            .ok_or_else(|| anyhow!("no such audio channel: {id}"))?;
+        ch.volume
+            .set_property("volume", linear_volume(fader, gain_db, muted));
+        ch.volume.set_property("mute", muted);
+        ch.panorama
+            .set_property("panorama", (balance / 100.0).clamp(-1.0, 1.0) as f32);
+        Ok(())
+    }
+
+    /// Real VU peaks (dB, ≤ 0) per channel id (+ `"master"`), from the `level`
+    /// elements (CHR-124).
+    pub fn audio_levels(&self) -> HashMap<String, f64> {
+        self.audio_levels
+            .lock()
+            .map(|l| l.clone())
+            .unwrap_or_default()
     }
 
     /// Whether audio channel `id` is attached to the bus.
@@ -1204,6 +1243,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
 
         // Audio bus in the SAME pipeline (CHR-116) — outputs tap this.
         let (audio_mixer, audio_tee, audio_channels) = build_audio_bus(&pipeline)?;
+        let audio_levels: LevelMap = Arc::new(Mutex::new(HashMap::new()));
 
         add_source_impl(
             &pipeline,
@@ -1235,6 +1275,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let ended_for_watch = ended.clone();
         let preview_compositor_for_watch = preview_compositor.clone();
         let preview_sources_for_watch = preview_sources.clone();
+        let audio_levels_for_watch = audio_levels.clone();
         let _watch = bus
             .add_watch(move |_, msg| {
                 use gst::MessageView;
@@ -1335,6 +1376,12 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                         }
                         glib::ControlFlow::Continue
                     }
+                    // Real VU meters (CHR-124): the `level` elements post peak
+                    // messages here; attribute each to its channel id.
+                    MessageView::Element(_) => {
+                        capture_level(&audio_levels_for_watch, msg);
+                        glib::ControlFlow::Continue
+                    }
                     _ => glib::ControlFlow::Continue,
                 }
             })
@@ -1363,6 +1410,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                 audio_mixer: audio_mixer.clone(),
                 audio_tee: audio_tee.clone(),
                 audio_channels: audio_channels.clone(),
+                audio_levels: audio_levels.clone(),
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
@@ -1632,7 +1680,64 @@ fn build_edit_branch(
 /// A single audio channel bin (CHR-116): `audiotestsrc → audioconvert →
 /// audioresample`, ghost `src` pad. `freq = None` is silence (the always-on base
 /// that keeps the live `audiomixer` aggregator producing), `Some(hz)` a tone.
-fn audio_channel_bin(freq: Option<f64>) -> Result<gst::Bin> {
+/// A live audio-bus channel (CHR-124): its bin + audiomixer request pad, plus the
+/// `volume`/`audiopanorama` elements the mixer faders drive live.
+struct AudioChannel {
+    bin: gst::Bin,
+    mixer_pad: gst::Pad,
+    volume: gst::Element,
+    panorama: gst::Element,
+}
+type AudioChannelMap = Arc<Mutex<HashMap<String, AudioChannel>>>;
+/// Latest peak level (dB, ≤ 0) per channel id (+ `"master"`), from bus `level`
+/// messages — the real VU meters (CHR-124).
+type LevelMap = Arc<Mutex<HashMap<String, f64>>>;
+const MASTER_LEVEL: &str = "level:master";
+
+/// Capture a `level` element's bus message into the VU map, keyed by the channel
+/// id parsed from the element name (`level:<id>` → `<id>`, `level:master` →
+/// `master`). Returns true if it was a level message we handled.
+fn capture_level(levels: &LevelMap, msg: &gst::Message) -> bool {
+    let Some(src) = msg.src() else { return false };
+    let name = src.name();
+    let Some(id) = name.strip_prefix("level:") else {
+        return false;
+    };
+    let Some(s) = msg.structure() else {
+        return false;
+    };
+    if s.name() != "level" {
+        return false;
+    }
+    // `peak` is a GValueArray of dB (one per channel) — take the loudest.
+    let Ok(peaks) = s.get::<glib::ValueArray>("peak") else {
+        return false;
+    };
+    let peak = peaks
+        .iter()
+        .filter_map(|v| v.get::<f64>().ok())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if let Ok(mut m) = levels.lock() {
+        m.insert(id.to_string(), peak);
+    }
+    true
+}
+
+/// fader(0..100) + gain(dB) → linear volume for the `volume` element (0 if muted).
+fn linear_volume(fader: f64, gain_db: f64, muted: bool) -> f64 {
+    if muted {
+        return 0.0;
+    }
+    ((fader / 100.0) * 10f64.powf(gain_db / 20.0)).clamp(0.0, 10.0)
+}
+
+/// A channel bin: `audiotestsrc → convert → resample → volume → audiopanorama →
+/// level`, ghost `src`. Returns the bin + its volume/panorama for live control
+/// (CHR-124). `freq = None` = silent base; `Some(hz)` = a tone stand-in.
+fn audio_channel_bin(
+    id: &str,
+    freq: Option<f64>,
+) -> Result<(gst::Bin, gst::Element, gst::Element)> {
     let builder = gst::ElementFactory::make("audiotestsrc").property("is-live", true);
     let src = match freq {
         Some(f) => builder.property("freq", f),
@@ -1642,19 +1747,51 @@ fn audio_channel_bin(freq: Option<f64>) -> Result<gst::Bin> {
     .context("make audiotestsrc (audio channel)")?;
     let convert = gst::ElementFactory::make("audioconvert").build()?;
     let resample = gst::ElementFactory::make("audioresample").build()?;
-    wrap_in_bin(&[&src, &convert, &resample])
+    let volume = gst::ElementFactory::make("volume")
+        .build()
+        .context("make volume")?;
+    let panorama = gst::ElementFactory::make("audiopanorama")
+        .build()
+        .context("make audiopanorama")?;
+    let level = gst::ElementFactory::make("level")
+        .name(format!("level:{id}"))
+        .property("post-messages", true)
+        .property("interval", 100_000_000u64) // 100 ms
+        .build()
+        .context("make level")?;
+
+    let bin = gst::Bin::new();
+    bin.add_many([&src, &convert, &resample, &volume, &panorama, &level])
+        .context("add audio channel elements")?;
+    gst::Element::link_many([&src, &convert, &resample, &volume, &panorama, &level])
+        .context("link audio channel chain")?;
+    let tail = level
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("level has no src pad"))?;
+    let ghost = gst::GhostPad::with_target(&tail).context("audio channel ghost pad")?;
+    ghost.set_active(true)?;
+    bin.add_pad(&ghost)?;
+    Ok((bin, volume, panorama))
 }
 
-/// The **audio bus** (CHR-116): `audiomixer → convert → resample → caps → tee`,
-/// living in the video pipeline so audio and video share ONE clock — the outputs
-/// tap this `audio-tee` and the recording is A/V-synced by construction. A
-/// `fakesink` keeps the tee live when no output is attached; a silent base
-/// channel keeps the aggregator flowing. Returns (audiomixer, audio_tee, channels).
-fn build_audio_bus(pipeline: &gst::Pipeline) -> Result<(gst::Element, gst::Element, SourceMap)> {
+/// The **audio bus** (CHR-116/124): `audiomixer → level(master) → convert →
+/// resample → caps → tee`, in the video pipeline so A/V share ONE clock (the
+/// outputs tap this `audio-tee`, A/V synced by construction). A `fakesink` keeps
+/// the tee live; a silent base channel keeps the aggregator flowing; the master
+/// `level` meters the mix. Returns (audiomixer, audio_tee, channels).
+fn build_audio_bus(
+    pipeline: &gst::Pipeline,
+) -> Result<(gst::Element, gst::Element, AudioChannelMap)> {
     let mixer = gst::ElementFactory::make("audiomixer")
         .name("audiomix")
         .build()
         .context("make audiomixer")?;
+    let master = gst::ElementFactory::make("level")
+        .name(MASTER_LEVEL)
+        .property("post-messages", true)
+        .property("interval", 100_000_000u64)
+        .build()
+        .context("make master level")?;
     let convert = gst::ElementFactory::make("audioconvert").build()?;
     let resample = gst::ElementFactory::make("audioresample").build()?;
     let caps = gst::ElementFactory::make("capsfilter")
@@ -1676,8 +1813,10 @@ fn build_audio_bus(pipeline: &gst::Pipeline) -> Result<(gst::Element, gst::Eleme
         .property("async", false)
         .build()?;
 
-    pipeline.add_many([&mixer, &convert, &resample, &caps, &tee, &keepalive])?;
-    gst::Element::link_many([&mixer, &convert, &resample, &caps, &tee])?;
+    pipeline.add_many([
+        &mixer, &master, &convert, &resample, &caps, &tee, &keepalive,
+    ])?;
+    gst::Element::link_many([&mixer, &master, &convert, &resample, &caps, &tee])?;
     let ka_pad = tee
         .request_pad_simple("src_%u")
         .ok_or_else(|| anyhow!("audio tee keepalive pad failed"))?;
@@ -1689,26 +1828,20 @@ fn build_audio_bus(pipeline: &gst::Pipeline) -> Result<(gst::Element, gst::Eleme
         )
         .context("link audio tee → keepalive")?;
 
-    let channels: SourceMap = Arc::new(Mutex::new(HashMap::new()));
-    attach_audio_channel(
-        pipeline,
-        &mixer,
-        "audio-base".into(),
-        audio_channel_bin(None)?,
-        &channels,
-    )?;
+    let channels: AudioChannelMap = Arc::new(Mutex::new(HashMap::new()));
+    attach_audio_channel(pipeline, &mixer, "audio-base".into(), None, &channels)?;
     Ok((mixer, tee, channels))
 }
 
-/// Attach an audio channel bin to the bus mixer, live. Mirrors `add_source_impl`
-/// on the audio side; the handle's `pad` is the audiomixer request pad.
+/// Attach an audio channel to the bus mixer, live (CHR-124).
 fn attach_audio_channel(
     pipeline: &gst::Pipeline,
     mixer: &gst::Element,
     id: String,
-    bin: gst::Bin,
-    channels: &SourceMap,
+    freq: Option<f64>,
+    channels: &AudioChannelMap,
 ) -> Result<()> {
+    let (bin, volume, panorama) = audio_channel_bin(&id, freq)?;
     pipeline
         .add(&bin)
         .context("add audio channel to pipeline")?;
@@ -1725,7 +1858,15 @@ fn attach_audio_channel(
     channels
         .lock()
         .map_err(|_| anyhow!("audio channels lock poisoned"))?
-        .insert(id, SourceHandle { bin, pad: mix_pad });
+        .insert(
+            id,
+            AudioChannel {
+                bin,
+                mixer_pad: mix_pad,
+                volume,
+                panorama,
+            },
+        );
     Ok(())
 }
 
@@ -2260,5 +2401,55 @@ mod tests {
             prev_after > prev_before,
             "preview feed must keep flowing through the add/remove"
         );
+    }
+
+    /// CHR-124 audio consolidation: a tone channel on the bus produces a REAL VU
+    /// level (from its `level` element, read off the bus), and set_audio_channel
+    /// drives it live. Headless — no audio device needed (the tone is the signal).
+    #[test]
+    fn audio_channel_meters_a_real_level_and_takes_fader_control() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        engine
+            .add_audio_channel("mic", Some(440.0))
+            .expect("add audio channel");
+        assert!(engine.is_audio_channel_active("mic"));
+
+        // Fader control must not error while live.
+        engine
+            .set_audio_channel("mic", 80.0, 0.0, false, -20.0)
+            .expect("set channel");
+
+        // Wait for `level` messages to land (100 ms interval) and check a real,
+        // non-silent peak is metered for the tone (and the master mix).
+        let mut ok = false;
+        for _ in 0..60 {
+            std::thread::sleep(Duration::from_millis(50));
+            let levels = engine.audio_levels();
+            let mic = levels.get("mic").copied().unwrap_or(f64::NEG_INFINITY);
+            let master = levels.get("master").copied().unwrap_or(f64::NEG_INFINITY);
+            if mic.is_finite() && mic > -60.0 && master.is_finite() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(
+            ok,
+            "the tone channel should meter a real (non-silent) VU level"
+        );
+
+        // Muting drives the volume to 0 without error.
+        engine
+            .set_audio_channel("mic", 80.0, 0.0, true, 0.0)
+            .expect("mute channel");
+        engine.remove_audio_channel("mic").expect("remove channel");
+        assert!(!engine.is_audio_channel_active("mic"));
+        engine.stop();
     }
 }

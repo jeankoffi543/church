@@ -682,6 +682,67 @@ mod media {
         })
     }
 
+    // ── audio mixer bus (CHR-124) ───────────────────────────────────────────
+    // The table de mixage drives the engine's audio bus (real audio in the
+    // outputs + real VU), keyed by layer id. An "audio" source layer maps to a
+    // bus channel (a tone stand-in until real input capture lands).
+
+    #[tauri::command]
+    pub fn mixer_channel_add(
+        state: tauri::State<'_, MediaState>,
+        id: String,
+        freq: Option<f64>,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        if engine.is_audio_channel_active(&id) {
+            return Ok(());
+        }
+        engine
+            .add_audio_channel(id, freq)
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn mixer_channel_remove(
+        state: tauri::State<'_, MediaState>,
+        id: String,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        let _ = engine.remove_audio_channel(&id);
+        Ok(())
+    }
+
+    #[tauri::command]
+    #[allow(clippy::too_many_arguments)]
+    pub fn mixer_channel_set(
+        state: tauri::State<'_, MediaState>,
+        id: String,
+        fader: f64,
+        gain_db: f64,
+        muted: bool,
+        balance: f64,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .set_audio_channel(&id, fader, gain_db, muted, balance)
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn mixer_levels(
+        state: tauri::State<'_, MediaState>,
+    ) -> std::collections::HashMap<String, f64> {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|e| e.audio_levels()))
+            .unwrap_or_default()
+    }
+
     // ── programme transitions (CHR-113) ─────────────────────────────────────
 
     /// Render the programme fade-to-black transition: fade the whole programme to
@@ -998,6 +1059,10 @@ fn main() {
                 media::stop_broadcast,
                 media::broadcast_status,
                 media::output_stats,
+                media::mixer_channel_add,
+                media::mixer_channel_remove,
+                media::mixer_channel_set,
+                media::mixer_levels,
                 media::set_program_black,
                 media::list_encoders,
                 media::get_encoder_config,
