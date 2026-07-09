@@ -184,6 +184,11 @@ struct Ready {
     sources: SourceMap,
     outputs: OutputMap,
     ended: EndedMap,
+    // Preview (edit) compositor + its own feed and sources (CHR-115).
+    preview_compositor: gst::Element,
+    preview_sources: SourceMap,
+    preview_frames: Arc<AtomicU64>,
+    preview_latest: FrameSlot,
 }
 
 /// A running media engine: a `compositor` pipeline pumped by a glib `MainLoop` on
@@ -203,6 +208,13 @@ pub struct MediaEngine {
     /// Currently-attached outputs, keyed by caller-chosen id (e.g. `"record"`).
     outputs: OutputMap,
     ended: EndedMap,
+    /// The preview (edit) compositor + its own feed and sources (CHR-115): a
+    /// second monitor showing the scene being built, independent of the programme
+    /// (on-air) compositor above. Shares the pipeline/clock.
+    preview_compositor: gst::Element,
+    preview_sources: SourceMap,
+    preview_frames: Arc<AtomicU64>,
+    preview_latest: FrameSlot,
     /// Per-source animation epoch (CHR-110). Each new entrance/reaction bumps its
     /// source's counter; a running animation thread stops as soon as its captured
     /// epoch is superseded, so a re-trigger cleanly cancels the previous one.
@@ -238,6 +250,10 @@ impl MediaEngine {
                 sources: r.sources,
                 outputs: r.outputs,
                 ended: r.ended,
+                preview_compositor: r.preview_compositor,
+                preview_sources: r.preview_sources,
+                preview_frames: r.preview_frames,
+                preview_latest: r.preview_latest,
                 anim_epochs: Arc::new(Mutex::new(HashMap::new())),
                 thread: Some(thread),
             }),
@@ -251,9 +267,47 @@ impl MediaEngine {
         self.frames.load(Ordering::Relaxed)
     }
 
-    /// The most recent preview frame as JPEG bytes, if one has been produced.
+    /// The most recent **programme** (on-air) frame as JPEG bytes.
     pub fn latest_frame(&self) -> Option<Vec<u8>> {
         self.latest.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// The most recent **preview** (edit) frame as JPEG bytes (CHR-115) — the
+    /// second monitor's feed, produced by the preview compositor.
+    pub fn preview_frame_jpeg(&self) -> Option<Vec<u8>> {
+        self.preview_latest.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Preview-compositor frame count (proof the second feed is running).
+    pub fn preview_frames(&self) -> u64 {
+        self.preview_frames.load(Ordering::Relaxed)
+    }
+
+    /// Attach/detach a source on the **preview** compositor (CHR-115) — the same
+    /// hot lifecycle as the programme side, but on the edit monitor. `cut` (in the
+    /// shell) copies preview sources onto the programme by re-attaching them there.
+    pub fn add_preview_source(&self, id: impl Into<String>, builder: SourceBuilder) -> Result<()> {
+        add_source_impl(
+            &self.pipeline,
+            &self.preview_compositor,
+            &self.preview_sources,
+            id.into(),
+            builder,
+        )
+    }
+
+    pub fn remove_preview_source(&self, id: &str) -> Result<()> {
+        let handle = take_source(&self.preview_sources, id)?;
+        detach_source(&self.pipeline, &self.preview_compositor, handle);
+        Ok(())
+    }
+
+    /// Whether `id` is attached on the preview compositor.
+    pub fn is_preview_source_active(&self, id: &str) -> bool {
+        self.preview_sources
+            .lock()
+            .map(|s| s.contains_key(id))
+            .unwrap_or(false)
     }
 
     /// Attach a new source, live, while the pipeline is `Playing`: builds its
@@ -1011,6 +1065,12 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let ended: EndedMap = Arc::new(Mutex::new(HashMap::new()));
         let (pipeline, compositor, tee) = build_preview_pipeline(&frames, &latest)?;
 
+        // Second (preview/edit) compositor + feed in the SAME pipeline (CHR-115).
+        let preview_frames = Arc::new(AtomicU64::new(0));
+        let preview_latest: FrameSlot = Arc::new(Mutex::new(None));
+        let preview_sources: SourceMap = Arc::new(Mutex::new(HashMap::new()));
+        let preview_compositor = build_edit_branch(&pipeline, &preview_frames, &preview_latest)?;
+
         add_source_impl(
             &pipeline,
             &compositor,
@@ -1019,6 +1079,15 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
             Box::new(default_source),
         )
         .context("attach background source")?;
+        // The preview compositor gets its own always-on background too.
+        add_source_impl(
+            &pipeline,
+            &preview_compositor,
+            &preview_sources,
+            BACKGROUND_SOURCE_ID.to_string(),
+            Box::new(default_source),
+        )
+        .context("attach preview background source")?;
 
         let bus = pipeline
             .bus()
@@ -1030,6 +1099,8 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let sources_for_watch = sources.clone();
         let outputs_for_watch = outputs.clone();
         let ended_for_watch = ended.clone();
+        let preview_compositor_for_watch = preview_compositor.clone();
+        let preview_sources_for_watch = preview_sources.clone();
         let _watch = bus
             .add_watch(move |_, msg| {
                 use gst::MessageView;
@@ -1084,6 +1155,27 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                             }
                             return glib::ControlFlow::Continue;
                         }
+                        // Or a PREVIEW-compositor source (CHR-115)? Same resilience:
+                        // detach it from the preview compositor, keep everything else.
+                        let prev_owner = msg.src().and_then(|src_obj| {
+                            preview_sources_for_watch.lock().ok().and_then(|guard| {
+                                guard
+                                    .iter()
+                                    .find(|(_, h)| belongs_to(src_obj, &h.bin))
+                                    .map(|(id, _)| id.clone())
+                            })
+                        });
+                        if let Some(id) = prev_owner {
+                            auto_detach(
+                                &pipeline_for_watch,
+                                &preview_compositor_for_watch,
+                                &preview_sources_for_watch,
+                                &ended_for_watch,
+                                &id,
+                                err.error().to_string(),
+                            );
+                            return glib::ControlFlow::Continue;
+                        }
                         // Unrecognised (compositor/convert/jpeg chain, pipeline-level)
                         // → fatal, as before.
                         loop_for_watch.quit();
@@ -1130,6 +1222,10 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                 sources: sources.clone(),
                 outputs: outputs.clone(),
                 ended: ended.clone(),
+                preview_compositor: preview_compositor.clone(),
+                preview_sources: preview_sources.clone(),
+                preview_frames: preview_frames.clone(),
+                preview_latest: preview_latest.clone(),
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
 
@@ -1309,6 +1405,91 @@ fn build_preview_pipeline(
     );
 
     Ok((pipeline, compositor, tee))
+}
+
+/// The **preview (edit) compositor** branch (CHR-115): a SECOND compositor added
+/// to the same pipeline, monitor-only (no tee, no outputs) — it renders the scene
+/// being *edited* while the program compositor (above) carries what's on air.
+/// Returns the preview compositor for its own hot source add/remove. Shares one
+/// pipeline (hence one clock) with the program side.
+fn build_edit_branch(
+    pipeline: &gst::Pipeline,
+    frames: &Arc<AtomicU64>,
+    latest: &FrameSlot,
+) -> Result<gst::Element> {
+    let compositor = gst::ElementFactory::make("compositor")
+        .property_from_str("background", "black")
+        .build()
+        .context("make preview compositor")?;
+    let caps_canvas = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("width", OUTPUT_W)
+                .field("height", OUTPUT_H)
+                .field("framerate", gst::Fraction::new(OUTPUT_FPS, 1))
+                .build(),
+        )
+        .build()?;
+    let convert = gst::ElementFactory::make("videoconvert").build()?;
+    let scale = gst::ElementFactory::make("videoscale").build()?;
+    let caps_preview = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("width", PREVIEW_W)
+                .field("height", PREVIEW_H)
+                .build(),
+        )
+        .build()?;
+    let jpeg = gst::ElementFactory::make("jpegenc")
+        .property("quality", 70i32)
+        .build()?;
+    let appsink = gst_app::AppSink::builder()
+        .caps(&gst::Caps::builder("image/jpeg").build())
+        .max_buffers(1)
+        .drop(true)
+        .sync(true)
+        .build();
+
+    pipeline.add_many([
+        &compositor,
+        &caps_canvas,
+        &convert,
+        &scale,
+        &caps_preview,
+        &jpeg,
+    ])?;
+    pipeline.add(&appsink).context("add preview appsink")?;
+    gst::Element::link_many([
+        &compositor,
+        &caps_canvas,
+        &convert,
+        &scale,
+        &caps_preview,
+        &jpeg,
+    ])?;
+    jpeg.link(&appsink).context("link preview jpeg → appsink")?;
+
+    let f = frames.clone();
+    let slot = latest.clone();
+    appsink.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            .new_sample(move |sink| {
+                let sample = sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                if let Some(buffer) = sample.buffer() {
+                    if let Ok(map) = buffer.map_readable() {
+                        if let Ok(mut g) = slot.lock() {
+                            *g = Some(map.as_slice().to_vec());
+                        }
+                        f.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+    Ok(compositor)
 }
 
 #[cfg(test)]
@@ -1778,6 +1959,69 @@ mod tests {
         assert!(
             after > before,
             "the background layer should keep producing frames after a source EOSes"
+        );
+    }
+
+    /// CHR-115 preview/program split: the engine runs TWO independent compositors
+    /// in one pipeline — both feeds produce frames, and a source added to the
+    /// PREVIEW compositor lands on the preview feed without disturbing the
+    /// programme. Headless (frame counts; the visual correctness is validated
+    /// on-machine). NB: this exercises two live compositors at once, so it holds
+    /// the engine lock like the others.
+    #[test]
+    fn preview_and_program_compositors_run_independently() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        // Both feeds must come alive.
+        let mut ok = false;
+        for _ in 0..60 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 && engine.preview_frames() > 0 {
+                ok = true;
+                break;
+            }
+        }
+        assert!(
+            ok,
+            "both the programme and preview compositors should produce frames"
+        );
+
+        let prog_before = engine.frames();
+        let prev_before = engine.preview_frames();
+
+        // A source on the PREVIEW compositor only.
+        engine
+            .add_preview_source(
+                "prev-src",
+                Box::new(|| {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .build()?;
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("add preview source");
+        assert!(engine.is_preview_source_active("prev-src"));
+        assert!(
+            !engine.is_source_active("prev-src"),
+            "preview source must NOT be on the programme"
+        );
+
+        std::thread::sleep(Duration::from_millis(400));
+        engine
+            .remove_preview_source("prev-src")
+            .expect("remove preview source");
+        assert!(!engine.is_preview_source_active("prev-src"));
+
+        std::thread::sleep(Duration::from_millis(200));
+        let prog_after = engine.frames();
+        let prev_after = engine.preview_frames();
+        engine.stop();
+
+        assert!(prog_after > prog_before, "programme feed must keep flowing");
+        assert!(
+            prev_after > prev_before,
+            "preview feed must keep flowing through the add/remove"
         );
     }
 }

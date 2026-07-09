@@ -32,8 +32,10 @@ export function App() {
   const [doc, setDoc] = useState<StudioDoc | null>(null);
   const [running, setRunning] = useState(false);
   const [fps, setFps] = useState(0);
-  const [frame, setFrame] = useState<string | null>(null);
+  const [progFrame, setProgFrame] = useState<string | null>(null);
+  const [prevFrame, setPrevFrame] = useState<string | null>(null);
   const [status, setStatus] = useState("Prêt");
+  const progShownRef = useRef<Set<string>>(new Set());
 
   const [screenActive, setScreenActive] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -113,7 +115,8 @@ export function App() {
       })();
     }, 500);
     const f = setInterval(() => {
-      api.previewFrame().then((u) => u && setFrame(u)).catch(() => {});
+      api.programFrame().then((u) => u && setProgFrame(u)).catch(() => {});
+      api.previewMonitorFrame().then((u) => u && setPrevFrame(u)).catch(() => {});
     }, 120);
     return () => { clearInterval(t); clearInterval(f); };
   }, [audioOn]);
@@ -148,10 +151,26 @@ export function App() {
         .map((l) => l.id),
     );
     const cur = shownRef.current;
-    for (const id of want) if (!cur.has(id)) api.showOverlay(id).catch(() => {});
-    for (const id of cur) if (!want.has(id)) api.hideOverlay(id).catch(() => {});
+    // Editing stages overlays on the PREVIEW compositor (CHR-115); CUT sends them
+    // on-air (programme).
+    for (const id of want) if (!cur.has(id)) api.showPreviewOverlay(id).catch(() => {});
+    for (const id of cur) if (!want.has(id)) api.hidePreviewOverlay(id).catch(() => {});
     shownRef.current = want;
   }, [doc]);
+
+  // CUT: promote the preview's staged overlays to the PROGRAMME (on-air +
+  // recorded), reconciling what's already there, then advance the domain.
+  const cut = () => {
+    const scene = doc?.scenes.find((s) => s.id === doc.currentSceneId);
+    const want = new Set(
+      (scene?.layers ?? []).filter((l) => OVERLAY_KINDS.includes(l.kind) && l.visible).map((l) => l.id),
+    );
+    const cur = progShownRef.current;
+    for (const id of want) if (!cur.has(id)) api.showOverlay(id).catch(() => {});
+    for (const id of cur) if (!want.has(id)) api.hideOverlay(id).catch(() => {});
+    progShownRef.current = want;
+    cmd({ type: "cut" });
+  };
 
   const applyTransform = (t: Transform) => {
     setTransform(t);
@@ -186,7 +205,6 @@ export function App() {
       refreshDoc(d);
       return api.setProgramBlack(d.program?.black ?? false, fadeMs);
     }).catch(fail);
-  const cut = () => cmd({ type: "cut" });
 
   const toggleAudio = () => {
     if (audioOn) api.stopAudio().then(() => { setAudioOn(false); setChannels([]); }).catch(fail);
@@ -231,12 +249,12 @@ export function App() {
       </header>
 
       <div className="stage">
-        <StageMonitor label="APERÇU" tone="preview" frame={frame} />
+        <StageMonitor label="APERÇU" tone="preview" frame={prevFrame} />
         <TransitionBar black={black} fadeMs={fadeMs} onFadeMs={setFadeMs} onToggleBlack={toggleBlack} onCut={cut} />
         <StageMonitor
           label="PROGRAMME"
           tone="program"
-          frame={frame}
+          frame={progFrame}
           dim={black}
           badge={live ? <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span> : recording ? <span className="onair rec">● REC</span> : undefined}
           overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}

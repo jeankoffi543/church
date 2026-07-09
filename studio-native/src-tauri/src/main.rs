@@ -172,15 +172,34 @@ mod media {
             },
         }
     }
-    /// The latest preview frame as a `data:image/jpeg;base64,…` URL the webview can
-    /// drop straight into an `<img>`. `None` until the engine is running and has
-    /// produced a frame. This is the embedded preview — no native-window surgery.
+    fn frame_data_url(bytes: Vec<u8>) -> String {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        format!("data:image/jpeg;base64,{b64}")
+    }
+
+    /// The latest **programme** (on-air) frame as a `data:image/jpeg` URL — what
+    /// the outputs record/broadcast. Feeds the PROGRAMME monitor.
+    #[tauri::command]
+    pub fn program_frame(state: tauri::State<'_, MediaState>) -> Option<String> {
+        Some(frame_data_url(
+            state.0.lock().ok()?.as_ref()?.latest_frame()?,
+        ))
+    }
+
+    /// The latest **preview** (edit) frame (CHR-115) — the second compositor's
+    /// feed. Feeds the APERÇU monitor. `preview_frame` is kept as an alias of
+    /// `program_frame` for older callers.
+    #[tauri::command]
+    pub fn preview_monitor_frame(state: tauri::State<'_, MediaState>) -> Option<String> {
+        Some(frame_data_url(
+            state.0.lock().ok()?.as_ref()?.preview_frame_jpeg()?,
+        ))
+    }
+
     #[tauri::command]
     pub fn preview_frame(state: tauri::State<'_, MediaState>) -> Option<String> {
-        use base64::Engine;
-        let bytes = state.0.lock().ok()?.as_ref()?.latest_frame()?;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        Some(format!("data:image/jpeg;base64,{b64}"))
+        program_frame(state)
     }
 
     /// Move/resize a source's layer live, in programme-canvas pixels (see
@@ -392,6 +411,58 @@ mod media {
         layer_id: String,
     ) -> Result<(), String> {
         drop_source(&state, &format!("overlay:{layer_id}"))
+    }
+
+    /// Render an overlay on the **preview** (edit) compositor (CHR-115) — the
+    /// staging monitor. No entrance animation here (it plays on CUT, when the
+    /// overlay goes to the programme). The reactive sync uses this for editing.
+    #[tauri::command]
+    pub fn show_preview_overlay(
+        state: tauri::State<'_, MediaState>,
+        studio: tauri::State<'_, crate::studio::StudioState>,
+        layer_id: String,
+    ) -> Result<(), String> {
+        #[cfg(feature = "overlays")]
+        {
+            let (layer, verse) = {
+                let s = studio.studio.lock().map_err(|_| "studio poisoned")?;
+                let layer = s
+                    .current_scene()
+                    .get(&layer_id)
+                    .cloned()
+                    .ok_or("no such layer in the current scene")?;
+                (layer, s.bible_verse.clone())
+            };
+            if !mod_overlays::renders(layer.kind) {
+                return Err("le calque n'est pas un overlay".into());
+            }
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            let id = format!("overlay:{layer_id}");
+            let _ = engine.remove_preview_source(&id);
+            engine
+                .add_preview_source(
+                    id,
+                    Box::new(move || mod_overlays::build_source(&layer, verse.as_ref())),
+                )
+                .map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "overlays"))]
+        {
+            let _ = (state, studio, layer_id);
+            Err("module overlays non compilé".into())
+        }
+    }
+
+    #[tauri::command]
+    pub fn hide_preview_overlay(
+        state: tauri::State<'_, MediaState>,
+        layer_id: String,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        let _ = engine.remove_preview_source(&format!("overlay:{layer_id}"));
+        Ok(())
     }
 
     #[tauri::command]
@@ -878,6 +949,10 @@ fn main() {
                 media::show_overlay,
                 media::hide_overlay,
                 media::overlay_active,
+                media::program_frame,
+                media::preview_monitor_frame,
+                media::show_preview_overlay,
+                media::hide_preview_overlay,
                 media::start_recording,
                 media::stop_recording,
                 media::recording_active,

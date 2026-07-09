@@ -91,7 +91,9 @@ export const canvasSize = () => invoke<[number, number]>("canvas_size");
 export const startPreview = () => invoke("start_preview");
 export const stopPreview = () => invoke("stop_preview");
 export const mediaStatus = () => invoke<MediaStatus>("media_status");
-export const previewFrame = () => invoke<string | null>("preview_frame");
+// CHR-115 split: programme = on-air (recorded), preview = edit compositor.
+export const programFrame = () => invoke<string | null>("program_frame");
+export const previewMonitorFrame = () => invoke<string | null>("preview_monitor_frame");
 
 // ── scene document ─────────────────────────────────────────────────────────
 export const getStudioState = () => invoke<StudioDoc>("get_studio_state");
@@ -109,6 +111,9 @@ export const stopCamera = () => invoke("stop_camera_source");
 export const cameraStatus = () => invoke<SourceStatus>("camera_status");
 export const showOverlay = (layerId: string) => invoke("show_overlay", { layerId });
 export const hideOverlay = (layerId: string) => invoke("hide_overlay", { layerId });
+// CHR-115: overlays on the preview (edit) compositor.
+export const showPreviewOverlay = (layerId: string) => invoke("show_preview_overlay", { layerId });
+export const hidePreviewOverlay = (layerId: string) => invoke("hide_preview_overlay", { layerId });
 export const setLayerTransform = (
   id: string,
   xpos: number,
