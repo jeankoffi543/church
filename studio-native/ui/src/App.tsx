@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./lib/api";
-import type { Capabilities, EncoderConfig, StudioDoc } from "./lib/api";
+import type { EncoderConfig, StudioDoc } from "./lib/api";
 import { StageMonitor } from "./components/StageMonitor";
 import { TransitionBar } from "./components/TransitionBar";
 import { ResizableRow } from "./components/ResizableRow";
@@ -9,12 +9,14 @@ import { SourcesDock } from "./components/SourcesDock";
 import { MixerDock, AudioPatch } from "./components/MixerDock";
 import { InspectorDock } from "./components/InspectorDock";
 import { ControlsDock } from "./components/ControlsDock";
+import { SettingsModal } from "./components/SettingsModal";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { StatusBar, EncoderStats } from "./components/StatusBar";
 import { StudioHeader } from "./components/StudioHeader";
-import { DockShell } from "./components/DockShell";
 import { TransformBox } from "./components/TransformBox";
 import type { StudioLayer } from "./lib/api";
 import { hasAudioKind } from "./lib/studio-layers";
+import { cn } from "./lib/cn";
 
 type Transform = { x: number; y: number; w: number; h: number };
 const OVERLAY_KINDS = ["text", "bible", "song"];
@@ -31,7 +33,6 @@ function sourceIdFor(kind: string, id: string): string | null {
 }
 
 export function App() {
-  const [caps, setCaps] = useState<Capabilities | null>(null);
   const [doc, setDoc] = useState<StudioDoc | null>(null);
   const [progFrame, setProgFrame] = useState<string | null>(null);
   const [prevFrame, setPrevFrame] = useState<string | null>(null);
@@ -54,7 +55,16 @@ export function App() {
   const [live, setLive] = useState(false);
   const [liveEnded, setLiveEnded] = useState<string | null>(null);
   const [sandbox, setSandbox] = useState(false);
-  const [rtmpUrl, setRtmpUrl] = useState("");
+  const [rtmpsUrl, setRtmpsUrl] = useState("");
+  const [streamKey, setStreamKey] = useState("");
+
+  const [dualLayout, setDualLayout] = useState(true);
+  const [dockResetNonce, setDockResetNonce] = useState(0);
+  const [replayOnCut, setReplayOnCut] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmState, setConfirmState] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
+  const askConfirm = (title: string, message: string, onConfirm: () => void) =>
+    setConfirmState({ title, message, onConfirm });
 
   const fadeMs = 400; // fade-to-black duration (the web ÉCRAN VIDE is a toggle)
   const [outStats, setOutStats] = useState<{ fps: number; kbps: number } | null>(null);
@@ -66,7 +76,6 @@ export function App() {
   // ── boot: auto-start the engine + load contract/state ─────────────────────
   useEffect(() => {
     api.startPreview().catch(fail);
-    api.getCapabilities().then(setCaps).catch(fail);
     api.getStudioState().then(setDoc).catch(fail);
     api.listCameras().then((l) => {
       setCameraId((id) => id || l[0]?.id || "");
@@ -189,7 +198,11 @@ export function App() {
   };
   const toggleLive = () => {
     if (live) api.stopBroadcast().then(() => setLive(false)).catch(fail);
-    else { setLiveEnded(null); api.startBroadcast(rtmpUrl, sandbox).then(() => setLive(true)).catch(fail); }
+    else {
+      setLiveEnded(null);
+      const url = (rtmpsUrl.trim() || "rtmps://live-api-s.facebook.com:443/rtmp/") + streamKey.trim();
+      api.startBroadcast(url, sandbox).then(() => setLive(true)).catch(fail);
+    }
   };
 
   const toggleBlack = () =>
@@ -248,23 +261,31 @@ export function App() {
         sandbox={sandbox}
         recording={recording}
         recLabel=""
-        onOpenSettings={() => setStatus("Paramètres — à venir (CHR-122)")}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      <section className="grid h-[clamp(280px,36vh,400px)] flex-none grid-cols-[1fr_124px_1fr] gap-3">
-        <StageMonitor
-          tone="preview"
-          frame={prevFrame}
-          sceneName={sceneName}
-          draggable={draggableLayer()}
-          overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
-        />
+      <section
+        className={cn(
+          "grid h-[clamp(280px,36vh,400px)] flex-none gap-3",
+          dualLayout ? "grid-cols-[1fr_124px_1fr]" : "grid-cols-[124px_1fr]",
+        )}
+      >
+        {dualLayout && (
+          <StageMonitor
+            tone="preview"
+            frame={prevFrame}
+            sceneName={sceneName}
+            draggable={draggableLayer()}
+            overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
+          />
+        )}
         <TransitionBar onCut={cut} onBlack={toggleBlack} black={black} busy={false} canCut={true} />
         <StageMonitor tone="program" frame={progFrame} sceneName={sceneName} black={black} />
       </section>
 
       <ResizableRow
         storageKey="studio-native-docks"
+        resetNonce={dockResetNonce}
         className="flex min-h-0 flex-1 flex-col"
         items={[
           {
@@ -278,9 +299,11 @@ export function App() {
                 onSelect={(id) => cmd({ type: "selectScene", id })}
                 onAdd={() => cmd({ type: "addScene", id: `scene-${Date.now().toString(36)}` })}
                 onReorder={(dragId, targetId) => cmd({ type: "reorderScene", dragId, targetId })}
-                onRequestDelete={(id) => {
-                  if (confirm("Supprimer cette scène ?")) cmd({ type: "deleteScene", id });
-                }}
+                onRequestDelete={(id) =>
+                  askConfirm("Supprimer la scène", "Cette scène et ses sources seront supprimées.", () =>
+                    cmd({ type: "deleteScene", id }),
+                  )
+                }
                 onRename={(id, name) => cmd({ type: "renameScene", id, name })}
               />
             ),
@@ -297,9 +320,11 @@ export function App() {
                 onToggle={(id) => cmd({ type: "toggleVisible", id })}
                 onMove={(id, dir) => cmd({ type: "reorderLayer", id, dir: dir === -1 ? "forward" : "backward" })}
                 onReorder={(dragId, targetId) => cmd({ type: "reorderLayerTo", dragId, targetId })}
-                onRequestDelete={(id) => {
-                  if (confirm("Supprimer cette source ?")) cmd({ type: "removeLayer", id });
-                }}
+                onRequestDelete={(id) =>
+                  askConfirm("Supprimer la source", "Cette source sera retirée de la scène.", () =>
+                    cmd({ type: "removeLayer", id }),
+                  )
+                }
               />
             ),
           },
@@ -326,31 +351,55 @@ export function App() {
             id: "controls",
             label: "Commandes",
             node: (
-              <DockShell label="Commandes">
-                <ControlsDock
-                  caps={caps}
-                  encoders={encoders}
-                  encCfg={encCfg}
-                  encResolved={encResolved}
-                  onEncoder={setEncoder}
-                  recording={recording}
-                  recPath={recPath}
-                  onToggleRecord={toggleRecord}
-                  live={live}
-                  liveEnded={liveEnded}
-                  sandbox={sandbox}
-                  rtmpUrl={rtmpUrl}
-                  onSandbox={setSandbox}
-                  onRtmpUrl={setRtmpUrl}
-                  onToggleLive={toggleLive}
-                />
-              </DockShell>
+              <ControlsDock
+                liveActive={live}
+                liveState={live ? "connected" : "idle"}
+                liveError={liveEnded}
+                onStartLive={toggleLive}
+                onStopLive={toggleLive}
+                sandboxRehearsal={sandbox}
+                recording={recording}
+                onToggleRecord={toggleRecord}
+                recLabel={recPath ?? ""}
+                sandbox={sandbox}
+                sandboxLocked={live}
+                onToggleSandbox={() => setSandbox((v) => !v)}
+                dualLayout={dualLayout}
+                onToggleLayout={() => setDualLayout((v) => !v)}
+                onResetDockWidths={() => setDockResetNonce((n) => n + 1)}
+                replayOnCut={replayOnCut}
+                onToggleReplayOnCut={() => setReplayOnCut((v) => !v)}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
             ),
           },
         ]}
       />
 
       <StatusBar statusRight={status} stats={encStats} />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        rtmpsUrl={rtmpsUrl}
+        onRtmpsUrl={setRtmpsUrl}
+        streamKey={streamKey}
+        onStreamKey={setStreamKey}
+        encoders={encoders}
+        encCfg={encCfg}
+        encResolved={encResolved}
+        onEncoder={setEncoder}
+      />
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title ?? ""}
+        message={confirmState?.message ?? ""}
+        onCancel={() => setConfirmState(null)}
+        onConfirm={() => {
+          confirmState?.onConfirm();
+          setConfirmState(null);
+        }}
+      />
     </div>
   );
 }
