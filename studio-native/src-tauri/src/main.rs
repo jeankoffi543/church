@@ -13,6 +13,14 @@
 //! `start_preview` / `media_status` commands and probe real encoders for
 //! `get_capabilities`. It is behind the `media` feature — off ⇒ the shell still
 //! runs and reports zero encoders (CHR-101 behaviour).
+//!
+//! CHR-104 adds the screen-capture source's hot lifecycle: `start_preview` now
+//! always starts just the background test pattern (no more "prefer screen at
+//! startup" special-casing); `start_screen_source`/`stop_screen_source` attach
+//! and detach mod-screen-capture live, while the pipeline keeps running, and
+//! `screen_status` surfaces whether it's active plus the reason if it was
+//! auto-detached (a capture failure) — the "partage arrêté" parity for the web
+//! app's `captureActive`/`ended` events.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -83,24 +91,11 @@ mod media {
         pub frames: u64,
     }
 
-    /// Start the engine, preferring a real screen-capture source when the module
-    /// is present and available; otherwise the built-in test pattern.
-    fn start_engine() -> Result<MediaEngine, String> {
-        #[cfg(feature = "screen")]
-        {
-            if mod_screen_capture::is_available() {
-                return MediaEngine::start_with_source(Box::new(mod_screen_capture::add_source))
-                    .map_err(|e| e.to_string());
-            }
-        }
-        MediaEngine::start().map_err(|e| e.to_string())
-    }
-
     #[tauri::command]
     pub fn start_preview(state: tauri::State<'_, MediaState>) -> Result<(), String> {
         let mut guard = state.0.lock().map_err(|_| "media state poisoned")?;
         if guard.is_none() {
-            *guard = Some(start_engine()?);
+            *guard = Some(MediaEngine::start().map_err(|e| e.to_string())?);
         }
         Ok(())
     }
@@ -143,13 +138,14 @@ mod media {
         Some(format!("data:image/jpeg;base64,{b64}"))
     }
 
-    /// Move/resize the source layer live, in programme-canvas pixels (see
+    /// Move/resize a source's layer live, in programme-canvas pixels (see
     /// `studio_media::MediaEngine::set_layer_transform`). The frontend expresses
     /// drags/resizes as fractions of the canvas so it never needs to know the
     /// exact resolution; it multiplies by `canvas_size` before calling this.
     #[tauri::command]
     pub fn set_layer_transform(
         state: tauri::State<'_, MediaState>,
+        id: String,
         xpos: i32,
         ypos: i32,
         width: i32,
@@ -158,7 +154,7 @@ mod media {
         let guard = state.0.lock().map_err(|_| "media state poisoned")?;
         let engine = guard.as_ref().ok_or("no media engine running")?;
         engine
-            .set_layer_transform(xpos, ypos, width, height)
+            .set_layer_transform(&id, xpos, ypos, width, height)
             .map_err(|e| e.to_string())
     }
 
@@ -169,12 +165,84 @@ mod media {
     pub fn canvas_size() -> (u32, u32) {
         studio_media::canvas_size()
     }
+
+    /// The id mod-screen-capture's source is registered under — shared between
+    /// the hot-attach/detach commands below and `ScreenStatus`.
+    #[cfg(feature = "screen")]
+    const SCREEN_SOURCE_ID: &str = "screen";
+
+    #[cfg(feature = "screen")]
+    #[derive(Serialize)]
+    pub struct ScreenStatus {
+        pub active: bool,
+        pub ended_reason: Option<String>,
+    }
+
+    /// Attach the screen-capture source, live, while the engine (and its
+    /// background layer) keeps running — the CHR-104 "ajout à chaud" path.
+    /// Fails if the engine isn't running yet, if it's already active, or if the
+    /// platform has no capture element (the unavailable/permission-denied case
+    /// on this dev target — see mod-screen-capture's module docs).
+    #[cfg(feature = "screen")]
+    #[tauri::command]
+    pub fn start_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .add_source(SCREEN_SOURCE_ID, Box::new(mod_screen_capture::add_source))
+            .map_err(|e| e.to_string())
+    }
+
+    /// Detach the screen-capture source, live, without touching the rest of the
+    /// pipeline — the CHR-104 "retrait à chaud" / "stop sharing" path.
+    #[cfg(feature = "screen")]
+    #[tauri::command]
+    pub fn stop_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .remove_source(SCREEN_SOURCE_ID)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Whether the screen source is active, plus the reason it was last
+    /// auto-detached (a capture failure), if any — read once then cleared. The
+    /// CHR-104 parity for the web app's `captureActive`/`ended` events.
+    #[cfg(feature = "screen")]
+    #[tauri::command]
+    pub fn screen_status(state: tauri::State<'_, MediaState>) -> ScreenStatus {
+        let guard = state.0.lock().ok();
+        let engine = guard.as_ref().and_then(|g| g.as_ref());
+        ScreenStatus {
+            active: engine
+                .map(|e| e.is_source_active(SCREEN_SOURCE_ID))
+                .unwrap_or(false),
+            ended_reason: engine.and_then(|e| e.take_ended_reason(SCREEN_SOURCE_ID)),
+        }
+    }
 }
 
 fn main() {
     let builder = tauri::Builder::default();
 
-    #[cfg(feature = "media")]
+    #[cfg(all(feature = "media", feature = "screen"))]
+    let builder =
+        builder
+            .manage(media::MediaState::default())
+            .invoke_handler(tauri::generate_handler![
+                get_capabilities,
+                media::start_preview,
+                media::stop_preview,
+                media::media_status,
+                media::preview_frame,
+                media::set_layer_transform,
+                media::canvas_size,
+                media::start_screen_source,
+                media::stop_screen_source,
+                media::screen_status
+            ]);
+
+    #[cfg(all(feature = "media", not(feature = "screen")))]
     let builder =
         builder
             .manage(media::MediaState::default())

@@ -14,6 +14,14 @@ type MediaStatus = {
   frames: number;
 };
 
+/** Mirror of the Rust `ScreenStatus` — CHR-104's captureActive/ended parity. */
+type ScreenStatus = {
+  active: boolean;
+  ended_reason: string | null;
+};
+
+const SCREEN_SOURCE_ID = "screen";
+
 /** The layer's position/size as fractions (0..1) of the programme canvas —
  * resolution-independent, so it survives the webview resizing without any
  * recalculation: the overlay is rendered in CSS `%`, which the browser keeps in
@@ -49,6 +57,11 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaStatus | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [screen, setScreen] = useState<ScreenStatus | null>(null);
+  // `screen_status` *consumes* the ended reason (take, not peek), so it appears
+  // in exactly one poll. Latch it here so the "partage arrêté" banner stays up
+  // until the user acts, instead of flashing for one 500 ms poll cycle.
+  const [screenEnded, setScreenEnded] = useState<string | null>(null);
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef({ w: 1920, h: 1080 });
@@ -76,6 +89,7 @@ export function App() {
   const pushTransform = useCallback((t: LayerTransform) => {
     const { w: cw, h: ch } = canvasRef.current;
     invoke("set_layer_transform", {
+      id: SCREEN_SOURCE_ID,
       xpos: Math.round(t.x * cw),
       ypos: Math.round(t.y * ch),
       width: Math.round(t.w * cw),
@@ -122,6 +136,12 @@ export function App() {
     const status = setInterval(() => {
       invoke<MediaStatus>("media_status")
         .then(setMedia)
+        .catch(() => {});
+      invoke<ScreenStatus>("screen_status")
+        .then((s) => {
+          setScreen(s);
+          if (s.ended_reason) setScreenEnded(s.ended_reason);
+        })
         .catch(() => {});
     }, 500);
     const frame = setInterval(() => {
@@ -211,11 +231,12 @@ export function App() {
         </section>
 
         <section className="panel">
-          <h1>Moteur média (CHR-103)</h1>
+          <h1>Moteur média (CHR-104)</h1>
           <p className="muted">
             Compositeur GStreamer 1080p60, piloté par une boucle glib sur son
-            propre thread. Déplacez/redimensionnez le calque : le pad du
-            compositor bouge en direct, pipeline en <code>PLAYING</code>.
+            propre thread. Activez la capture d&apos;écran, puis
+            déplacez/redimensionnez le calque : le pad du compositor bouge en
+            direct, pipeline en <code>PLAYING</code> tout du long.
           </p>
 
           <div className="monitor" ref={monitorRef}>
@@ -224,7 +245,7 @@ export function App() {
             ) : (
               <span className="monitor-empty">Aperçu arrêté</span>
             )}
-            {media?.running && (
+            {screen?.active && (
               <div
                 className="layer-box"
                 style={{
@@ -246,6 +267,10 @@ export function App() {
             <span className="frames">{media?.frames ?? 0} frames</span>
           </div>
 
+          {screenEnded && (
+            <div className="banner err">Partage d&apos;écran arrêté : {screenEnded}</div>
+          )}
+
           <div className="btnrow">
             <button
               className="btn"
@@ -260,6 +285,30 @@ export function App() {
               Arrêter
             </button>
           </div>
+
+          {caps?.sources.includes(SCREEN_SOURCE_ID) && (
+            <div className="btnrow">
+              <button
+                className="btn"
+                disabled={!!screen?.active}
+                onClick={() => {
+                  setScreenEnded(null);
+                  invoke("start_screen_source").catch((e) => setError(String(e)));
+                }}
+              >
+                Activer la capture d&apos;écran
+              </button>
+              <button
+                className="btn ghost"
+                disabled={!screen?.active}
+                onClick={() =>
+                  invoke("stop_screen_source").catch((e) => setError(String(e)))
+                }
+              >
+                Arrêter le partage
+              </button>
+            </div>
+          )}
         </section>
       </main>
     </div>
