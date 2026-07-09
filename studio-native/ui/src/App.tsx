@@ -91,6 +91,9 @@ export function App() {
   // (dB per channel id + "master") polled from the Rust `level` elements.
   const [recording, setRecording] = useState(false);
   const [recPath, setRecPath] = useState<string | null>(null);
+  const [rtmpUrl, setRtmpUrl] = useState("");
+  const [live, setLive] = useState(false);
+  const [liveEnded, setLiveEnded] = useState<string | null>(null);
   const [audioOn, setAudioOn] = useState(false);
   const [audioChannels, setAudioChannels] = useState<
     { id: string; fader: number; muted: boolean }[]
@@ -248,6 +251,13 @@ export function App() {
         .then((s) => {
           setCamera(s);
           if (s.ended_reason) setCameraEnded(s.ended_reason);
+        })
+        .catch(() => {});
+      invoke<SourceStatus>("broadcast_status")
+        .then((s) => {
+          setLive(s.active);
+          // A drop (active flips false with a reason) — surface it and reset.
+          if (s.ended_reason) setLiveEnded(s.ended_reason);
         })
         .catch(() => {});
     }, 500);
@@ -429,6 +439,50 @@ export function App() {
               {recording ? "Enregistrement en cours → " : "Enregistré : "}
               <code>{recPath}</code>
             </div>
+          )}
+
+          {caps?.outputs.includes("broadcast") && (
+            <>
+              {liveEnded && !live && (
+                <div className="banner err">Diffusion interrompue : {liveEnded}</div>
+              )}
+              <input
+                className="picker"
+                type="text"
+                placeholder="rtmps://live-api-s.facebook.com:443/rtmp/CLÉ"
+                value={rtmpUrl}
+                disabled={live}
+                onChange={(e) => setRtmpUrl(e.target.value)}
+              />
+              <div className="btnrow">
+                {!live ? (
+                  <button
+                    className="btn"
+                    disabled={!rtmpUrl.trim()}
+                    onClick={() => {
+                      setLiveEnded(null);
+                      invoke("start_broadcast", { rtmpUrl })
+                        .then(() => setLive(true))
+                        .catch((e) => setError(String(e)));
+                    }}
+                  >
+                    🔴 Passer en direct
+                  </button>
+                ) : (
+                  <button
+                    className="btn"
+                    style={{ background: "rgba(240,120,120,0.18)", borderColor: "rgba(240,120,120,0.4)", color: "#f0a8a8" }}
+                    onClick={() =>
+                      invoke("stop_broadcast")
+                        .then(() => setLive(false))
+                        .catch((e) => setError(String(e)))
+                    }
+                  >
+                    ⏹ Arrêter le direct
+                  </button>
+                )}
+              </div>
+            </>
           )}
 
           {caps?.sources.includes(SCREEN_SOURCE_ID) && (

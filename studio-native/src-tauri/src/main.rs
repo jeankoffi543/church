@@ -90,6 +90,12 @@ fn current_capabilities() -> Capabilities {
             caps.outputs.push("record".into());
         }
     }
+    #[cfg(feature = "broadcast")]
+    {
+        if mod_output_broadcast::is_available() {
+            caps.outputs.push("broadcast".into());
+        }
+    }
     caps
 }
 
@@ -450,6 +456,59 @@ mod media {
             .unwrap_or(false)
     }
 
+    // ── external broadcast output (CHR-109) ─────────────────────────────────
+    const BROADCAST_ID: &str = "broadcast";
+
+    /// Go live to `rtmp_url` (RTMPS direct to Facebook), tapping the programme
+    /// `tee`. If the connection later drops, the engine auto-detaches this output
+    /// and keeps the programme + preview running (read the drop reason via
+    /// `broadcast_status`).
+    #[tauri::command]
+    pub fn start_broadcast(
+        state: tauri::State<'_, MediaState>,
+        rtmp_url: String,
+    ) -> Result<(), String> {
+        #[cfg(feature = "broadcast")]
+        {
+            if !mod_output_broadcast::is_available() {
+                return Err("chaîne de diffusion RTMP indisponible".into());
+            }
+            if rtmp_url.trim().is_empty() {
+                return Err("URL RTMP vide".into());
+            }
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            engine
+                .attach_output(
+                    BROADCAST_ID,
+                    Box::new(move || mod_output_broadcast::build_broadcast_bin(&rtmp_url)),
+                )
+                .map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "broadcast"))]
+        {
+            let _ = (state, rtmp_url);
+            Err("module diffusion non compilé".into())
+        }
+    }
+
+    /// Stop the broadcast — finalises the RTMP stream (EOS) then detaches.
+    #[tauri::command]
+    pub fn stop_broadcast(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .detach_output(BROADCAST_ID)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Whether the broadcast is live, plus the reason it last dropped (connection
+    /// lost), read once. The captureActive/ended parity for the output side.
+    #[tauri::command]
+    pub fn broadcast_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
+        read_status(&state, BROADCAST_ID)
+    }
+
     // ── audio mixer (CHR-107) ───────────────────────────────────────────────
     // Gated on `audio` (separate engine/state). The audio mixer replaces the
     // web AudioContext: per-channel fader/mute/gain/balance + real VU meters.
@@ -718,7 +777,10 @@ fn main() {
                 media::overlay_active,
                 media::start_recording,
                 media::stop_recording,
-                media::recording_active
+                media::recording_active,
+                media::start_broadcast,
+                media::stop_broadcast,
+                media::broadcast_status
                 $(, $extra)*
             ]
         };
