@@ -7,6 +7,13 @@ rust-version.workspace = true
 description = "Pure domain logic for the native studio: scene/layer model, easing, CHR-57 reaction blending. No media dependencies."
 
 [dependencies]
-# Intentionally empty. studio-core must never depend on GStreamer, Tauri, or any
-# platform/media crate. If a dependency here is not pure-Rust std logic, it is a
-# design smell — the media plane lives in studio-media / mod-* crates.
+# studio-core must never depend on GStreamer, Tauri, or any platform/media crate
+# — the media plane lives in studio-media / mod-* crates. Pure-Rust logic only.
+# serde qualifies: it is pure Rust with no platform/media ties, and CHR-102's
+# persistence is defined as serialising THIS model (the shell does the file IO),
+# so the model must be (de)serialisable at the source of truth.
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Round-trip persistence tests serialise the model to JSON and back.
+serde_json = "1"
