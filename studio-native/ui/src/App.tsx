@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./lib/api";
-import type { Capabilities, CameraDevice, EncoderConfig, StudioDoc } from "./lib/api";
+import type { Capabilities, EncoderConfig, StudioDoc } from "./lib/api";
 import { StageMonitor } from "./components/StageMonitor";
 import { TransitionBar } from "./components/TransitionBar";
 import { ResizableRow } from "./components/ResizableRow";
@@ -39,7 +39,6 @@ export function App() {
 
   const [screenActive, setScreenActive] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-  const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [cameraId, setCameraId] = useState("");
   const shownRef = useRef<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -73,7 +72,6 @@ export function App() {
     api.getCapabilities().then(setCaps).catch(fail);
     api.getStudioState().then(setDoc).catch(fail);
     api.listCameras().then((l) => {
-      setCameras(l);
       setCameraId((id) => id || l[0]?.id || "");
     }).catch(() => {});
     api.listEncoders().then(setEncoders).catch(() => {});
@@ -122,12 +120,6 @@ export function App() {
     setTransform(FULL);
     cmd({ type: "selectLayer", id });
   };
-  const addOverlay = (kind: string) => cmd({ type: "addLayer", kind, id: genId(), parentId: null });
-
-  const toggleScreen = () =>
-    (screenActive ? api.stopScreen() : api.startScreen()).catch(fail);
-  const toggleCamera = () =>
-    (cameraActive ? api.stopCamera() : api.startCamera(cameraId || null)).catch(fail);
 
   // Reactive store→compositor sync: whenever the document changes, reconcile the
   // compositor's shown overlays with the ACTIVE scene's visible overlay layers —
@@ -148,7 +140,18 @@ export function App() {
     for (const id of want) if (!cur.has(id)) api.showPreviewOverlay(id).catch(() => {});
     for (const id of cur) if (!want.has(id)) api.hidePreviewOverlay(id).catch(() => {});
     shownRef.current = want;
-  }, [doc]);
+
+    // Device sources (screen / camera) follow the scene's layers' visibility:
+    // adding + showing a "screen"/"camera" source starts the real device; hiding
+    // stops it. Idempotent (double-start errors are caught).
+    const layers = scene?.layers ?? [];
+    const screenWanted = layers.some((l) => l.kind === "screen" && l.visible);
+    const cameraWanted = layers.some((l) => l.kind === "camera" && l.visible);
+    if (screenWanted && !screenActive) api.startScreen().catch(() => {});
+    if (!screenWanted && screenActive) api.stopScreen().catch(() => {});
+    if (cameraWanted && !cameraActive) api.startCamera(cameraId || null).catch(() => {});
+    if (!cameraWanted && cameraActive) api.stopCamera().catch(() => {});
+  }, [doc, screenActive, cameraActive, cameraId]);
 
   // CUT: promote the preview's staged overlays to the PROGRAMME (on-air +
   // recorded), reconciling what's already there, then advance the domain.
@@ -275,36 +278,36 @@ export function App() {
             id: "scenes",
             label: "Scènes",
             node: (
-              <DockShell label="Scènes">
-                <ScenesDock
-                  doc={doc}
-                  onSelect={(id) => cmd({ type: "selectScene", id })}
-                  onAdd={() => cmd({ type: "addScene", id: `scene-${(doc?.scenes.length ?? 0) + 1}` })}
-                />
-              </DockShell>
+              <ScenesDock
+                scenes={doc?.scenes ?? []}
+                currentSceneId={doc?.currentSceneId ?? ""}
+                programSceneId={doc?.program?.sceneId ?? ""}
+                onSelect={(id) => cmd({ type: "selectScene", id })}
+                onAdd={() => cmd({ type: "addScene", id: `scene-${Date.now().toString(36)}` })}
+                onReorder={(dragId, targetId) => cmd({ type: "reorderScene", dragId, targetId })}
+                onRequestDelete={(id) => {
+                  if (confirm("Supprimer cette scène ?")) cmd({ type: "deleteScene", id });
+                }}
+                onRename={(id, name) => cmd({ type: "renameScene", id, name })}
+              />
             ),
           },
           {
             id: "sources",
             label: "Sources",
             node: (
-              <DockShell label="Sources">
-                <SourcesDock
-                  doc={doc}
-                  caps={caps}
-                  cameras={cameras}
-                  cameraId={cameraId}
-                  onCameraId={setCameraId}
-                  screenActive={screenActive}
-                  cameraActive={cameraActive}
-                  selectedId={selectedId}
-                  onToggleScreen={toggleScreen}
-                  onToggleCamera={toggleCamera}
-                  onAddOverlay={addOverlay}
-                  onSelectLayer={selectLayer}
-                  onToggleVisible={(id) => cmd({ type: "toggleVisible", id })}
-                />
-              </DockShell>
+              <SourcesDock
+                layers={doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers ?? []}
+                selectedLayerId={selectedId}
+                onSelect={selectLayer}
+                onAdd={(kind, parent) => cmd({ type: "addLayer", kind, id: genId(), parentId: parent ?? null })}
+                onToggle={(id) => cmd({ type: "toggleVisible", id })}
+                onMove={(id, dir) => cmd({ type: "reorderLayer", id, dir: dir === -1 ? "forward" : "backward" })}
+                onReorder={(dragId, targetId) => cmd({ type: "reorderLayerTo", dragId, targetId })}
+                onRequestDelete={(id) => {
+                  if (confirm("Supprimer cette source ?")) cmd({ type: "removeLayer", id });
+                }}
+              />
             ),
           },
           {
