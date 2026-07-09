@@ -377,11 +377,32 @@ impl MediaEngine {
     /// its own volume/pan/level chain — the mixer faders drive it live (CHR-124)
     /// and it reaches the outputs' muxers (CHR-116).
     pub fn add_audio_channel(&self, id: impl Into<String>, freq: Option<f64>) -> Result<()> {
+        let id = id.into();
+        let (bin, volume, panorama) = audio_channel_bin(&id, freq)?;
         attach_audio_channel(
             &self.pipeline,
             &self.audio_mixer,
-            id.into(),
-            freq,
+            id,
+            bin,
+            volume,
+            panorama,
+            &self.audio_channels,
+        )
+    }
+
+    /// Add an **audio-file** channel to the bus (CHR-125): decodes `uri`
+    /// (`file://…` or http) into the mix, so a real recording/broadcast carries
+    /// it — mixer-controlled, with real VU. `uri` must be a valid GStreamer URI.
+    pub fn add_audio_file_channel(&self, id: impl Into<String>, uri: &str) -> Result<()> {
+        let id = id.into();
+        let (bin, volume, panorama) = audio_file_channel_bin(&id, uri)?;
+        attach_audio_channel(
+            &self.pipeline,
+            &self.audio_mixer,
+            id,
+            bin,
+            volume,
+            panorama,
             &self.audio_channels,
         )
     }
@@ -1829,19 +1850,82 @@ fn build_audio_bus(
         .context("link audio tee → keepalive")?;
 
     let channels: AudioChannelMap = Arc::new(Mutex::new(HashMap::new()));
-    attach_audio_channel(pipeline, &mixer, "audio-base".into(), None, &channels)?;
+    let (base, base_vol, base_pan) = audio_channel_bin("audio-base", None)?;
+    attach_audio_channel(
+        pipeline,
+        &mixer,
+        "audio-base".into(),
+        base,
+        base_vol,
+        base_pan,
+        &channels,
+    )?;
     Ok((mixer, tee, channels))
 }
 
-/// Attach an audio channel to the bus mixer, live (CHR-124).
+/// An audio-file channel bin (CHR-125): `uridecodebin(uri) → [audio pad] →
+/// convert → resample → volume → audiopanorama → level`, ghost `src`. The decoder
+/// pad is dynamic, linked to `audioconvert` on `pad-added` (audio pads only, so a
+/// video file's video pad is ignored).
+fn audio_file_channel_bin(id: &str, uri: &str) -> Result<(gst::Bin, gst::Element, gst::Element)> {
+    let dec = gst::ElementFactory::make("uridecodebin")
+        .property("uri", uri)
+        .build()
+        .context("make uridecodebin")?;
+    let convert = gst::ElementFactory::make("audioconvert").build()?;
+    let resample = gst::ElementFactory::make("audioresample").build()?;
+    let volume = gst::ElementFactory::make("volume")
+        .build()
+        .context("make volume")?;
+    let panorama = gst::ElementFactory::make("audiopanorama")
+        .build()
+        .context("make audiopanorama")?;
+    let level = gst::ElementFactory::make("level")
+        .name(format!("level:{id}"))
+        .property("post-messages", true)
+        .property("interval", 100_000_000u64)
+        .build()
+        .context("make level")?;
+
+    let bin = gst::Bin::new();
+    bin.add_many([&dec, &convert, &resample, &volume, &panorama, &level])
+        .context("add audio-file channel elements")?;
+    gst::Element::link_many([&convert, &resample, &volume, &panorama, &level])
+        .context("link audio-file channel chain")?;
+    let convert_sink = convert
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("audioconvert has no sink pad"))?;
+    dec.connect_pad_added(move |_, pad| {
+        let caps = pad.current_caps().unwrap_or_else(|| pad.query_caps(None));
+        let is_audio = caps
+            .structure(0)
+            .map(|s| s.name().starts_with("audio/"))
+            .unwrap_or(false);
+        if is_audio && !convert_sink.is_linked() {
+            let _ = pad.link(&convert_sink);
+        }
+    });
+
+    let tail = level
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("level has no src pad"))?;
+    let ghost = gst::GhostPad::with_target(&tail).context("audio channel ghost pad")?;
+    ghost.set_active(true)?;
+    bin.add_pad(&ghost)?;
+    Ok((bin, volume, panorama))
+}
+
+/// Attach an already-built audio channel (bin + its volume/panorama) to the bus
+/// mixer, live (CHR-124/125).
 fn attach_audio_channel(
     pipeline: &gst::Pipeline,
     mixer: &gst::Element,
     id: String,
-    freq: Option<f64>,
+    bin: gst::Bin,
+    volume: gst::Element,
+    panorama: gst::Element,
     channels: &AudioChannelMap,
 ) -> Result<()> {
-    let (bin, volume, panorama) = audio_channel_bin(&id, freq)?;
     pipeline
         .add(&bin)
         .context("add audio channel to pipeline")?;
@@ -2451,5 +2535,73 @@ mod tests {
         engine.remove_audio_channel("mic").expect("remove channel");
         assert!(!engine.is_audio_channel_active("mic"));
         engine.stop();
+    }
+
+    /// CHR-125 audio file: a decoded audio FILE plays into the bus and meters a
+    /// real VU level (so the recording/broadcast carries it). Headless — we
+    /// generate a real WAV, then play it through an audio-file channel.
+    #[test]
+    fn audio_file_channel_plays_and_meters_a_real_level() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _ = gst::init();
+        // Generate a short real WAV (a tone) to a temp file.
+        let path = std::env::temp_dir().join(format!("chr125-{}.wav", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let gen = gst::parse::launch(&format!(
+            "audiotestsrc num-buffers=200 ! audioconvert ! wavenc ! filesink location=\"{}\"",
+            path.display()
+        ))
+        .expect("build wav generator");
+        gen.set_state(gst::State::Playing).unwrap();
+        if let Some(bus) = gen.bus() {
+            for msg in bus.iter_timed(gst::ClockTime::from_seconds(10)) {
+                match msg.view() {
+                    gst::MessageView::Eos(_) => break,
+                    gst::MessageView::Error(e) => panic!("wav gen error: {}", e.error()),
+                    _ => {}
+                }
+            }
+        }
+        let _ = gen.set_state(gst::State::Null);
+        assert!(
+            std::fs::metadata(&path)
+                .map(|m| m.len() > 1000)
+                .unwrap_or(false),
+            "WAV not written"
+        );
+        let uri = format!("file://{}", path.display());
+
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+        engine
+            .add_audio_file_channel("file", &uri)
+            .expect("add audio file channel");
+        assert!(engine.is_audio_channel_active("file"));
+
+        // The decoder pad links + the file plays → a real level is metered.
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            let level = engine
+                .audio_levels()
+                .get("file")
+                .copied()
+                .unwrap_or(f64::NEG_INFINITY);
+            if level.is_finite() && level > -60.0 {
+                ok = true;
+                break;
+            }
+        }
+        engine.stop();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            ok,
+            "the audio-file channel should decode + meter a real VU level"
+        );
     }
 }

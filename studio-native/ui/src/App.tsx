@@ -168,7 +168,8 @@ export function App() {
     const curAudio = audioChanRef.current;
     for (const l of layers) {
       if (wantAudio.has(l.id) && !curAudio.has(l.id)) {
-        api.mixerChannelAdd(l.id, 220).catch(() => {});
+        // A real file (CHR-125) if the layer has one, else a tone stand-in.
+        api.mixerChannelAdd(l.id, 220, (l.audioFileUrl as string) || null).catch(() => {});
         api.mixerChannelSet(l.id, (l.audioLevel as number) ?? 80, (l.audioGain as number) ?? 0, (l.audioMuted as boolean) ?? false, (l.audioBalance as number) ?? 0).catch(() => {});
       }
     }

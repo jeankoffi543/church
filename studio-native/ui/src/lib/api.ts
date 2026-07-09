@@ -173,8 +173,8 @@ export const setAudioChannel = (
 export const audioLevels = () => invoke<Record<string, number>>("audio_levels");
 
 // CHR-124: the engine audio bus (real audio in outputs + real VU), keyed by layer id.
-export const mixerChannelAdd = (id: string, freq: number | null) =>
-  invoke("mixer_channel_add", { id, freq });
+export const mixerChannelAdd = (id: string, freq: number | null, uri?: string | null) =>
+  invoke("mixer_channel_add", { id, freq, uri: uri ?? null });
 export const mixerChannelRemove = (id: string) => invoke("mixer_channel_remove", { id });
 export const mixerChannelSet = (
   id: string,
