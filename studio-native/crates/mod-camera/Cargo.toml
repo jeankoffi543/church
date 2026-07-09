@@ -1,0 +1,20 @@
+[package]
+name = "mod-camera"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "CHR-105 — camera / capture-card Source module. Enumerates video-input devices (webcam, HDMI capture, NDI virtual input) and builds a compositor-layer bin for the chosen one. Removable: absent ⇒ the source just doesn't appear."
+
+[dependencies]
+gstreamer = "0.23"
+anyhow = "1"
+# CameraDevice crosses the IPC boundary (device picker in the UI), so it is
+# serialisable. Pure Rust — consistent with the "no platform ties in the model".
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Reuse the proven engine (compositor → jpegenc → appsink + frame counting) to
+# verify capture end-to-end under a real device. No cycle: studio-media does not
+# depend on this crate.
+studio-media = { path = "../studio-media" }

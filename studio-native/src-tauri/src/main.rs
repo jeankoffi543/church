@@ -70,6 +70,12 @@ fn current_capabilities() -> Capabilities {
             caps.sources.push(studio_core::LayerKind::Screen);
         }
     }
+    #[cfg(feature = "camera")]
+    {
+        if mod_camera::is_available() {
+            caps.sources.push(studio_core::LayerKind::Camera);
+        }
+    }
     caps
 }
 
@@ -227,6 +233,70 @@ mod media {
             ended_reason: engine.and_then(|e| e.take_ended_reason(SCREEN_SOURCE_ID)),
         }
     }
+
+    // ── camera / capture (CHR-105) ──────────────────────────────────────────
+    /// The id mod-camera's (single, for now) source is registered under.
+    #[cfg(feature = "camera")]
+    const CAMERA_SOURCE_ID: &str = "camera";
+
+    #[cfg(feature = "camera")]
+    #[derive(Serialize)]
+    pub struct CameraStatus {
+        pub active: bool,
+        pub ended_reason: Option<String>,
+    }
+
+    /// The connected cameras, for the UI device picker. Empty when none — the
+    /// removable-module guarantee (the source then never appears).
+    #[cfg(feature = "camera")]
+    #[tauri::command]
+    pub fn list_cameras() -> Vec<mod_camera::CameraDevice> {
+        mod_camera::list_cameras()
+    }
+
+    /// Attach the camera source, live, for the chosen device (`None` = first
+    /// available) — the CHR-104 hot-add path with a device selection.
+    #[cfg(feature = "camera")]
+    #[tauri::command]
+    pub fn start_camera_source(
+        state: tauri::State<'_, MediaState>,
+        device_id: Option<String>,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .add_source(
+                CAMERA_SOURCE_ID,
+                Box::new(move || mod_camera::build_source(device_id)),
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Detach the camera source, live, without touching the rest of the pipeline.
+    #[cfg(feature = "camera")]
+    #[tauri::command]
+    pub fn stop_camera_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .remove_source(CAMERA_SOURCE_ID)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Whether the camera source is active, plus the reason it was last
+    /// auto-detached (device unplugged) — the captureActive/ended parity.
+    #[cfg(feature = "camera")]
+    #[tauri::command]
+    pub fn camera_status(state: tauri::State<'_, MediaState>) -> CameraStatus {
+        let guard = state.0.lock().ok();
+        let engine = guard.as_ref().and_then(|g| g.as_ref());
+        CameraStatus {
+            active: engine
+                .map(|e| e.is_source_active(CAMERA_SOURCE_ID))
+                .unwrap_or(false),
+            ended_reason: engine.and_then(|e| e.take_ended_reason(CAMERA_SOURCE_ID)),
+        }
+    }
 }
 
 /// The scene document + persistence (CHR-102). This is the pure `studio-core`
@@ -369,30 +439,15 @@ fn main() {
         Ok(())
     });
 
-    #[cfg(all(feature = "media", feature = "screen"))]
-    let builder =
-        builder
-            .manage(media::MediaState::default())
-            .invoke_handler(tauri::generate_handler![
-                get_capabilities,
-                studio::get_studio_state,
-                studio::apply_command,
-                media::start_preview,
-                media::stop_preview,
-                media::media_status,
-                media::preview_frame,
-                media::set_layer_transform,
-                media::canvas_size,
-                media::start_screen_source,
-                media::stop_screen_source,
-                media::screen_status
-            ]);
-
-    #[cfg(all(feature = "media", not(feature = "screen")))]
-    let builder =
-        builder
-            .manage(media::MediaState::default())
-            .invoke_handler(tauri::generate_handler![
+    // The command set is assembled per compiled module. Screen and camera are
+    // independent removable sources, so there are four media combinations; a
+    // local macro keeps the always-on list DRY and each arm lists only its own
+    // source commands. Without `media` the shell still exposes the studio
+    // document (persistence works with zero media plane).
+    #[cfg(feature = "media")]
+    macro_rules! media_handler {
+        ($($extra:path),* $(,)?) => {
+            tauri::generate_handler![
                 get_capabilities,
                 studio::get_studio_state,
                 studio::apply_command,
@@ -402,7 +457,47 @@ fn main() {
                 media::preview_frame,
                 media::set_layer_transform,
                 media::canvas_size
-            ]);
+                $(, $extra)*
+            ]
+        };
+    }
+
+    #[cfg(all(feature = "media", feature = "screen", feature = "camera"))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .invoke_handler(media_handler![
+            media::start_screen_source,
+            media::stop_screen_source,
+            media::screen_status,
+            media::list_cameras,
+            media::start_camera_source,
+            media::stop_camera_source,
+            media::camera_status,
+        ]);
+
+    #[cfg(all(feature = "media", feature = "screen", not(feature = "camera")))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .invoke_handler(media_handler![
+            media::start_screen_source,
+            media::stop_screen_source,
+            media::screen_status,
+        ]);
+
+    #[cfg(all(feature = "media", not(feature = "screen"), feature = "camera"))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .invoke_handler(media_handler![
+            media::list_cameras,
+            media::start_camera_source,
+            media::stop_camera_source,
+            media::camera_status,
+        ]);
+
+    #[cfg(all(feature = "media", not(feature = "screen"), not(feature = "camera")))]
+    let builder = builder
+        .manage(media::MediaState::default())
+        .invoke_handler(media_handler![]);
 
     #[cfg(not(feature = "media"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
