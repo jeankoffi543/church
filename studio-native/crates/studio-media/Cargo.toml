@@ -10,3 +10,5 @@ description = "CHR-102 — media runtime: GStreamer compositor pipeline driven b
 gstreamer = "0.23"
 gstreamer-app = "0.23"
 anyhow = "1"
+# Reuse the pure easing solver for entrance/reaction pad animations (CHR-110).
+studio-core = { path = "../studio-core" }

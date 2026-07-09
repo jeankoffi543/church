@@ -116,6 +116,20 @@ pub enum AnimEasing {
     BackOut,
 }
 
+impl AnimEasing {
+    /// The name [`crate::easing::ease`] expects (the exact web preset id).
+    pub fn as_name(self) -> &'static str {
+        match self {
+            AnimEasing::Linear => "linear",
+            AnimEasing::EaseIn => "ease-in",
+            AnimEasing::EaseOut => "ease-out",
+            AnimEasing::EaseInOut => "ease-in-out",
+            AnimEasing::Bounce => "bounce",
+            AnimEasing::BackOut => "back-out",
+        }
+    }
+}
+
 /// Horizontal text alignment (`textAlign`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
