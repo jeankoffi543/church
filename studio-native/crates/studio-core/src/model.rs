@@ -96,6 +96,23 @@ pub struct Stanza {
     pub content: String,
 }
 
+/// A Bible verse — mirror of the web `ScriptureVerse`. The bible layer's on-air
+/// content (owned by the orchestrator / store, not the layer). `reference` and
+/// `text` are the only guaranteed fields; the rest are optional metadata.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ScriptureVerse {
+    pub id: Option<i64>,
+    pub book: Option<String>,
+    pub chapter: Option<i64>,
+    pub verse: Option<i64>,
+    pub reference: String,
+    pub text: String,
+    pub translation: Option<String>,
+    /// Per-translation texts (`texts`), when the verse carries several versions.
+    pub texts: Option<std::collections::HashMap<String, String>>,
+}
+
 /// One layer in a scene — the full Rust `StudioLayer`. Z-order is the position
 /// in [`Scene::layers`] (front = index 0, matching the web dock where the top
 /// row is front). Every field past the core five is `Option`/defaulted so a

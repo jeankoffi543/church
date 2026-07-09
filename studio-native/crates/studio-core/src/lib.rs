@@ -10,6 +10,9 @@
 //!    `blendReactionStyles`.
 //!  * [`model`] — scene/layer model (the full `StudioLayer`) + runtime
 //!    [`model::Capabilities`] for the module-agnostic UI negotiation.
+//!  * [`store`] — the [`store::Studio`] document + the preview→programme CUT
+//!    machine, driven by [`store::Command`]s answering with [`store::Event`]s
+//!    (the web console's state machine, ported).
 //!
 //! ## Why this crate has no media dependencies
 //!
@@ -25,14 +28,16 @@
 pub mod easing;
 pub mod model;
 pub mod reaction;
+pub mod store;
 pub mod style;
 
 pub use easing::{ease, Cubic, UnitBezier};
 pub use model::{
     create_layer, default_layer_style, layer_meta, AudioSourceType, Capabilities, Fill, Layer,
-    LayerKind, LayerMeta, ReplayMode, Scene, Stanza, ADD_TYPES,
+    LayerKind, LayerMeta, ReplayMode, Scene, ScriptureVerse, Stanza, ADD_TYPES,
 };
 pub use reaction::{blend, pick_reaction_style, StylePatch};
+pub use store::{Command, Event, MoveDir, Program, Studio};
 pub use style::{
     AnimEasing, BorderStyle, ContainerShape, FontDecoration, FontStyleKind, FontTransform, Layout,
     OverflowDir, PositionMode, PredefinedPosition, Style, TextAlign, TextVAlign, TypeStyle,
