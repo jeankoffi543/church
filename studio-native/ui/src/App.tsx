@@ -7,10 +7,13 @@ import { ResizableRow } from "./components/ResizableRow";
 import { ScenesDock } from "./components/ScenesDock";
 import { SourcesDock } from "./components/SourcesDock";
 import { MixerDock, MixChannel } from "./components/MixerDock";
-import { InspectorDock, Transform } from "./components/InspectorDock";
+import { InspectorDock } from "./components/InspectorDock";
 import { ControlsDock } from "./components/ControlsDock";
 import { StatusBar } from "./components/StatusBar";
+import { TransformBox } from "./components/TransformBox";
+import type { StudioLayer } from "./lib/api";
 
+type Transform = { x: number; y: number; w: number; h: number };
 const OVERLAY_KINDS = ["text", "bible", "song"];
 const genId = () => `layer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 const FULL: Transform = { x: 0, y: 0, w: 1, h: 1 };
@@ -36,7 +39,7 @@ export function App() {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [cameraId, setCameraId] = useState("");
-  const [shownOverlays, setShownOverlays] = useState<Set<string>>(new Set());
+  const shownRef = useRef<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transform, setTransform] = useState<Transform>(FULL);
 
@@ -131,15 +134,24 @@ export function App() {
   const toggleCamera = () =>
     (cameraActive ? api.stopCamera() : api.startCamera(cameraId || null)).catch(fail);
 
-  const toggleOverlay = (id: string, show: boolean) => {
-    (show ? api.showOverlay(id) : api.hideOverlay(id))
-      .then(() => setShownOverlays((s) => {
-        const n = new Set(s);
-        show ? n.add(id) : n.delete(id);
-        return n;
-      }))
-      .catch(fail);
-  };
+  // Reactive store→compositor sync: whenever the document changes, reconcile the
+  // compositor's shown overlays with the ACTIVE scene's visible overlay layers —
+  // showing plays each layer's entrance (CHR-110), hiding detaches it. This is
+  // what makes scene-switching + visibility edits actually change the programme,
+  // rather than the UI poking the compositor by hand.
+  useEffect(() => {
+    if (!doc) return;
+    const scene = doc.scenes.find((s) => s.id === doc.currentSceneId);
+    const want = new Set(
+      (scene?.layers ?? [])
+        .filter((l) => OVERLAY_KINDS.includes(l.kind) && l.visible)
+        .map((l) => l.id),
+    );
+    const cur = shownRef.current;
+    for (const id of want) if (!cur.has(id)) api.showOverlay(id).catch(() => {});
+    for (const id of cur) if (!want.has(id)) api.hideOverlay(id).catch(() => {});
+    shownRef.current = want;
+  }, [doc]);
 
   const applyTransform = (t: Transform) => {
     setTransform(t);
@@ -193,6 +205,19 @@ export function App() {
 
   const currentLayer = () =>
     doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === selectedId) ?? null;
+  // Whether the selected layer has a live compositor pad we can drag on the monitor.
+  const draggableLayer = () => {
+    const l = currentLayer();
+    return l ? sourceIdFor(l.kind, l.id) !== null : false;
+  };
+
+  // Inspector edit → persist the whole layer, then re-render it on the
+  // compositor if it's a currently-shown overlay (so style edits are live).
+  const onLayerChange = (l: StudioLayer) =>
+    api.applyCommand({ type: "replaceLayer", layer: l }).then((d) => {
+      refreshDoc(d);
+      if (shownRef.current.has(l.id)) api.showOverlay(l.id).catch(() => {});
+    }).catch(fail);
 
   return (
     <div className="regie">
@@ -214,6 +239,7 @@ export function App() {
           frame={frame}
           dim={black}
           badge={live ? <span className={`onair ${sandbox ? "test" : ""}`}>{sandbox ? "TEST" : "● DIRECT"}</span> : recording ? <span className="onair rec">● REC</span> : undefined}
+          overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
         />
       </div>
 
@@ -223,15 +249,15 @@ export function App() {
             { id: "scenes", label: "Scènes", node: <ScenesDock doc={doc} onSelect={(id) => cmd({ type: "selectScene", id })} onAdd={() => cmd({ type: "addScene", id: `scene-${(doc?.scenes.length ?? 0) + 1}` })} /> },
             { id: "sources", label: "Sources", node: (
               <SourcesDock doc={doc} caps={caps} cameras={cameras} cameraId={cameraId} onCameraId={setCameraId}
-                screenActive={screenActive} cameraActive={cameraActive} shownOverlays={shownOverlays} selectedId={selectedId}
+                screenActive={screenActive} cameraActive={cameraActive} selectedId={selectedId}
                 onToggleScreen={toggleScreen} onToggleCamera={toggleCamera} onAddOverlay={addOverlay}
-                onSelectLayer={selectLayer} onToggleOverlay={toggleOverlay} />
+                onSelectLayer={selectLayer} onToggleVisible={(id) => cmd({ type: "toggleVisible", id })} />
             ) },
             { id: "mixer", label: "Mixage", node: (
               <MixerDock audioOn={audioOn} channels={channels} levels={levels} onToggleAudio={toggleAudio} onAddTone={addTone} onChange={changeChannel} />
             ) },
             { id: "inspector", label: "Inspecteur", node: (
-              <InspectorDock layer={currentLayer()} transform={transform} onTransform={applyTransform}
+              <InspectorDock layer={currentLayer()} onChange={onLayerChange}
                 onToggleVisible={() => { const l = currentLayer(); if (l) cmd({ type: "toggleVisible", id: l.id }); }} />
             ) },
             { id: "controls", label: "Commandes", node: (

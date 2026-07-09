@@ -13,13 +13,12 @@ export function SourcesDock({
   onCameraId,
   screenActive,
   cameraActive,
-  shownOverlays,
   selectedId,
   onToggleScreen,
   onToggleCamera,
   onAddOverlay,
   onSelectLayer,
-  onToggleOverlay,
+  onToggleVisible,
 }: {
   doc: StudioDoc | null;
   caps: Capabilities | null;
@@ -28,13 +27,12 @@ export function SourcesDock({
   onCameraId: (id: string) => void;
   screenActive: boolean;
   cameraActive: boolean;
-  shownOverlays: Set<string>;
   selectedId: string | null;
   onToggleScreen: () => void;
   onToggleCamera: () => void;
   onAddOverlay: (kind: string) => void;
   onSelectLayer: (id: string) => void;
-  onToggleOverlay: (id: string, show: boolean) => void;
+  onToggleVisible: (id: string) => void;
 }) {
   const scene = doc?.scenes.find((s) => s.id === doc.currentSceneId);
   const overlayKinds = OVERLAY_KINDS.filter((k) => caps?.sources.includes(k));
@@ -76,32 +74,26 @@ export function SourcesDock({
       )}
 
       <ul className="list">
-        {scene?.layers.map((l) => {
-          const isOverlay = OVERLAY_KINDS.includes(l.kind);
-          const shown = shownOverlays.has(l.id);
-          return (
-            <li
-              key={l.id}
-              className={`row ${l.id === selectedId ? "row-sel" : ""}`}
-              onClick={() => onSelectLayer(l.id)}
+        {scene?.layers.map((l) => (
+          <li
+            key={l.id}
+            className={`row ${l.id === selectedId ? "row-sel" : ""}`}
+            onClick={() => onSelectLayer(l.id)}
+          >
+            <span className="row-kind">{kindLabel(l.kind)}</span>
+            <span className="row-name">{l.name}</span>
+            <button
+              className={`eye ${l.visible ? "eye-on" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleVisible(l.id);
+              }}
+              title={l.visible ? "Masquer" : "Afficher"}
             >
-              <span className="row-kind">{kindLabel(l.kind)}</span>
-              <span className="row-name">{l.name}</span>
-              {isOverlay && (
-                <button
-                  className={`eye ${shown ? "eye-on" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleOverlay(l.id, !shown);
-                  }}
-                  title={shown ? "Masquer" : "Afficher"}
-                >
-                  {shown ? "◉" : "○"}
-                </button>
-              )}
-            </li>
-          );
-        })}
+              {l.visible ? "◉" : "○"}
+            </button>
+          </li>
+        ))}
         {!scene?.layers.length && <li className="empty">Scène vide</li>}
       </ul>
     </div>

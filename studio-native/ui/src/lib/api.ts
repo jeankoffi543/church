@@ -17,14 +17,65 @@ export type EncoderConfig = {
 export type EncoderInfo = { config: EncoderConfig; resolved: string | null };
 export type OutputStats = { frames: number; bytes: number; elapsed_ms: number };
 
-// Minimal mirror of studio_core::Studio (we type the fields the régie renders).
+// Mirror of studio_core (camelCase JSON). We type the fields the inspector edits
+// and keep an index signature so unknown fields survive a `{...layer}` spread —
+// critical, since ReplaceLayer round-trips the WHOLE layer through the store.
+export type TypeStyle = {
+  size: number;
+  color: string;
+  family: string;
+  weight: string;
+  [k: string]: unknown;
+};
+export type Style = {
+  animation: string;
+  animDuration: number;
+  animEasing: string;
+  positionMode: "predefined" | "custom";
+  predefinedPosition: string;
+  customX: number;
+  customY: number;
+  customWidth: number;
+  customHeight: number;
+  fontBody: TypeStyle;
+  fontRef: TypeStyle;
+  containerBg: string;
+  background: string;
+  [k: string]: unknown;
+};
 export type StudioLayer = {
   id: string;
   kind: string;
   name: string;
   visible: boolean;
   parent_id?: string | null;
+  content?: string | null;
+  sub?: string | null;
+  style: Style;
+  [k: string]: unknown;
 };
+
+// Entrance effects a compositor pad can render (CHR-110), for the inspector.
+export const ANIM_EFFECTS = [
+  "none", "fade", "fade_slide", "slide_left", "slide_right",
+  "slide_up", "slide_down", "scale", "zoom_out", "pop",
+];
+export const ANIM_EASINGS = ["linear", "ease-in", "ease-out", "ease-in-out", "bounce", "back-out"];
+// PredefinedPosition (snake_case) → French label.
+export const POSITIONS: [string, string][] = [
+  ["lower_third_left", "Tiers inf. gauche"],
+  ["lower_third_right", "Tiers inf. droit"],
+  ["centered_bottom", "Bas centré"],
+  ["centered_top", "Haut centré"],
+  ["ticker", "Bandeau défilant"],
+  ["banner_top", "Bandeau haut"],
+  ["full_screen_cinema", "Plein écran ciné"],
+  ["full_screen", "Plein écran"],
+  ["pip_top_left", "PiP haut gauche"],
+  ["pip_top_right", "PiP haut droit"],
+  ["pip_bottom_left", "PiP bas gauche"],
+  ["pip_bottom_right", "PiP bas droit"],
+];
 export type StudioScene = { id: string; name: string; layers: StudioLayer[] };
 export type StudioDoc = {
   scenes: StudioScene[];

@@ -176,9 +176,22 @@ button, input, select { font-family: inherit; }
 /* ── inspector ──────────────────────────────────────────────────────────── */
 .insp-head { display: flex; align-items: center; gap: 8px; }
 .insp-name { flex: 1; font-weight: 600; }
-.insp-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-top: 4px; }
-.insp-field { display: grid; grid-template-columns: 62px 1fr 40px; align-items: center; gap: 8px; font-size: 12px; }
-.insp-val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.insp-name-input { flex: 1; min-width: 0; padding: 5px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.insp-section { display: flex; flex-direction: column; gap: 7px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.insp-section:last-child { border-bottom: none; }
+.insp-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+.insp-field { display: grid; grid-template-columns: 62px 1fr 54px; align-items: center; gap: 8px; font-size: 12px; }
+.insp-field select { min-width: 0; }
+.insp-val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.insp-area, .insp-text { width: 100%; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-family: inherit; font-size: 12px; resize: vertical; }
+.insp-field input[type="color"] { width: 100%; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: none; }
+.insp-seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.insp-seg button { flex: 1; padding: 6px; background: var(--panel-2); border: none; color: var(--muted); cursor: pointer; font-size: 12px; }
+.insp-seg button.on { background: rgba(74, 158, 255, 0.18); color: var(--accent); }
+
+/* ── transform box (drag on monitor) ────────────────────────────────────── */
+.tbox { position: absolute; border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,0.4); cursor: move; touch-action: none; }
+.tbox-handle { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; background: var(--accent); border-radius: 3px; cursor: nwse-resize; touch-action: none; }
 
 /* ── controls dock ──────────────────────────────────────────────────────── */
 .ctl-block { display: flex; flex-direction: column; gap: 7px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
