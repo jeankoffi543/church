@@ -7,9 +7,14 @@ release pipeline.
 ## Layout note (important)
 
 The frontend (`ui/`) is a **sibling** of `src-tauri/`, not its parent. Tauri runs
-`beforeBuildCommand` from the workspace root (`studio-native/`), so the config
-uses `pnpm --dir ui build` — **not** `../ui`. If you move things, keep that path
-relative to `studio-native/`.
+`beforeDevCommand`/`beforeBuildCommand` **inside the frontend directory**
+(`studio-native/ui`, derived from `frontendDist`), so the config calls the UI's
+own scripts directly — `pnpm dev` / `pnpm build`, **no** `--dir`.
+
+**Run `cargo tauri` from the project root `studio-native/`** (not from
+`src-tauri/`): the CLI resolves the frontend dir from there, and the before-command
+lands in `ui/`. Running from inside `src-tauri/` shifts that working directory and
+breaks the before-command.
 
 ## Prerequisites
 
@@ -22,14 +27,15 @@ relative to `studio-native/`.
 
 ## Build installers locally
 
-From `studio-native/src-tauri`:
+From `studio-native/` (the project root):
 
 ```bash
+cargo tauri dev                   # run the app (starts the vite dev server first)
 cargo tauri build                 # all bundle targets for this OS
 cargo tauri build --bundles deb   # just one target (deb / appimage / dmg / nsis / msi)
 ```
 
-Artifacts land in `src-tauri/target/release/bundle/`:
+Artifacts land in `studio-native/target/release/bundle/`:
 
 | OS      | Bundles                          |
 | ------- | -------------------------------- |
