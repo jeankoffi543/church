@@ -312,16 +312,14 @@ export function App() {
             id: "inspector",
             label: "Style Pro",
             node: (
-              <DockShell label="Style Pro">
-                <InspectorDock
-                  layer={currentLayer()}
-                  onChange={onLayerChange}
-                  onToggleVisible={() => {
-                    const l = currentLayer();
-                    if (l) cmd({ type: "toggleVisible", id: l.id });
-                  }}
-                />
-              </DockShell>
+              <InspectorDock
+                layer={currentLayer()}
+                onChange={onLayerChange}
+                onPlayAnim={() => {
+                  const l = currentLayer();
+                  if (l && shownRef.current.has(l.id)) api.showPreviewOverlay(l.id).catch(() => {});
+                }}
+              />
             ),
           },
           {
