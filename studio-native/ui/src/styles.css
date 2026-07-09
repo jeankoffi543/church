@@ -339,6 +339,38 @@ code {
   color: var(--muted, #9aa);
 }
 
+.transition {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.transition .btn[data-black="1"] {
+  background: rgba(240, 200, 120, 0.16);
+  border-color: rgba(240, 200, 120, 0.4);
+  color: #f0d0a0;
+}
+
+.transition label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted, #9aa);
+}
+
+.transition input[type="number"] {
+  width: 70px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg, #1a1a1a);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+}
+
 .stats {
   display: flex;
   align-items: center;

@@ -41,6 +41,8 @@ type StudioDoc = {
   scenes: StudioScene[];
   currentSceneId: string;
   selectedLayerId: string | null;
+  // Programme state (CHR-113). `black` drives the fade-to-black transition.
+  program?: { black: boolean };
 };
 
 /** A command for the Rust store's `apply_command` (internally-tagged JSON). */
@@ -107,6 +109,7 @@ export function App() {
   const [encResolved, setEncResolved] = useState<string | null>(null);
   const [sandbox, setSandbox] = useState(false);
   const [outStats, setOutStats] = useState<{ id: string; fps: number; kbps: number } | null>(null);
+  const [fadeMs, setFadeMs] = useState(400);
   const [audioOn, setAudioOn] = useState(false);
   const [audioChannels, setAudioChannels] = useState<
     { id: string; fader: number; muted: boolean }[]
@@ -469,6 +472,42 @@ export function App() {
               Arrêter
             </button>
           </div>
+
+          {media?.running && (
+            <div className="transition">
+              <button
+                className="btn"
+                data-black={studio?.program?.black ? "1" : "0"}
+                onClick={() =>
+                  invoke<StudioDoc>("apply_command", {
+                    command: { type: "blackScreen" },
+                  })
+                    .then((doc) => {
+                      setStudio(doc);
+                      return invoke("set_program_black", {
+                        black: doc.program?.black ?? false,
+                        fadeMs,
+                      });
+                    })
+                    .catch((e) => setError(String(e)))
+                }
+              >
+                {studio?.program?.black ? "☀ Rétablir le programme" : "⬛ Fondu au noir"}
+              </button>
+              <label>
+                Fondu
+                <input
+                  type="number"
+                  min={0}
+                  max={3000}
+                  step={100}
+                  value={fadeMs}
+                  onChange={(e) => setFadeMs(Number(e.target.value) || 0)}
+                />
+                ms
+              </label>
+            </div>
+          )}
 
           {(caps?.outputs.includes("record") || caps?.outputs.includes("broadcast")) &&
             encCfg && (

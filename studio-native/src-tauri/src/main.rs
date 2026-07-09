@@ -593,6 +593,25 @@ mod media {
         })
     }
 
+    // ── programme transitions (CHR-113) ─────────────────────────────────────
+
+    /// Render the programme fade-to-black transition: fade the whole programme to
+    /// black (`black = true`) or back (`false`) over `fade_ms` (`0` = instant
+    /// cut). The render half of the domain's `BlackScreen` event — the shell
+    /// applies the store command, then drives this to match `program.black`.
+    #[tauri::command]
+    pub fn set_program_black(
+        state: tauri::State<'_, MediaState>,
+        black: bool,
+        fade_ms: u64,
+    ) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine
+            .set_program_black(black, fade_ms)
+            .map_err(|e| e.to_string())
+    }
+
     // ── audio mixer (CHR-107) ───────────────────────────────────────────────
     // Gated on `audio` (separate engine/state). The audio mixer replaces the
     // web AudioContext: per-channel fader/mute/gain/balance + real VU meters.
@@ -866,6 +885,7 @@ fn main() {
                 media::stop_broadcast,
                 media::broadcast_status,
                 media::output_stats,
+                media::set_program_black,
                 media::list_encoders,
                 media::get_encoder_config,
                 media::set_encoder_config
