@@ -121,6 +121,14 @@ export const setLayerTransform = (
   width: number,
   height: number,
 ) => invoke("set_layer_transform", { id, xpos, ypos, width, height });
+// CHR-118: the drag surface is the preview (edit) compositor.
+export const setPreviewLayerTransform = (
+  id: string,
+  xpos: number,
+  ypos: number,
+  width: number,
+  height: number,
+) => invoke("set_preview_layer_transform", { id, xpos, ypos, width, height });
 
 // ── outputs & transitions ──────────────────────────────────────────────────
 export const startRecording = (path: string | null) =>

@@ -475,18 +475,23 @@ impl MediaEngine {
         if width <= 0 || height <= 0 {
             bail!("layer width/height must be positive, got {width}x{height}");
         }
-        let sources = self
-            .sources
-            .lock()
-            .map_err(|_| anyhow!("sources lock poisoned"))?;
-        let handle = sources
-            .get(id)
-            .ok_or_else(|| anyhow!("no such source: {id}"))?;
-        handle.pad.set_property("xpos", xpos);
-        handle.pad.set_property("ypos", ypos);
-        handle.pad.set_property("width", width);
-        handle.pad.set_property("height", height);
-        Ok(())
+        set_pad_geometry(&self.sources, id, xpos, ypos, width, height)
+    }
+
+    /// Same, on the **preview** (edit) compositor (CHR-115/118) — the drag surface
+    /// is the Aperçu monitor, so its overlays' pads live in `preview_sources`.
+    pub fn set_preview_layer_transform(
+        &self,
+        id: &str,
+        xpos: i32,
+        ypos: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
+        if width <= 0 || height <= 0 {
+            bail!("layer width/height must be positive, got {width}x{height}");
+        }
+        set_pad_geometry(&self.preview_sources, id, xpos, ypos, width, height)
     }
 
     /// Play an **entrance animation** on a source's compositor pad (CHR-110):
@@ -1002,6 +1007,29 @@ fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputH
     let _ = bin.set_state(gst::State::Null);
     let _ = bin.state(gst::ClockTime::from_seconds(2));
     let _ = pipeline.remove(&bin);
+}
+
+/// Set a source's compositor pad geometry (shared by the programme + preview
+/// transform methods).
+fn set_pad_geometry(
+    sources: &SourceMap,
+    id: &str,
+    xpos: i32,
+    ypos: i32,
+    width: i32,
+    height: i32,
+) -> Result<()> {
+    let sources = sources
+        .lock()
+        .map_err(|_| anyhow!("sources lock poisoned"))?;
+    let handle = sources
+        .get(id)
+        .ok_or_else(|| anyhow!("no such source: {id}"))?;
+    handle.pad.set_property("xpos", xpos);
+    handle.pad.set_property("ypos", ypos);
+    handle.pad.set_property("width", width);
+    handle.pad.set_property("height", height);
+    Ok(())
 }
 
 /// Remove an output from the map, for the error-teardown path in the bus watch.
