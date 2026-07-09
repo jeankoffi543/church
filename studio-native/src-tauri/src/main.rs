@@ -76,6 +76,14 @@ fn current_capabilities() -> Capabilities {
             caps.sources.push(studio_core::LayerKind::Camera);
         }
     }
+    #[cfg(feature = "overlays")]
+    {
+        // Overlays are pure render — always available when compiled. They add the
+        // text/bible/song kinds to the "+" menu.
+        caps.sources.push(studio_core::LayerKind::Text);
+        caps.sources.push(studio_core::LayerKind::Bible);
+        caps.sources.push(studio_core::LayerKind::Song);
+    }
     caps
 }
 
@@ -179,123 +187,193 @@ mod media {
         studio_media::canvas_size()
     }
 
-    /// The id mod-screen-capture's source is registered under — shared between
-    /// the hot-attach/detach commands below and `ScreenStatus`.
-    #[cfg(feature = "screen")]
-    const SCREEN_SOURCE_ID: &str = "screen";
+    // ── Hot sources: screen (CHR-104), camera (CHR-105), overlays (CHR-106) ──
+    //
+    // Every source command is present whenever `media` is compiled; its body
+    // compiles to the real implementation only when that source module's feature
+    // is on, else a clear "module not compiled" error. This keeps ONE handler
+    // list (no per-source combinatorial `cfg` arms — which would explode as
+    // audio/record/whip land) while preserving per-module compile removal: the
+    // optional crate is still only linked when its feature is enabled.
 
-    #[cfg(feature = "screen")]
+    const SCREEN_SOURCE_ID: &str = "screen";
+    const CAMERA_SOURCE_ID: &str = "camera";
+
+    /// captureActive/ended status for a hot source. `active` mirrors the engine;
+    /// `ended_reason` is the once-read auto-detach reason (device gone / EOS).
     #[derive(Serialize)]
-    pub struct ScreenStatus {
+    pub struct SourceStatus {
         pub active: bool,
         pub ended_reason: Option<String>,
     }
 
-    /// Attach the screen-capture source, live, while the engine (and its
-    /// background layer) keeps running — the CHR-104 "ajout à chaud" path.
-    /// Fails if the engine isn't running yet, if it's already active, or if the
-    /// platform has no capture element (the unavailable/permission-denied case
-    /// on this dev target — see mod-screen-capture's module docs).
-    #[cfg(feature = "screen")]
-    #[tauri::command]
-    pub fn start_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
-        let engine = guard.as_ref().ok_or("no media engine running")?;
-        engine
-            .add_source(SCREEN_SOURCE_ID, Box::new(mod_screen_capture::add_source))
-            .map_err(|e| e.to_string())
+    /// A camera device for the UI picker — a shell DTO so the command signature
+    /// never depends on the (optional) camera module being compiled.
+    #[derive(Serialize)]
+    pub struct CameraDeviceDto {
+        pub id: String,
+        pub label: String,
     }
 
-    /// Detach the screen-capture source, live, without touching the rest of the
-    /// pipeline — the CHR-104 "retrait à chaud" / "stop sharing" path.
-    #[cfg(feature = "screen")]
-    #[tauri::command]
-    pub fn stop_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
-        let engine = guard.as_ref().ok_or("no media engine running")?;
-        engine
-            .remove_source(SCREEN_SOURCE_ID)
-            .map_err(|e| e.to_string())
-    }
-
-    /// Whether the screen source is active, plus the reason it was last
-    /// auto-detached (a capture failure), if any — read once then cleared. The
-    /// CHR-104 parity for the web app's `captureActive`/`ended` events.
-    #[cfg(feature = "screen")]
-    #[tauri::command]
-    pub fn screen_status(state: tauri::State<'_, MediaState>) -> ScreenStatus {
+    /// Read a source's live status from the engine.
+    fn read_status(state: &tauri::State<'_, MediaState>, id: &str) -> SourceStatus {
         let guard = state.0.lock().ok();
         let engine = guard.as_ref().and_then(|g| g.as_ref());
-        ScreenStatus {
-            active: engine
-                .map(|e| e.is_source_active(SCREEN_SOURCE_ID))
-                .unwrap_or(false),
-            ended_reason: engine.and_then(|e| e.take_ended_reason(SCREEN_SOURCE_ID)),
+        SourceStatus {
+            active: engine.map(|e| e.is_source_active(id)).unwrap_or(false),
+            ended_reason: engine.and_then(|e| e.take_ended_reason(id)),
         }
     }
 
-    // ── camera / capture (CHR-105) ──────────────────────────────────────────
-    /// The id mod-camera's (single, for now) source is registered under.
-    #[cfg(feature = "camera")]
-    const CAMERA_SOURCE_ID: &str = "camera";
-
-    #[cfg(feature = "camera")]
-    #[derive(Serialize)]
-    pub struct CameraStatus {
-        pub active: bool,
-        pub ended_reason: Option<String>,
+    /// Detach a source by id (shared by the stop_* / hide_* commands).
+    fn drop_source(state: &tauri::State<'_, MediaState>, id: &str) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine.remove_source(id).map_err(|e| e.to_string())
     }
 
-    /// The connected cameras, for the UI device picker. Empty when none — the
-    /// removable-module guarantee (the source then never appears).
-    #[cfg(feature = "camera")]
+    /// Attach the screen-capture source, live (CHR-104 hot-add). Fails if the
+    /// engine isn't running, it's already active, or no capture element exists.
     #[tauri::command]
-    pub fn list_cameras() -> Vec<mod_camera::CameraDevice> {
-        mod_camera::list_cameras()
+    pub fn start_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        #[cfg(feature = "screen")]
+        {
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            engine
+                .add_source(SCREEN_SOURCE_ID, Box::new(mod_screen_capture::add_source))
+                .map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "screen"))]
+        {
+            let _ = state;
+            Err("module écran non compilé".into())
+        }
     }
 
-    /// Attach the camera source, live, for the chosen device (`None` = first
-    /// available) — the CHR-104 hot-add path with a device selection.
-    #[cfg(feature = "camera")]
+    #[tauri::command]
+    pub fn stop_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
+        drop_source(&state, SCREEN_SOURCE_ID)
+    }
+
+    #[tauri::command]
+    pub fn screen_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
+        read_status(&state, SCREEN_SOURCE_ID)
+    }
+
+    /// The connected cameras for the UI picker (empty if the module is absent).
+    #[tauri::command]
+    pub fn list_cameras() -> Vec<CameraDeviceDto> {
+        #[cfg(feature = "camera")]
+        {
+            mod_camera::list_cameras()
+                .into_iter()
+                .map(|c| CameraDeviceDto {
+                    id: c.id,
+                    label: c.label,
+                })
+                .collect()
+        }
+        #[cfg(not(feature = "camera"))]
+        {
+            Vec::new()
+        }
+    }
+
+    /// Attach the camera source, live, for the chosen device (`None` = first).
     #[tauri::command]
     pub fn start_camera_source(
         state: tauri::State<'_, MediaState>,
         device_id: Option<String>,
     ) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
-        let engine = guard.as_ref().ok_or("no media engine running")?;
-        engine
-            .add_source(
-                CAMERA_SOURCE_ID,
-                Box::new(move || mod_camera::build_source(device_id)),
-            )
-            .map_err(|e| e.to_string())
+        #[cfg(feature = "camera")]
+        {
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            engine
+                .add_source(
+                    CAMERA_SOURCE_ID,
+                    Box::new(move || mod_camera::build_source(device_id)),
+                )
+                .map_err(|e| e.to_string())
+        }
+        #[cfg(not(feature = "camera"))]
+        {
+            let _ = (state, device_id);
+            Err("module caméra non compilé".into())
+        }
     }
 
-    /// Detach the camera source, live, without touching the rest of the pipeline.
-    #[cfg(feature = "camera")]
     #[tauri::command]
     pub fn stop_camera_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
-        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
-        let engine = guard.as_ref().ok_or("no media engine running")?;
-        engine
-            .remove_source(CAMERA_SOURCE_ID)
-            .map_err(|e| e.to_string())
+        drop_source(&state, CAMERA_SOURCE_ID)
     }
 
-    /// Whether the camera source is active, plus the reason it was last
-    /// auto-detached (device unplugged) — the captureActive/ended parity.
-    #[cfg(feature = "camera")]
     #[tauri::command]
-    pub fn camera_status(state: tauri::State<'_, MediaState>) -> CameraStatus {
-        let guard = state.0.lock().ok();
-        let engine = guard.as_ref().and_then(|g| g.as_ref());
-        CameraStatus {
-            active: engine
-                .map(|e| e.is_source_active(CAMERA_SOURCE_ID))
-                .unwrap_or(false),
-            ended_reason: engine.and_then(|e| e.take_ended_reason(CAMERA_SOURCE_ID)),
+    pub fn camera_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
+        read_status(&state, CAMERA_SOURCE_ID)
+    }
+
+    /// Render a text/bible/song layer from the store and show it on the
+    /// compositor, live (CHR-106). Re-shows (re-renders) if already visible, so a
+    /// content/style edit takes effect. The overlay source id is `overlay:<id>`.
+    #[tauri::command]
+    pub fn show_overlay(
+        state: tauri::State<'_, MediaState>,
+        studio: tauri::State<'_, crate::studio::StudioState>,
+        layer_id: String,
+    ) -> Result<(), String> {
+        #[cfg(feature = "overlays")]
+        {
+            let (layer, verse) = {
+                let s = studio.studio.lock().map_err(|_| "studio poisoned")?;
+                let layer = s
+                    .current_scene()
+                    .get(&layer_id)
+                    .cloned()
+                    .ok_or("no such layer in the current scene")?;
+                (layer, s.bible_verse.clone())
+            };
+            if !mod_overlays::renders(layer.kind) {
+                return Err("le calque n'est pas un overlay (texte/bible/chant)".into());
+            }
+            let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+            let engine = guard.as_ref().ok_or("no media engine running")?;
+            let id = format!("overlay:{layer_id}");
+            let _ = engine.remove_source(&id); // rebuild if already shown
+            engine
+                .add_source(
+                    id,
+                    Box::new(move || mod_overlays::build_source(&layer, verse.as_ref())),
+                )
+                .map_err(|e| e.to_string())
         }
+        #[cfg(not(feature = "overlays"))]
+        {
+            let _ = (state, studio, layer_id);
+            Err("module overlays non compilé".into())
+        }
+    }
+
+    #[tauri::command]
+    pub fn hide_overlay(
+        state: tauri::State<'_, MediaState>,
+        layer_id: String,
+    ) -> Result<(), String> {
+        drop_source(&state, &format!("overlay:{layer_id}"))
+    }
+
+    #[tauri::command]
+    pub fn overlay_active(state: tauri::State<'_, MediaState>, layer_id: String) -> bool {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|e| e.is_source_active(&format!("overlay:{layer_id}")))
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -439,15 +517,14 @@ fn main() {
         Ok(())
     });
 
-    // The command set is assembled per compiled module. Screen and camera are
-    // independent removable sources, so there are four media combinations; a
-    // local macro keeps the always-on list DRY and each arm lists only its own
-    // source commands. Without `media` the shell still exposes the studio
+    // Two arms only: with `media`, every source command is present (bodies are
+    // cfg-gated per module inside `mod media`); without it, just the studio
     // document (persistence works with zero media plane).
     #[cfg(feature = "media")]
-    macro_rules! media_handler {
-        ($($extra:path),* $(,)?) => {
-            tauri::generate_handler![
+    let builder =
+        builder
+            .manage(media::MediaState::default())
+            .invoke_handler(tauri::generate_handler![
                 get_capabilities,
                 studio::get_studio_state,
                 studio::apply_command,
@@ -456,48 +533,18 @@ fn main() {
                 media::media_status,
                 media::preview_frame,
                 media::set_layer_transform,
-                media::canvas_size
-                $(, $extra)*
-            ]
-        };
-    }
-
-    #[cfg(all(feature = "media", feature = "screen", feature = "camera"))]
-    let builder = builder
-        .manage(media::MediaState::default())
-        .invoke_handler(media_handler![
-            media::start_screen_source,
-            media::stop_screen_source,
-            media::screen_status,
-            media::list_cameras,
-            media::start_camera_source,
-            media::stop_camera_source,
-            media::camera_status,
-        ]);
-
-    #[cfg(all(feature = "media", feature = "screen", not(feature = "camera")))]
-    let builder = builder
-        .manage(media::MediaState::default())
-        .invoke_handler(media_handler![
-            media::start_screen_source,
-            media::stop_screen_source,
-            media::screen_status,
-        ]);
-
-    #[cfg(all(feature = "media", not(feature = "screen"), feature = "camera"))]
-    let builder = builder
-        .manage(media::MediaState::default())
-        .invoke_handler(media_handler![
-            media::list_cameras,
-            media::start_camera_source,
-            media::stop_camera_source,
-            media::camera_status,
-        ]);
-
-    #[cfg(all(feature = "media", not(feature = "screen"), not(feature = "camera")))]
-    let builder = builder
-        .manage(media::MediaState::default())
-        .invoke_handler(media_handler![]);
+                media::canvas_size,
+                media::start_screen_source,
+                media::stop_screen_source,
+                media::screen_status,
+                media::list_cameras,
+                media::start_camera_source,
+                media::stop_camera_source,
+                media::camera_status,
+                media::show_overlay,
+                media::hide_overlay,
+                media::overlay_active
+            ]);
 
     #[cfg(not(feature = "media"))]
     let builder = builder.invoke_handler(tauri::generate_handler![

@@ -85,6 +85,8 @@ export function App() {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [cameraDeviceId, setCameraDeviceId] = useState<string>("");
   const [studio, setStudio] = useState<StudioDoc | null>(null);
+  // Overlay layer ids currently shown on the compositor (optimistic UI state).
+  const [shownOverlays, setShownOverlays] = useState<Set<string>>(new Set());
   const [layer, setLayer] = useState<LayerTransform>(FULL_LAYER);
   const monitorRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef({ w: 1920, h: 1080 });
@@ -123,6 +125,22 @@ export function App() {
   const applyCommand = useCallback((command: StudioCommand) => {
     invoke<StudioDoc>("apply_command", { command })
       .then(setStudio)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  // Show/hide a text/bible/song layer on the compositor (CHR-106). The overlay
+  // is rendered from the store's layer by the Rust side (cairo+pango).
+  const toggleOverlay = useCallback((layerId: string, show: boolean) => {
+    const cmd = show ? "show_overlay" : "hide_overlay";
+    invoke(cmd, { layerId })
+      .then(() =>
+        setShownOverlays((prev) => {
+          const next = new Set(prev);
+          if (show) next.add(layerId);
+          else next.delete(layerId);
+          return next;
+        }),
+      )
       .catch((e) => setError(String(e)));
   }, []);
 
@@ -443,6 +461,24 @@ export function App() {
                             {SOURCE_LABELS[l.kind] ?? l.kind} · {l.name}
                           </span>
                           <span style={{ display: "flex", gap: 8 }}>
+                            {["text", "bible", "song"].includes(l.kind) &&
+                              (shownOverlays.has(l.id) ? (
+                                <button
+                                  className="mini"
+                                  onClick={() => toggleOverlay(l.id, false)}
+                                  title="Retirer de l'aperçu"
+                                >
+                                  ■
+                                </button>
+                              ) : (
+                                <button
+                                  className="mini"
+                                  onClick={() => toggleOverlay(l.id, true)}
+                                  title="Afficher sur l'aperçu"
+                                >
+                                  ▶
+                                </button>
+                              ))}
                             <button
                               className="mini"
                               onClick={() => applyCommand({ type: "toggleVisible", id: l.id })}
@@ -452,7 +488,10 @@ export function App() {
                             </button>
                             <button
                               className="mini"
-                              onClick={() => applyCommand({ type: "removeLayer", id: l.id })}
+                              onClick={() => {
+                                toggleOverlay(l.id, false);
+                                applyCommand({ type: "removeLayer", id: l.id });
+                              }}
                               title="Supprimer"
                             >
                               ✕
@@ -468,7 +507,7 @@ export function App() {
                   )}
 
                   <div className="btnrow">
-                    {(["text", "image", "bible"] as const).map((kind) => (
+                    {(["text", "bible", "song"] as const).map((kind) => (
                       <button
                         key={kind}
                         className="btn"
