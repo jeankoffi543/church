@@ -72,6 +72,10 @@ const PREVIEW_H: i32 = 540;
 /// with it (today only `"screen"`, from mod-screen-capture, is used).
 const BACKGROUND_SOURCE_ID: &str = "background";
 
+/// The id of the lazily-attached full-canvas black layer used for the programme
+/// fade-to-black transition (CHR-113). Reserved, like the background.
+const BLACK_SOURCE_ID: &str = "__transition_black__";
+
 /// Name of the custom `Application` bus message a source's EOS probe posts so
 /// the (main-thread) bus watch can auto-detach it — a per-source EOS never
 /// reaches the bus on its own. Carries a `source-id` string field.
@@ -441,6 +445,81 @@ impl MediaEngine {
                 &epoch_arc,
                 my_epoch,
             );
+        });
+        Ok(())
+    }
+
+    /// **Programme fade-to-black transition** (CHR-113). Fades the *whole*
+    /// programme to black (`black = true`) or back (`false`) over `ms` — a full
+    /// dip when sequenced both ways, or an instant cut-to-black at `ms = 0`. A
+    /// full-canvas black layer is lazily attached on top of the compositor and
+    /// its pad alpha animated; it stays (transparent) once created, so repeated
+    /// black/un-black is just an alpha fade. This is the render half of the
+    /// domain's `BlackScreen`/`ProgramCut` events, driven from the shell.
+    pub fn set_program_black(&self, black: bool, ms: u64) -> Result<()> {
+        if black && !self.is_source_active(BLACK_SOURCE_ID) {
+            self.add_source(BLACK_SOURCE_ID, Box::new(black_source))?;
+            // Full canvas, on top (added last ⇒ highest zorder), transparent.
+            if let Ok(sources) = self.sources.lock() {
+                if let Some(handle) = sources.get(BLACK_SOURCE_ID) {
+                    handle.pad.set_property("xpos", 0i32);
+                    handle.pad.set_property("ypos", 0i32);
+                    handle.pad.set_property("width", OUTPUT_W);
+                    handle.pad.set_property("height", OUTPUT_H);
+                    handle.pad.set_property("alpha", 0.0f64);
+                }
+            }
+        }
+        if self.is_source_active(BLACK_SOURCE_ID) {
+            self.fade_alpha(BLACK_SOURCE_ID, if black { 1.0 } else { 0.0 }, ms)?;
+        }
+        Ok(())
+    }
+
+    /// Fade a source pad's `alpha` from its current value to `to` over `ms`
+    /// (linear), on a short thread; a re-trigger cancels the previous fade via
+    /// the same per-source epoch entrances use. `ms = 0` snaps immediately.
+    fn fade_alpha(&self, id: &str, to: f64, ms: u64) -> Result<()> {
+        let pad = {
+            let sources = self
+                .sources
+                .lock()
+                .map_err(|_| anyhow!("sources lock poisoned"))?;
+            sources
+                .get(id)
+                .ok_or_else(|| anyhow!("no such source: {id}"))?
+                .pad
+                .clone()
+        };
+        let to = to.clamp(0.0, 1.0);
+        if ms == 0 {
+            pad.set_property("alpha", to);
+            return Ok(());
+        }
+        let from = pad.property::<f64>("alpha");
+        let epoch_arc = {
+            let mut m = self
+                .anim_epochs
+                .lock()
+                .map_err(|_| anyhow!("anim epochs lock poisoned"))?;
+            m.entry(id.to_string())
+                .or_insert_with(|| Arc::new(AtomicU64::new(0)))
+                .clone()
+        };
+        let my_epoch = epoch_arc.fetch_add(1, Ordering::SeqCst) + 1;
+        std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            loop {
+                if epoch_arc.load(Ordering::SeqCst) != my_epoch {
+                    return;
+                }
+                let p = (start.elapsed().as_millis() as f64 / ms as f64).min(1.0);
+                pad.set_property("alpha", from + (to - from) * p);
+                if p >= 1.0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
         });
         Ok(())
     }
@@ -1080,6 +1159,28 @@ fn wrap_in_bin(chain: &[&gst::Element]) -> Result<gst::Bin> {
     Ok(bin)
 }
 
+/// A full-canvas solid **black** source — the programme black-out / fade layer
+/// (CHR-113 transitions). Sits on top of the compositor and its pad alpha is
+/// animated 0↔1 to fade the whole programme to/from black.
+fn black_source() -> Result<gst::Bin> {
+    let src = gst::ElementFactory::make("videotestsrc")
+        .property("is-live", true)
+        .property_from_str("pattern", "black")
+        .build()
+        .context("make black videotestsrc")?;
+    let caps_in = gst::ElementFactory::make("capsfilter")
+        .property(
+            "caps",
+            gst::Caps::builder("video/x-raw")
+                .field("width", OUTPUT_W)
+                .field("height", OUTPUT_H)
+                .field("framerate", gst::Fraction::new(OUTPUT_FPS, 1))
+                .build(),
+        )
+        .build()?;
+    wrap_in_bin(&[&src, &caps_in])
+}
+
 /// The built-in test-pattern source (the engine's permanent background layer).
 fn default_source() -> Result<gst::Bin> {
     let src = gst::ElementFactory::make("videotestsrc")
@@ -1421,6 +1522,60 @@ mod tests {
             (x, y, w, h),
             (100, 50, 800, 450),
             "must snap to the target pose"
+        );
+    }
+
+    /// CHR-113 programme fade-to-black transition: `set_program_black(true)`
+    /// lazily attaches a full-canvas black layer on top and fades its alpha up;
+    /// `set_program_black(false)` fades it back down — all while the programme
+    /// keeps producing frames (a transition never stalls the feed). Headless.
+    #[test]
+    fn program_fade_to_black_and_back_over_a_live_programme() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 {
+                break;
+            }
+        }
+
+        // Fade to black over 300 ms.
+        engine.set_program_black(true, 300).expect("fade to black");
+        assert!(
+            engine.is_source_active(BLACK_SOURCE_ID),
+            "the black layer should be attached during a fade-to-black"
+        );
+        std::thread::sleep(Duration::from_millis(450));
+        let black_alpha = {
+            let s = engine.sources.lock().unwrap();
+            s.get(BLACK_SOURCE_ID).unwrap().pad.property::<f64>("alpha")
+        };
+        let mid_frames = engine.frames();
+
+        // Fade back from black over 300 ms.
+        engine
+            .set_program_black(false, 300)
+            .expect("fade from black");
+        std::thread::sleep(Duration::from_millis(450));
+        let clear_alpha = {
+            let s = engine.sources.lock().unwrap();
+            s.get(BLACK_SOURCE_ID).unwrap().pad.property::<f64>("alpha")
+        };
+        let end_frames = engine.frames();
+        engine.stop();
+
+        assert!(
+            (black_alpha - 1.0).abs() < 1e-3,
+            "programme should be fully black after fade-to-black, alpha={black_alpha}"
+        );
+        assert!(
+            clear_alpha < 1e-3,
+            "programme should be clear again after fade-from-black, alpha={clear_alpha}"
+        );
+        assert!(
+            end_frames > mid_frames && mid_frames > 0,
+            "the programme must keep producing frames throughout the transition"
         );
     }
 

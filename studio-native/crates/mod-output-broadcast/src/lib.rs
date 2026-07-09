@@ -143,7 +143,13 @@ fn build_with_sink(sink: gst::Element, cfg: &EncoderConfig) -> Result<gst::Bin> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use std::time::Duration;
+
+    /// Serialises the engine-based tests: two live `MediaEngine`s in one process
+    /// starve each other's compositor/tee (frames stop flowing), so they must not
+    /// run concurrently — the same guard studio-media's own tests use.
+    static ENGINE_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn availability_and_bin_build_are_stable() {
@@ -171,6 +177,7 @@ mod tests {
     /// encoded-stream stats probe (`stats-tap`).
     #[test]
     fn sandbox_encodes_and_reports_real_stats_without_network() {
+        let _guard = ENGINE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = studio_media::MediaEngine::start().expect("engine");
         for _ in 0..40 {
             std::thread::sleep(Duration::from_millis(50));
@@ -213,6 +220,7 @@ mod tests {
     /// real RTMP server needed — the connection error IS the test.
     #[test]
     fn a_failed_broadcast_auto_detaches_and_the_engine_survives() {
+        let _guard = ENGINE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let engine = studio_media::MediaEngine::start().expect("engine");
         for _ in 0..40 {
             std::thread::sleep(Duration::from_millis(50));
