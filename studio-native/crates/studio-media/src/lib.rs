@@ -134,6 +134,21 @@ type SourceMap = Arc<Mutex<HashMap<String, SourceHandle>>>;
 /// the whole preview down with it, so the UI needs a way to notice and explain.
 type EndedMap = Arc<Mutex<HashMap<String, String>>>;
 
+/// Builds an output branch as a `gst::Bin` with a ghost **sink** pad, consuming
+/// the programme feed off a tee request pad. This is the seam every output
+/// module plugs into (CHR-108 record, CHR-109 WHIP) — the mirror of
+/// [`SourceBuilder`] on the sink side. Runs on the attaching thread.
+pub type OutputBuilder = Box<dyn FnOnce() -> Result<gst::Bin> + Send>;
+
+/// A live output: its bin + the tee request pad feeding it. Detaching finalises
+/// (EOS) then releases exactly these — nothing upstream is touched.
+struct OutputHandle {
+    bin: gst::Bin,
+    tee_pad: gst::Pad,
+}
+
+type OutputMap = Arc<Mutex<HashMap<String, OutputHandle>>>;
+
 /// Handles handed back from the media thread once the pipeline is `Playing`.
 struct Ready {
     main_loop: glib::MainLoop,
@@ -141,7 +156,9 @@ struct Ready {
     latest: FrameSlot,
     pipeline: gst::Pipeline,
     compositor: gst::Element,
+    tee: gst::Element,
     sources: SourceMap,
+    outputs: OutputMap,
     ended: EndedMap,
 }
 
@@ -154,9 +171,13 @@ pub struct MediaEngine {
     latest: FrameSlot,
     pipeline: gst::Pipeline,
     compositor: gst::Element,
+    /// The programme tap — outputs (record, WHIP) branch off this.
+    tee: gst::Element,
     /// Currently-attached sources, keyed by caller-chosen id (e.g. `"screen"`).
     /// Always contains [`BACKGROUND_SOURCE_ID`] while the engine is alive.
     sources: SourceMap,
+    /// Currently-attached outputs, keyed by caller-chosen id (e.g. `"record"`).
+    outputs: OutputMap,
     ended: EndedMap,
     thread: Option<JoinHandle<()>>,
 }
@@ -185,7 +206,9 @@ impl MediaEngine {
                 latest: r.latest,
                 pipeline: r.pipeline,
                 compositor: r.compositor,
+                tee: r.tee,
                 sources: r.sources,
+                outputs: r.outputs,
                 ended: r.ended,
                 thread: Some(thread),
             }),
@@ -230,6 +253,38 @@ impl MediaEngine {
         let handle = take_source(&self.sources, id)?;
         detach_source(&self.pipeline, &self.compositor, handle);
         Ok(())
+    }
+
+    /// Attach an output branch to the programme tap, live (CHR-108 record,
+    /// CHR-109 WHIP). The builder returns a bin with a ghost **sink** pad; we
+    /// request a tee pad, link it, and sync state. Errors if `id` is already
+    /// attached or the builder fails.
+    pub fn attach_output(&self, id: impl Into<String>, builder: OutputBuilder) -> Result<()> {
+        attach_output_impl(&self.pipeline, &self.tee, &self.outputs, id.into(), builder)
+    }
+
+    /// Detach an output, live, **finalising it first**: the branch is sent EOS so
+    /// its muxer writes a valid trailer (a recording's `moov`/duration), we wait
+    /// for that to reach the sink, then unlink + release the tee pad + tear the
+    /// bin down. Without this an `.mp4` would be unplayable. Blocks up to a few
+    /// seconds for the finalise. No-op-safe if `id` isn't attached.
+    pub fn detach_output(&self, id: &str) -> Result<()> {
+        let handle = self
+            .outputs
+            .lock()
+            .map_err(|_| anyhow!("outputs lock poisoned"))?
+            .remove(id)
+            .ok_or_else(|| anyhow!("no such output: {id}"))?;
+        finalise_output(&self.pipeline, &self.tee, handle);
+        Ok(())
+    }
+
+    /// Whether output `id` is currently attached.
+    pub fn is_output_active(&self, id: &str) -> bool {
+        self.outputs
+            .lock()
+            .map(|o| o.contains_key(id))
+            .unwrap_or(false)
     }
 
     /// Whether `id` is currently attached.
@@ -461,6 +516,121 @@ fn detach_source(pipeline: &gst::Pipeline, compositor: &gst::Element, handle: So
     });
 }
 
+/// Attach an output branch to the tee: build the bin (ghost sink pad), add it,
+/// request a tee src pad, link, sync. Shared by [`MediaEngine::attach_output`].
+fn attach_output_impl(
+    pipeline: &gst::Pipeline,
+    tee: &gst::Element,
+    outputs: &OutputMap,
+    id: String,
+    builder: OutputBuilder,
+) -> Result<()> {
+    {
+        let guard = outputs
+            .lock()
+            .map_err(|_| anyhow!("outputs lock poisoned"))?;
+        if guard.contains_key(&id) {
+            bail!("output '{id}' already active");
+        }
+    }
+    let bin = builder().with_context(|| format!("build output '{id}'"))?;
+    pipeline
+        .add(&bin)
+        .with_context(|| format!("add output '{id}' to pipeline"))?;
+    let tee_pad = tee
+        .request_pad_simple("src_%u")
+        .ok_or_else(|| anyhow!("tee request pad (output) failed"))?;
+    let bin_sink = bin
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("output '{id}' bin has no ghost sink pad"))?;
+    tee_pad
+        .link(&bin_sink)
+        .with_context(|| format!("link tee → output '{id}'"))?;
+    bin.sync_state_with_parent()
+        .with_context(|| format!("sync output '{id}' state"))?;
+    outputs
+        .lock()
+        .map_err(|_| anyhow!("outputs lock poisoned"))?
+        .insert(id, OutputHandle { bin, tee_pad });
+    Ok(())
+}
+
+/// Finalise + detach an output branch. **Blocks** the tee pad, injects EOS into
+/// the branch so its muxer writes a valid trailer, waits (bounded) for that EOS
+/// to reach the terminal sink, then releases the tee pad and tears the bin down.
+/// Runs on the caller's thread (the Tauri command thread), never the streaming
+/// thread — safe to block.
+fn finalise_output(pipeline: &gst::Pipeline, tee: &gst::Element, handle: OutputHandle) {
+    let OutputHandle { bin, tee_pad } = handle;
+    let bin_sink = match bin.static_pad("sink") {
+        Some(p) => p,
+        None => {
+            let _ = pipeline.remove(&bin);
+            return;
+        }
+    };
+
+    // Watch the branch's terminal sink (the filesink) for EOS — that's when the
+    // muxer has flushed its trailer and the file is complete.
+    let terminal_sink_pad = bin
+        .iterate_sinks()
+        .into_iter()
+        .flatten()
+        .next()
+        .and_then(|e| e.static_pad("sink"));
+    let done = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+    if let Some(sink_pad) = &terminal_sink_pad {
+        let done2 = done.clone();
+        sink_pad.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+            if let Some(gst::EventView::Eos(_)) = info.event().map(|e| e.view()) {
+                let (m, cv) = &*done2;
+                if let Ok(mut g) = m.lock() {
+                    *g = true;
+                    cv.notify_all();
+                }
+                return gst::PadProbeReturn::Remove;
+            }
+            gst::PadProbeReturn::Ok
+        });
+    }
+
+    // Block the tee pad (stop new buffers into the branch), then inject EOS on
+    // the branch's sink once. The block keeps the tee from pushing post-EOS
+    // buffers (which the EOS'd muxer would error on → false-fatal on the bus).
+    let sent = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let bin_sink_for_probe = bin_sink.clone();
+    tee_pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_pad, _info| {
+        if !sent.swap(true, Ordering::SeqCst) {
+            let _ = bin_sink_for_probe.send_event(gst::event::Eos::new());
+        }
+        gst::PadProbeReturn::Ok // stay blocked until the pad is released below
+    });
+
+    // Wait (bounded) for the EOS to reach the terminal sink.
+    if terminal_sink_pad.is_some() {
+        let (m, cv) = &*done;
+        if let Ok(mut g) = m.lock() {
+            let deadline = std::time::Duration::from_secs(5);
+            let start = std::time::Instant::now();
+            while !*g && start.elapsed() < deadline {
+                let remaining = deadline.saturating_sub(start.elapsed());
+                match cv.wait_timeout(g, remaining) {
+                    Ok((ng, _)) => g = ng,
+                    Err(_) => break,
+                }
+            }
+        }
+    } else {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    // Release the tee pad (drops the block + unlinks the branch), then tear down.
+    tee.release_request_pad(&tee_pad);
+    let _ = bin.set_state(gst::State::Null);
+    let _ = bin.state(gst::ClockTime::from_seconds(2));
+    let _ = pipeline.remove(&bin);
+}
+
 /// Whether a bus message's source element lives inside (or *is*) `bin` — how
 /// the bus watch attributes an `Error` message to one of our tracked sources
 /// rather than to the shared compositor/encode chain.
@@ -489,8 +659,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let frames = Arc::new(AtomicU64::new(0));
         let latest: FrameSlot = Arc::new(Mutex::new(None));
         let sources: SourceMap = Arc::new(Mutex::new(HashMap::new()));
+        let outputs: OutputMap = Arc::new(Mutex::new(HashMap::new()));
         let ended: EndedMap = Arc::new(Mutex::new(HashMap::new()));
-        let (pipeline, compositor) = build_preview_pipeline(&frames, &latest)?;
+        let (pipeline, compositor, tee) = build_preview_pipeline(&frames, &latest)?;
 
         add_source_impl(
             &pipeline,
@@ -583,7 +754,9 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                 latest: latest.clone(),
                 pipeline: pipeline.clone(),
                 compositor: compositor.clone(),
+                tee: tee.clone(),
                 sources: sources.clone(),
+                outputs: outputs.clone(),
                 ended: ended.clone(),
             }))
             .map_err(|_| anyhow!("engine dropped before ready"))?;
@@ -644,7 +817,7 @@ fn default_source() -> Result<gst::Bin> {
 fn build_preview_pipeline(
     frames: &Arc<AtomicU64>,
     latest: &FrameSlot,
-) -> Result<(gst::Pipeline, gst::Element)> {
+) -> Result<(gst::Pipeline, gst::Element, gst::Element)> {
     let pipeline = gst::Pipeline::with_name("studio-preview");
 
     let compositor = gst::ElementFactory::make("compositor")
@@ -663,6 +836,15 @@ fn build_preview_pipeline(
                 .build(),
         )
         .build()?;
+    // The programme TAP: the full-res compositor output fans out here — one
+    // branch is the JPEG preview (below), others are outputs (record, later
+    // WHIP) attached at runtime via `attach_output`. `allow-not-linked` lets the
+    // tee keep running when only the preview is connected.
+    let tee = gst::ElementFactory::make("tee")
+        .property("allow-not-linked", true)
+        .build()
+        .context("make tee")?;
+    let preview_queue = gst::ElementFactory::make("queue").build()?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
     let scale = gst::ElementFactory::make("videoscale").build()?;
     let caps_preview = gst::ElementFactory::make("capsfilter")
@@ -689,20 +871,27 @@ fn build_preview_pipeline(
     pipeline.add_many([
         &compositor,
         &caps_canvas,
+        &tee,
+        &preview_queue,
         &convert,
         &scale,
         &caps_preview,
         &jpeg,
     ])?;
     pipeline.add(&appsink).context("add appsink")?;
-    gst::Element::link_many([
-        &compositor,
-        &caps_canvas,
-        &convert,
-        &scale,
-        &caps_preview,
-        &jpeg,
-    ])?;
+    // compositor → caps → tee, then the preview branch off a tee request pad.
+    gst::Element::link_many([&compositor, &caps_canvas, &tee])?;
+    gst::Element::link_many([&preview_queue, &convert, &scale, &caps_preview, &jpeg])?;
+    let tee_preview_pad = tee
+        .request_pad_simple("src_%u")
+        .ok_or_else(|| anyhow!("tee request pad (preview) failed"))?;
+    tee_preview_pad
+        .link(
+            &preview_queue
+                .static_pad("sink")
+                .ok_or_else(|| anyhow!("preview queue has no sink pad"))?,
+        )
+        .context("link tee → preview queue")?;
     jpeg.link(&appsink).context("link jpegenc → appsink")?;
 
     // Pull each encoded JPEG into the shared slot; count them (head-less proof).
@@ -725,7 +914,7 @@ fn build_preview_pipeline(
             .build(),
     );
 
-    Ok((pipeline, compositor))
+    Ok((pipeline, compositor, tee))
 }
 
 #[cfg(test)]
