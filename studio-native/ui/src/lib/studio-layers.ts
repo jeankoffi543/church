@@ -65,6 +65,11 @@ export const TYPE_ICON: Record<StudioLayerType, LucideIcon> = {
   group: Folder,
 };
 
+/** Audio-bearing source kinds — the mixer's channels (church-client hasAudio). */
+export function hasAudioKind(kind: string): boolean {
+  return kind === "embed" || kind === "video" || kind === "audio" || kind === "camera" || kind === "screen";
+}
+
 /** Safe meta lookup by kind string (unknown kinds get a neutral fallback). */
 export function layerMeta(kind: string) {
   return LAYER_META[kind as StudioLayerType] ?? { label: kind, color: "#9aa", typeLabel: kind };

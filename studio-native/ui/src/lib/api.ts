@@ -52,6 +52,16 @@ export type StudioLayer = {
   content?: string | null;
   sub?: string | null;
   style: Style;
+  // Audio-bearing sources carry these (camelCase, Option in Rust → may be absent).
+  audioLevel?: number | null;
+  audioMuted?: boolean | null;
+  audioGain?: number | null;
+  audioBalance?: number | null;
+  deviceId?: string | null;
+  captureActive?: boolean | null;
+  feedUrl?: string | null;
+  audioPlaying?: boolean | null;
+  audioFileUrl?: string | null;
   [k: string]: unknown;
 };
 

@@ -6,7 +6,7 @@ import { TransitionBar } from "./components/TransitionBar";
 import { ResizableRow } from "./components/ResizableRow";
 import { ScenesDock } from "./components/ScenesDock";
 import { SourcesDock } from "./components/SourcesDock";
-import { MixerDock, MixChannel } from "./components/MixerDock";
+import { MixerDock, AudioPatch } from "./components/MixerDock";
 import { InspectorDock } from "./components/InspectorDock";
 import { ControlsDock } from "./components/ControlsDock";
 import { StatusBar, EncoderStats } from "./components/StatusBar";
@@ -14,6 +14,7 @@ import { StudioHeader } from "./components/StudioHeader";
 import { DockShell } from "./components/DockShell";
 import { TransformBox } from "./components/TransformBox";
 import type { StudioLayer } from "./lib/api";
+import { hasAudioKind } from "./lib/studio-layers";
 
 type Transform = { x: number; y: number; w: number; h: number };
 const OVERLAY_KINDS = ["text", "bible", "song"];
@@ -43,10 +44,6 @@ export function App() {
   const shownRef = useRef<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transform, setTransform] = useState<Transform>(FULL);
-
-  const [audioOn, setAudioOn] = useState(false);
-  const [channels, setChannels] = useState<MixChannel[]>([]);
-  const [levels, setLevels] = useState<Record<string, number>>({});
 
   const [encoders, setEncoders] = useState<string[]>([]);
   const [encCfg, setEncCfg] = useState<EncoderConfig | null>(null);
@@ -87,7 +84,6 @@ export function App() {
         setLive(s.active);
         if (s.ended_reason) setLiveEnded(s.ended_reason);
       }).catch(() => {});
-      if (audioOn) api.audioLevels().then(setLevels).catch(() => {});
       (async () => {
         for (const id of ["broadcast", "record"]) {
           const s = await api.outputStats(id).catch(() => null);
@@ -109,7 +105,7 @@ export function App() {
       api.previewMonitorFrame().then((u) => u && setPrevFrame(u)).catch(() => {});
     }, 120);
     return () => { clearInterval(t); clearInterval(f); };
-  }, [audioOn]);
+  }, []);
 
   // ── handlers ──────────────────────────────────────────────────────────────
   const refreshDoc = (d: StudioDoc) => setDoc(d);
@@ -202,19 +198,16 @@ export function App() {
       return api.setProgramBlack(d.program?.black ?? false, fadeMs);
     }).catch(fail);
 
-  const toggleAudio = () => {
-    if (audioOn) api.stopAudio().then(() => { setAudioOn(false); setChannels([]); }).catch(fail);
-    else api.startAudio().then(() => setAudioOn(true)).catch(fail);
-  };
-  const addTone = () => {
-    const id = `tone-${channels.length + 1}`;
-    api.addAudioTone(id, 220 + channels.length * 110)
-      .then(() => setChannels((c) => [...c, { id, gain: 1, muted: false, balance: 0 }]))
-      .catch(fail);
-  };
-  const changeChannel = (ch: MixChannel) => {
-    setChannels((cs) => cs.map((c) => (c.id === ch.id ? ch : c)));
-    api.setAudioChannel(ch.id, ch.gain, ch.muted, ch.balance).catch(fail);
+  // Mixer channels = the current scene's audio-bearing layers; a fader change
+  // writes the audio settings straight back to the layer (persists with the
+  // scene, like the web). The engine-side per-layer routing is the A/V-mixer
+  // consolidation follow-up.
+  const mixerChannels = () =>
+    (doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers ?? []).filter((l) => hasAudioKind(l.kind));
+  const onLayerAudio = (id: string, patch: AudioPatch) => {
+    const layer = doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === id);
+    if (!layer) return;
+    cmd({ type: "replaceLayer", layer: { ...layer, ...patch } });
   };
 
   const currentLayer = () =>
@@ -313,18 +306,7 @@ export function App() {
           {
             id: "mixer",
             label: "Mixage",
-            node: (
-              <DockShell label="Mixage">
-                <MixerDock
-                  audioOn={audioOn}
-                  channels={channels}
-                  levels={levels}
-                  onToggleAudio={toggleAudio}
-                  onAddTone={addTone}
-                  onChange={changeChannel}
-                />
-              </DockShell>
-            ),
+            node: <MixerDock channels={mixerChannels()} onChange={onLayerAudio} />,
           },
           {
             id: "inspector",
