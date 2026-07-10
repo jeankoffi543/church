@@ -79,8 +79,11 @@ export function App() {
 
   // ── boot: auto-start the engine + load contract/state ─────────────────────
   useEffect(() => {
-    api.startPreview().catch(fail);
-    api.getStudioState().then(setDoc).catch(fail);
+    // Start the engine BEFORE loading the doc, so the first reactive sync (which
+    // stages visible overlays on the preview) runs with the engine already up —
+    // otherwise those show_preview_overlay calls fail and, once marked in
+    // shownRef, are never retried (⇒ nothing in the Aperçu at boot).
+    api.startPreview().then(() => api.getStudioState()).then(setDoc).catch(fail);
     api.listCameras().then((l) => {
       setCameraId((id) => id || l[0]?.id || "");
     }).catch(() => {});
@@ -173,10 +176,18 @@ export function App() {
     );
     const cur = shownRef.current;
     // Editing stages overlays on the PREVIEW compositor (CHR-115); CUT sends them
-    // on-air (programme).
-    for (const id of want) if (!cur.has(id)) api.showPreviewOverlay(id).catch(() => {});
-    for (const id of cur) if (!want.has(id)) api.hidePreviewOverlay(id).catch(() => {});
-    shownRef.current = want;
+    // on-air (programme). Record an overlay as shown only once show_preview_overlay
+    // actually SUCCEEDS (mutating the same Set), so a transient failure is retried
+    // on the next sync instead of being silently marked shown forever.
+    for (const id of want) {
+      if (!cur.has(id)) api.showPreviewOverlay(id).then(() => cur.add(id)).catch(() => {});
+    }
+    for (const id of [...cur]) {
+      if (!want.has(id)) {
+        api.hidePreviewOverlay(id).catch(() => {});
+        cur.delete(id);
+      }
+    }
 
     // Device sources (screen / camera) follow the scene's layers' visibility:
     // adding + showing a "screen"/"camera" source starts the real device; hiding

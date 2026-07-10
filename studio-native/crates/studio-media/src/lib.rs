@@ -3054,6 +3054,49 @@ mod tests {
         assert_ne!(prev_base, prev_now, "the imagefreeze overlay must PAINT the preview");
     }
 
+    /// A shared DEVICE (camera/screen path, tee'd to both compositors) must
+    /// actually PAINT both — the preview JPEG AND the programme JPEG must change
+    /// when a full-canvas device is added. Guards the device half of "aucune
+    /// source n'apparaît dans l'aperçu" (the CHR-127 test only checked frame
+    /// counts, which the background sustains regardless).
+    #[test]
+    fn a_device_source_paints_both_compositors() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.latest_frame().is_some() && engine.preview_frame_jpeg().is_some() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "both feeds must produce JPEG frames");
+        std::thread::sleep(Duration::from_millis(250));
+        let prog_base = engine.latest_frame().unwrap();
+        let prev_base = engine.preview_frame_jpeg().unwrap();
+
+        engine
+            .add_device_source(
+                "cam",
+                Box::new(|| {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .property_from_str("pattern", "red")
+                        .build()?;
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("add device source");
+
+        std::thread::sleep(Duration::from_millis(500));
+        let prog_now = engine.latest_frame().unwrap();
+        let prev_now = engine.preview_frame_jpeg().unwrap();
+        engine.stop();
+        assert_ne!(prog_base, prog_now, "a device must PAINT the PROGRAMME");
+        assert_ne!(prev_base, prev_now, "a device must PAINT the PREVIEW (Aperçu)");
+    }
+
     /// CHR-124 audio consolidation: a tone channel on the bus produces a REAL VU
     /// level (from its `level` element, read off the bus), and set_audio_channel
     /// drives it live. Headless — no audio device needed (the tone is the signal).
