@@ -62,6 +62,11 @@ export type StudioLayer = {
   feedUrl?: string | null;
   audioPlaying?: boolean | null;
   audioFileUrl?: string | null;
+  // CHR-56 cut-replay override / CHR-57 inter-source reaction.
+  replayOnCut?: "auto" | "always" | "never" | null;
+  reactTo?: string | null;
+  reactStyle?: Record<string, unknown> | null;
+  reactTransitionMs?: number | null;
   [k: string]: unknown;
 };
 
