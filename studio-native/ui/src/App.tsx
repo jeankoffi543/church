@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./lib/api";
+import { navigateBible, bibleVersions, type NavigateDirection } from "./lib/bible";
 import type { EncoderConfig, StudioDoc } from "./lib/api";
 import { StageMonitor } from "./components/StageMonitor";
 import { TransitionBar } from "./components/TransitionBar";
@@ -123,6 +124,33 @@ export function App() {
   // ── handlers ──────────────────────────────────────────────────────────────
   const refreshDoc = (d: StudioDoc) => setDoc(d);
   const cmd = (c: api.StudioCommand) => api.applyCommand(c).then(refreshDoc).catch(fail);
+
+  // CHR-129 bible: set the on-air verse candidate, then re-render the bible
+  // overlay wherever it's shown (preview stage + programme if already cut).
+  const rerenderBible = () => {
+    const bl = doc?.scenes
+      .find((sc) => sc.id === doc.currentSceneId)
+      ?.layers.find((l) => l.kind === "bible");
+    if (!bl) return;
+    if (shownRef.current.has(bl.id)) api.showPreviewOverlay(bl.id).catch(() => {});
+    if (progShownRef.current.has(bl.id)) api.showOverlay(bl.id).catch(() => {});
+  };
+  const setBibleVerse = (v: api.ScriptureVerse | null) =>
+    api.setBible(v).then((d) => {
+      refreshDoc(d);
+      rerenderBible();
+    }).catch(fail);
+  const navBible = (dir: NavigateDirection) => {
+    const v = doc?.bibleVerse;
+    if (!v) return;
+    navigateBible(v, dir, bibleVersions()).then((nv) => nv && setBibleVerse(nv)).catch(() => {});
+  };
+  const bibleLive = () =>
+    (doc?.scenes.find((sc) => sc.id === doc.currentSceneId)?.layers ?? []).some(
+      (l) => l.kind === "bible" && l.visible,
+    );
+  const bv = doc?.bibleVerse;
+  const canNavBible = !!bv && !!bv.book && bv.chapter != null && bv.verse != null;
 
   const selectLayer = (id: string) => {
     setSelectedId(id);
@@ -337,7 +365,19 @@ export function App() {
             overlay={draggableLayer() ? <TransformBox box={transform} onChange={applyTransform} /> : undefined}
           />
         )}
-        <TransitionBar onCut={cut} onBlack={toggleBlack} black={black} busy={false} canCut={true} />
+        <TransitionBar
+          onCut={cut}
+          onBlack={toggleBlack}
+          black={black}
+          busy={false}
+          canCut={true}
+          showVerseNav={bibleLive()}
+          canNavigate={canNavBible}
+          onPrevVerse={() => navBible("prev_verse")}
+          onNextVerse={() => navBible("next_verse")}
+          onPrevChapter={() => navBible("prev_chapter")}
+          onNextChapter={() => navBible("next_chapter")}
+        />
         <StageMonitor tone="program" frame={progFrame} sceneName={sceneName} black={black} />
       </section>
 
@@ -402,6 +442,8 @@ export function App() {
                 replayGlobalDefault={replayOnCut}
                 reactionTestActive={!!reactionTestId && reactionTestId === selectedId}
                 onToggleReactionTest={toggleReactionTest}
+                bibleVerse={doc?.bibleVerse ?? null}
+                onSetBibleVerse={setBibleVerse}
                 onPlayAnim={() => {
                   const l = currentLayer();
                   if (l && shownRef.current.has(l.id)) api.showPreviewOverlay(l.id).catch(() => {});
