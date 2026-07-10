@@ -44,6 +44,7 @@ export function App() {
   const [cameraId, setCameraId] = useState("");
   const shownRef = useRef<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reactionTestId, setReactionTestId] = useState<string | null>(null);
   const [transform, setTransform] = useState<Transform>(FULL);
 
   const [encoders, setEncoders] = useState<string[]>([]);
@@ -248,6 +249,36 @@ export function App() {
 
   const currentLayer = () =>
     doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === selectedId) ?? null;
+  // CHR-57 reaction test: simulate a layer's reaction pose on the Aperçu monitor
+  // by moving its preview pad to the reaction box (customX/Y/W/H are %), toggling
+  // back to its normal box. Best-effort geometry preview (the live on-air trigger
+  // playback is a follow-up); works for overlays AND devices (both feed preview).
+  const applyPreviewBox = (sid: string, st: Record<string, unknown>) => {
+    const pct = (v: unknown, d: number) => (typeof v === "number" ? v : d) / 100;
+    const x = Math.round(pct(st.customX, 0) * 1920);
+    const y = Math.round(pct(st.customY, 0) * 1080);
+    const w = Math.max(1, Math.round(pct(st.customWidth, 100) * 1920));
+    const h = Math.max(1, Math.round(pct(st.customHeight, 100) * 1080));
+    api.setPreviewLayerTransform(sid, x, y, w, h).catch(() => {});
+  };
+  const toggleReactionTest = () => {
+    const l = currentLayer();
+    if (!l) return;
+    const sid = sourceIdFor(l.kind, l.id);
+    if (!sid) return;
+    if (reactionTestId === l.id) {
+      setReactionTestId(null);
+      // Restore: overlays re-render at their real pose; devices reset to their box.
+      if (OVERLAY_KINDS.includes(l.kind) && shownRef.current.has(l.id))
+        api.showPreviewOverlay(l.id).catch(() => {});
+      else applyPreviewBox(sid, l.style as Record<string, unknown>);
+    } else {
+      setReactionTestId(l.id);
+      const react = (l.reactStyle as Record<string, unknown>) ?? {};
+      applyPreviewBox(sid, { ...(l.style as Record<string, unknown>), ...react });
+    }
+  };
+
   // A selected overlay staged on the preview compositor — or a live shared device
   // (camera/screen), now tee'd onto the Aperçu (CHR-127) — can be dragged there.
   const draggableLayer = () => {
@@ -367,6 +398,10 @@ export function App() {
               <InspectorDock
                 layer={currentLayer()}
                 onChange={onLayerChange}
+                allLayers={doc?.scenes.find((sc) => sc.id === doc.currentSceneId)?.layers ?? []}
+                replayGlobalDefault={replayOnCut}
+                reactionTestActive={!!reactionTestId && reactionTestId === selectedId}
+                onToggleReactionTest={toggleReactionTest}
                 onPlayAnim={() => {
                   const l = currentLayer();
                   if (l && shownRef.current.has(l.id)) api.showPreviewOverlay(l.id).catch(() => {});

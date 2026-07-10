@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Sparkles, Italic, Underline, X, Camera, RefreshCw, Volume2, VolumeX, FolderOpen, Music } from "lucide-react";
+import { Sparkles, Italic, Underline, X, Camera, RefreshCw, Volume2, VolumeX, FolderOpen, Music, Play, Lock, Check, Repeat, Link2, Crosshair, Trash2 } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Slider } from "./Slider";
 import { layerMeta } from "../lib/studio-layers";
@@ -16,29 +16,40 @@ import {
   TEXT_GRADIENTS,
   EASING_BEZIER,
 } from "../lib/studio-tokens";
-import { ANIM_EFFECTS, ANIM_EASINGS, type Style, type StudioLayer } from "../lib/api";
+import { type Style, type StudioLayer } from "../lib/api";
+import {
+  ANIM_EFFECTS,
+  ANIM_CATEGORIES,
+  EASING_OPTIONS,
+  animInCategory,
+  getAnimEffect,
+  animKind,
+  type AnimCategoryId,
+  type AnimEffect,
+  type AnimSourceKind,
+} from "../lib/studio-animations";
 
 const MONO = "font-studio-mono";
 const FIELD = "w-full rounded-lg border border-white/10 bg-studio-field px-2 py-2 text-[12px] text-white outline-none";
 const MONO_FIELD = cn(FIELD, MONO, "text-[11px]");
 
-// Inspector tabs offered per layer kind (church-client layerTabs, minus the
-// "reaction" tab which needs on-air tracking — a later step).
-type InspTab = "contenu" | "layout" | "typo" | "container" | "anim" | "presets";
+// Inspector tabs offered per layer kind (church-client layerTabs).
+type InspTab = "contenu" | "layout" | "typo" | "container" | "anim" | "reaction" | "presets";
 const TAB_LABELS: Record<InspTab, string> = {
   contenu: "Contenu",
   layout: "Mise en page",
   typo: "Typo",
   container: "Cadre",
   anim: "Anim",
+  reaction: "Réaction",
   presets: "Presets",
 };
 function layerTabs(kind: string): InspTab[] {
   if (["bible", "text", "song", "group"].includes(kind))
-    return ["contenu", "layout", "typo", "container", "anim", "presets"];
-  if (kind === "image") return ["contenu", "layout", "container", "anim", "presets"];
+    return ["contenu", "layout", "typo", "container", "anim", "reaction", "presets"];
+  if (kind === "image") return ["contenu", "layout", "container", "anim", "reaction", "presets"];
   if (["camera", "screen", "video", "embed"].includes(kind))
-    return ["contenu", "layout", "anim", "presets"];
+    return ["contenu", "layout", "anim", "reaction", "presets"];
   return ["contenu"]; // audio
 }
 
@@ -101,10 +112,21 @@ export function InspectorDock({
   layer,
   onChange,
   onPlayAnim,
+  allLayers = [],
+  replayGlobalDefault = true,
+  reactionTestActive = false,
+  onToggleReactionTest,
 }: {
   layer: StudioLayer | null;
   onChange: (l: StudioLayer) => void;
   onPlayAnim?: () => void;
+  /** Every layer in the current scene — the reaction trigger candidates. */
+  allLayers?: StudioLayer[];
+  /** What replay "Auto" resolves to (the global "Animer à chaque CUT" toggle). */
+  replayGlobalDefault?: boolean;
+  /** CHR-57 — whether the preview is currently simulating this layer's reaction. */
+  reactionTestActive?: boolean;
+  onToggleReactionTest?: () => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -174,7 +196,25 @@ export function InspectorDock({
               <TypoPanel setField={setStudioField} typoEl={typoEl} setTypoEl={setTypoEl} tk={tk} tv={tv} />
             )}
             {activeTab === "container" && <ContainerPanel s={s} setField={setStudioField} />}
-            {activeTab === "anim" && <AnimPanel s={s} setField={setStudioField} onPlayAnim={onPlayAnim} />}
+            {activeTab === "anim" && (
+              <AnimPanel
+                s={s}
+                setField={setStudioField}
+                onPlayAnim={onPlayAnim}
+                layer={layer}
+                patchData={patchData}
+                replayGlobalDefault={replayGlobalDefault}
+              />
+            )}
+            {activeTab === "reaction" && (
+              <ReactionPanel
+                layer={layer}
+                allLayers={allLayers}
+                patchData={patchData}
+                testActive={reactionTestActive}
+                onToggleTest={onToggleReactionTest}
+              />
+            )}
             {activeTab === "presets" && <PresetsPanel style={s} setStyle={setStyle} />}
           </div>
         </>
@@ -701,48 +741,363 @@ function EasingCurve({ easing }: { easing: string }) {
   );
 }
 
-/* ── Anim (compact) ── */
-function AnimPanel({ s, setField, onPlayAnim }: { s: Style; setField: (k: string, v: unknown) => void; onPlayAnim?: () => void }) {
+/* ── Anim gallery (CHR-128, ported from the web Anim tab) ── */
+
+type ReplayMode = "auto" | "always" | "never";
+
+/**
+ * One gallery card. Static "Aa" glyph at rest; hovering plays the effect's CSS
+ * `preview` archetype once (loops run only while hovered). Unavailable effects
+ * (per-source rule) are greyed out with the reason.
+ */
+function EffectCard({
+  fx,
+  kind,
+  selected,
+  onSelect,
+}: {
+  fx: AnimEffect;
+  kind: AnimSourceKind;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const available = fx.availableFor(kind);
+  const [nonce, setNonce] = useState(0);
+  const [hover, setHover] = useState(false);
+  const playing = hover && available && fx.id !== "none";
+  const glyph = "grid h-7 w-12 place-items-center rounded-[6px] bg-gradient-to-br from-gold/80 to-studio-purple/80 text-[11px] font-extrabold text-[#160f33]";
+
+  return (
+    <button
+      type="button"
+      disabled={!available}
+      onClick={onSelect}
+      onMouseEnter={() => {
+        setHover(true);
+        setNonce((n) => n + 1);
+      }}
+      onMouseLeave={() => setHover(false)}
+      title={available ? fx.hint : fx.unavailableHint || "Indisponible pour cette source."}
+      className={cn(
+        "group relative flex flex-col gap-1.5 rounded-[10px] border p-1.5 text-left transition",
+        selected ? "border-studio-purple/70 bg-studio-purple/12" : "border-white/8 bg-white/[0.03] hover:border-white/20",
+        !available && "cursor-not-allowed opacity-40 grayscale",
+      )}
+    >
+      <div className="fxp-stage relative grid h-12 place-items-center overflow-hidden rounded-[7px] bg-[#0a0613]">
+        <div
+          key={nonce}
+          className={cn(glyph, playing && `fxp-play fxp-${fx.preview}`, playing && fx.loop && "fxp-loop")}
+        >
+          Aa
+        </div>
+        {fx.loop && <Repeat className="absolute right-1 bottom-1 size-2.5 text-white/40" strokeWidth={2.2} />}
+        {!available && <Lock className="absolute top-1 right-1 size-2.5 text-white/50" strokeWidth={2.2} />}
+        {selected && (
+          <span className="absolute top-1 left-1 grid size-3.5 place-items-center rounded-full bg-studio-purple">
+            <Check className="size-2.5 text-white" strokeWidth={3} />
+          </span>
+        )}
+      </div>
+      <span className={cn("truncate text-[10px] leading-tight font-bold", selected ? "text-studio-purple" : "text-white/75")}>
+        {fx.label}
+      </span>
+    </button>
+  );
+}
+
+function AnimPanel({
+  s,
+  setField,
+  onPlayAnim,
+  layer,
+  patchData,
+  replayGlobalDefault,
+}: {
+  s: Style;
+  setField: (k: string, v: unknown) => void;
+  onPlayAnim?: () => void;
+  layer: StudioLayer;
+  patchData: (p: Partial<StudioLayer>) => void;
+  replayGlobalDefault: boolean;
+}) {
+  const kind = animKind(layer.kind);
+  const [cat, setCat] = useState<"all" | AnimCategoryId>("all");
+  const current = getAnimEffect(s.animation);
+  const currentAvailable = current.availableFor(kind);
+  const effects = ANIM_EFFECTS.filter((e) => cat === "all" || animInCategory(e, cat));
+  const durLabel = (s.duration as number) === 0 || s.duration == null ? "Manuel" : `${s.duration}s`;
+  const showReplay = layer.kind !== "bible";
+  const replayMode = ((layer.replayOnCut as ReplayMode) ?? "auto");
+  const replayModes: { id: ReplayMode; label: string }[] = [
+    { id: "auto", label: "Auto" },
+    { id: "always", label: "Toujours" },
+    { id: "never", label: "Jamais" },
+  ];
+
   return (
     <>
       <StickyBar>
-        <Label className="mb-1.5">Effet d'entrée</Label>
-        <Select value={s.animation} onValueChange={(v) => setField("animation", v)} className={FIELD}>
-          {ANIM_EFFECTS.map((a) => (
-            <option key={a} value={a} className="bg-studio-field">
-              {a}
-            </option>
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <Label className="mb-1.5">Effet d&apos;apparition</Label>
+            <div className="flex h-[30px] items-center gap-1.5 truncate rounded-lg border border-white/10 bg-studio-field px-2 text-[11.5px] font-bold text-white">
+              <span className="truncate">{current.label}</span>
+              {current.loop && <Repeat className="size-3 shrink-0 text-white/45" />}
+            </div>
+          </div>
+          {onPlayAnim && (
+            <button
+              type="button"
+              onClick={onPlayAnim}
+              title="Rejouer l'animation dans l'aperçu"
+              className="flex size-[30px] shrink-0 items-center justify-center rounded-lg border border-studio-purple/35 bg-studio-purple/12 text-studio-purple transition hover:bg-studio-purple/25"
+            >
+              <Play className="size-3.5 fill-current" />
+            </button>
+          )}
+        </div>
+        <div className="-mx-1 mt-2 flex gap-1 overflow-x-auto px-1 pb-0.5">
+          {[{ id: "all" as const, label: "Tous" }, ...ANIM_CATEGORIES].map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => setCat(c.id as "all" | AnimCategoryId)}
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-[3px] text-[9.5px] font-bold whitespace-nowrap transition",
+                cat === c.id
+                  ? "border-studio-purple/50 bg-studio-purple/15 text-studio-purple"
+                  : "border-white/10 bg-white/[0.03] text-white/50 hover:text-white",
+              )}
+            >
+              {c.label}
+            </button>
           ))}
-        </Select>
+        </div>
       </StickyBar>
+
+      {!currentAvailable && (
+        <div className="rounded-[9px] border border-studio-sandbox/30 bg-studio-sandbox/[0.08] px-2.5 py-2 text-[10.5px] leading-snug text-white/65">
+          «&nbsp;{current.label}&nbsp;» n&apos;est pas disponible pour cette source — elle s&apos;affiche
+          sans animation. {current.unavailableHint}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {effects.map((fx) => (
+          <EffectCard
+            key={fx.id}
+            fx={fx}
+            kind={kind}
+            selected={s.animation === fx.id}
+            onSelect={() => {
+              setField("animation", fx.id);
+              setTimeout(() => onPlayAnim?.(), 50);
+            }}
+          />
+        ))}
+      </div>
+
+      {showReplay && (
+        <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-2.5">
+          <Label className="mb-1.5">Rejouer à l&apos;antenne (CUT)</Label>
+          <div className="flex gap-1">
+            {replayModes.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => patchData({ replayOnCut: m.id } as Partial<StudioLayer>)}
+                className={cn(
+                  "flex-1 rounded-[7px] border px-1 py-1.5 text-[10.5px] font-bold transition",
+                  replayMode === m.id
+                    ? "border-studio-purple/60 bg-studio-purple/15 text-studio-purple"
+                    : "border-white/10 bg-white/[0.03] text-white/55 hover:text-white",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[10px] leading-snug text-white/40">
+            {replayMode === "always"
+              ? "Rejoue l'animation à chaque passage à l'antenne."
+              : replayMode === "never"
+                ? "Ne rejoue jamais au CUT (s'anime seulement à la 1re apparition)."
+                : `Suit le réglage global « Animer à chaque CUT » (actuellement : ${
+                    replayGlobalDefault ? "activé — rejoue" : "désactivé — ne rejoue pas"
+                  }).`}
+          </div>
+        </div>
+      )}
+
       <div>
-        <Label className="mb-1.5">Courbe</Label>
+        <SliderLabel label={current.loop ? "Vitesse du cycle" : "Durée de transition"} value={`${s.animDuration ?? 500}ms`} />
+        <Slider min={100} max={2000} step={50} value={s.animDuration ?? 500} onValueChange={(v) => setField("animDuration", v)} />
+        {current.loop && (
+          <div className="mt-1 text-[10px] text-white/35">Effet en boucle : la durée règle la vitesse du cycle.</div>
+        )}
+      </div>
+
+      <div>
+        <Label className="mb-1.5">Courbe (easing)</Label>
         <div className="flex items-center gap-2">
           <Select value={s.animEasing} onValueChange={(v) => setField("animEasing", v)} className={FIELD}>
-            {ANIM_EASINGS.map((a) => (
-              <option key={a} value={a} className="bg-studio-field">
-                {a}
+            {EASING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value} className="bg-studio-field">
+                {o.label}
               </option>
             ))}
           </Select>
           <EasingCurve easing={s.animEasing} />
         </div>
       </div>
+
       <div>
-        <SliderLabel label="Durée" value={`${Math.round(s.animDuration ?? 500)} ms`} />
-        <Slider min={0} max={2000} step={50} value={s.animDuration ?? 500} onValueChange={(v) => setField("animDuration", v)} />
+        <SliderLabel label="Durée d'affichage" value={durLabel} />
+        <Slider min={0} max={60} step={5} value={(s.duration as number) ?? 0} onValueChange={(v) => setField("duration", v)} />
+        <div className="mt-1 text-[10px] text-white/35">0 = reste affiché jusqu&apos;au masquage manuel.</div>
       </div>
-      {onPlayAnim && (
-        <button
-          type="button"
-          onClick={onPlayAnim}
-          className="w-full rounded-lg bg-studio-purple/15 py-2 text-[12px] font-bold text-studio-purple transition hover:bg-studio-purple/25"
+    </>
+  );
+}
+
+/* ── Réaction (CHR-57) — inter-source reaction pose ── */
+function ReactionPanel({
+  layer,
+  allLayers,
+  patchData,
+  testActive,
+  onToggleTest,
+}: {
+  layer: StudioLayer;
+  allLayers: StudioLayer[];
+  patchData: (p: Partial<StudioLayer>) => void;
+  testActive: boolean;
+  onToggleTest?: () => void;
+}) {
+  const triggers = allLayers.filter((l) => l.id !== layer.id);
+  const trigger = allLayers.find((l) => l.id === (layer.reactTo as string)) ?? null;
+  const hasReaction = !!layer.reactStyle;
+
+  return (
+    <>
+      <StickyBar>
+        <Label className="mb-1.5 flex items-center gap-1.5">
+          <Link2 className="size-3.5 text-studio-purple" />
+          Réagir à une source (déclencheur)
+        </Label>
+        <Select
+          value={(layer.reactTo as string) ?? ""}
+          onValueChange={(v) => patchData({ reactTo: v || null } as Partial<StudioLayer>)}
+          className={FIELD}
         >
-          ▶ Rejouer l'animation
-        </button>
+          <option value="" className="bg-studio-field">
+            Aucun déclencheur
+          </option>
+          {triggers.map((t) => (
+            <option key={t.id} value={t.id} className="bg-studio-field">
+              {t.name} · {layerMeta(t.kind).label}
+            </option>
+          ))}
+        </Select>
+      </StickyBar>
+
+      {!layer.reactTo ? (
+        <div className="rounded-[10px] border border-white/8 bg-black/[0.18] px-3 py-2.5 text-[11px] leading-relaxed text-white/55">
+          Choisis une source <b>déclencheur</b>. Quand elle passe à l&apos;antenne, cette source basculera
+          en douceur vers une <b>pose de réaction</b> (position, taille), puis reviendra à la normale quand
+          le déclencheur quitte l&apos;antenne. Ex. : le verset apparaît → la caméra du pasteur se décale et
+          rétrécit.
+        </div>
+      ) : (
+        <>
+          <div className="rounded-[10px] border border-white/8 bg-black/[0.18] p-3 text-[11px] leading-relaxed text-white/55">
+            <p className="m-0 mb-1.5 font-bold text-white/70">Définir la pose de réaction</p>
+            <ol className="m-0 list-decimal space-y-1 pl-4">
+              <li>
+                Place / redimensionne cette source (dans l&apos;aperçu) là où elle doit aller quand
+                «&nbsp;{trigger?.name ?? "…"}&nbsp;» est à l&apos;antenne.
+              </li>
+              <li>Clique «&nbsp;Capturer l&apos;état réaction&nbsp;».</li>
+              <li>Remets-la à sa position normale (elle y restera par défaut).</li>
+            </ol>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => patchData({ reactStyle: pickReactionStyle(layer.style) } as Partial<StudioLayer>)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-studio-purple/35 bg-studio-purple/12 py-2.5 text-[11.5px] font-bold text-studio-purple transition hover:bg-studio-purple/25"
+          >
+            <Crosshair className="size-3.5" />
+            Capturer l&apos;état réaction (pose actuelle)
+          </button>
+
+          <div className="flex items-center justify-between rounded-[9px] border border-white/8 bg-black/[0.18] px-3 py-2 text-[11px]">
+            <span className="text-white/55">Pose de réaction</span>
+            <span className={cn("font-bold", hasReaction ? "text-studio-preview-bright" : "text-white/35")}>
+              {hasReaction ? "définie ✓" : "non définie"}
+            </span>
+          </div>
+
+          {hasReaction && (
+            <>
+              <div>
+                <SliderLabel label="Durée de transition" value={`${(layer.reactTransitionMs as number) ?? 600}ms`} />
+                <Slider
+                  min={100}
+                  max={2000}
+                  step={50}
+                  value={(layer.reactTransitionMs as number) ?? 600}
+                  onValueChange={(v) => patchData({ reactTransitionMs: v } as Partial<StudioLayer>)}
+                />
+              </div>
+
+              {onToggleTest && (
+                <button
+                  type="button"
+                  onClick={onToggleTest}
+                  title="Simuler la pose de réaction dans l'aperçu"
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-[11.5px] font-bold transition",
+                    testActive
+                      ? "border-studio-preview/50 bg-studio-preview/15 text-studio-preview-bright"
+                      : "border-white/10 bg-white/[0.03] text-white/60 hover:text-white",
+                  )}
+                >
+                  <Play className="size-3.5 fill-current" />
+                  {testActive ? "Arrêter le test" : "Tester la réaction (aperçu)"}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => patchData({ reactStyle: null } as Partial<StudioLayer>)}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] py-2 text-[11px] font-bold text-white/50 transition hover:text-white"
+              >
+                <Trash2 className="size-3.5" />
+                Effacer la pose de réaction
+              </button>
+            </>
+          )}
+        </>
       )}
     </>
   );
+}
+
+// Capture the current style's pose fields into a reaction StylePatch — the TS
+// mirror of studio-core's pick_reaction_style (only REACTION_KEYS are stored).
+const REACTION_KEYS = [
+  "positionMode", "predefinedPosition", "containerShape", "containerBorderStyle",
+  "containerBorderColor", "containerBg", "shadowColor", "customX", "customY",
+  "customWidth", "customHeight", "containerBorderRadius", "containerBorderWidth",
+  "containerPaddingX", "containerPaddingY", "shadowBlur", "shadowSpread",
+  "shadowOffsetX", "shadowOffsetY",
+] as const;
+function pickReactionStyle(style: Style): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const k of REACTION_KEYS) if (style[k] !== undefined) patch[k] = style[k];
+  return patch;
 }
 
 /* ── Presets (localStorage) ── */

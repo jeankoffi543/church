@@ -150,3 +150,89 @@ body {
   background: #e2b85f;
   cursor: pointer;
 }
+
+/* ── Anim gallery hover previews (CHR-128) ── */
+/* The card glyph is static at rest; on hover we add `.fxp-play fxp-<archetype>`
+   (+ `.fxp-loop` for continuous effects) to play the effect's CSS archetype. */
+.fxp-stage { perspective: 220px; }
+.fxp-play { animation-duration: 0.9s; animation-timing-function: cubic-bezier(0, 0, 0.58, 1); animation-fill-mode: both; }
+.fxp-loop { animation-duration: 1.6s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+
+.fxp-fade      { animation-name: fxk-fade; }
+.fxp-fadeslide { animation-name: fxk-fadeslide; }
+.fxp-scale     { animation-name: fxk-scale; }
+.fxp-zoomout   { animation-name: fxk-zoomout; }
+.fxp-pop       { animation-name: fxk-pop; }
+.fxp-blur      { animation-name: fxk-blur; }
+.fxp-slideL    { animation-name: fxk-slideL; }
+.fxp-slideR    { animation-name: fxk-slideR; }
+.fxp-slideU    { animation-name: fxk-slideU; }
+.fxp-slideD    { animation-name: fxk-slideD; }
+.fxp-drop      { animation-name: fxk-drop; }
+.fxp-roll      { animation-name: fxk-roll; }
+.fxp-rotate    { animation-name: fxk-rotate; }
+.fxp-spin      { animation-name: fxk-spin; }
+.fxp-swirl     { animation-name: fxk-swirl; }
+.fxp-flipx     { animation-name: fxk-flipx; }
+.fxp-flipy     { animation-name: fxk-flipy; }
+.fxp-door      { animation-name: fxk-door; transform-origin: left center; }
+.fxp-swing     { animation-name: fxk-swing; transform-origin: top center; }
+.fxp-tilt      { animation-name: fxk-tilt; }
+.fxp-spin3d    { animation-name: fxk-spin3d; }
+.fxp-window    { animation-name: fxk-window; }
+.fxp-reveal    { animation-name: fxk-reveal; }
+.fxp-revealU   { animation-name: fxk-revealU; }
+.fxp-revealD   { animation-name: fxk-revealD; }
+.fxp-split     { animation-name: fxk-split; }
+.fxp-iris      { animation-name: fxk-iris; }
+.fxp-wipe      { animation-name: fxk-wipe; }
+.fxp-type      { animation-name: fxk-reveal; }
+.fxp-scrollx   { animation-name: fxk-scrollx; }
+.fxp-scrollxr  { animation-name: fxk-scrollxr; }
+.fxp-scrolly   { animation-name: fxk-scrolly; }
+.fxp-scrollyd  { animation-name: fxk-scrollyd; }
+.fxp-pulse     { animation-name: fxk-pulse; }
+.fxp-float     { animation-name: fxk-float; }
+.fxp-sway      { animation-name: fxk-sway; }
+.fxp-ripple    { animation-name: fxk-ripple; }
+.fxp-heartbeat { animation-name: fxk-heartbeat; }
+.fxp-spinloop  { animation-name: fxk-spinloop; }
+
+@keyframes fxk-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fxk-fadeslide { from { opacity: 0; transform: translateY(35%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-scale { from { opacity: 0; transform: scale(0.55); } to { opacity: 1; transform: scale(1); } }
+@keyframes fxk-zoomout { from { opacity: 0; transform: scale(1.5); } to { opacity: 1; transform: scale(1); } }
+@keyframes fxk-pop { 0% { opacity: 0; transform: scale(0.3); } 60% { opacity: 1; transform: scale(1.18); } 100% { transform: scale(1); } }
+@keyframes fxk-blur { from { opacity: 0; filter: blur(7px); } to { opacity: 1; filter: blur(0); } }
+@keyframes fxk-slideL { from { opacity: 0; transform: translateX(-130%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-slideR { from { opacity: 0; transform: translateX(130%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-slideU { from { opacity: 0; transform: translateY(130%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-slideD { from { opacity: 0; transform: translateY(-130%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-drop { 0% { opacity: 0; transform: translateY(-150%); } 60% { opacity: 1; transform: translateY(12%); } 80% { transform: translateY(-6%); } 100% { transform: none; } }
+@keyframes fxk-roll { from { opacity: 0; transform: translateX(-130%) rotate(-200deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-rotate { from { opacity: 0; transform: rotate(-95deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-spin { from { opacity: 0; transform: rotate(-360deg) scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes fxk-swirl { from { opacity: 0; transform: rotate(-300deg) scale(0.15); } to { opacity: 1; transform: none; } }
+@keyframes fxk-flipx { from { opacity: 0; transform: rotateX(90deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-flipy { from { opacity: 0; transform: rotateY(90deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-door { from { opacity: 0; transform: rotateY(-92deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-swing { from { opacity: 0; transform: rotateX(-92deg); } to { opacity: 1; transform: none; } }
+@keyframes fxk-tilt { from { opacity: 0; transform: rotateX(45deg) translateY(35%); } to { opacity: 1; transform: none; } }
+@keyframes fxk-spin3d { from { transform: rotateY(0); } to { transform: rotateY(360deg); } }
+@keyframes fxk-window { 0% { transform: rotateX(0); } 50% { transform: rotateX(55deg); } 100% { transform: rotateX(0); } }
+@keyframes fxk-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes fxk-revealU { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+@keyframes fxk-revealD { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
+@keyframes fxk-split { from { clip-path: inset(0 50% 0 50%); } to { clip-path: inset(0); } }
+@keyframes fxk-iris { from { clip-path: circle(0%); } to { clip-path: circle(75%); } }
+@keyframes fxk-wipe { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
+@keyframes fxk-scrollx { 0% { transform: translateX(65%); } 100% { transform: translateX(-65%); } }
+@keyframes fxk-scrollxr { 0% { transform: translateX(-65%); } 100% { transform: translateX(65%); } }
+@keyframes fxk-scrolly { 0% { transform: translateY(65%); } 100% { transform: translateY(-65%); } }
+@keyframes fxk-scrollyd { 0% { transform: translateY(-65%); } 100% { transform: translateY(65%); } }
+@keyframes fxk-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.28); } 100% { transform: scale(1); } }
+@keyframes fxk-float { 0% { transform: translateY(0); } 50% { transform: translateY(-28%); } 100% { transform: translateY(0); } }
+@keyframes fxk-sway { 0% { transform: rotate(-13deg); } 50% { transform: rotate(13deg); } 100% { transform: rotate(-13deg); } }
+@keyframes fxk-ripple { 0% { transform: scale(0.55); opacity: 0.35; } 50% { opacity: 1; } 100% { transform: scale(1.15); opacity: 0.15; } }
+@keyframes fxk-heartbeat { 0% { transform: scale(1); } 15% { transform: scale(1.32); } 30% { transform: scale(1); } 45% { transform: scale(1.22); } 60% { transform: scale(1); } 100% { transform: scale(1); } }
+@keyframes fxk-spinloop { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
