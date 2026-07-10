@@ -2926,6 +2926,134 @@ mod tests {
         );
     }
 
+    /// A full-canvas OPAQUE source must actually PAINT the compositor it's added
+    /// to — proven by the JPEG frame CHANGING (the SMPTE background is static, so
+    /// an unchanged frame means the source never rendered). Guards the
+    /// "aucune source n'apparaît dans l'aperçu" regression: preview and programme
+    /// must BOTH show what's added to them.
+    #[test]
+    fn a_full_canvas_source_paints_both_compositors() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.latest_frame().is_some() && engine.preview_frame_jpeg().is_some() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "both feeds must produce JPEG frames");
+
+        // Static SMPTE background ⇒ stable baseline JPEGs.
+        std::thread::sleep(Duration::from_millis(250));
+        let prog_base = engine.latest_frame().unwrap();
+        let prev_base = engine.preview_frame_jpeg().unwrap();
+
+        let red = || {
+            let src = gst::ElementFactory::make("videotestsrc")
+                .property("is-live", true)
+                .property_from_str("pattern", "red")
+                .build()?;
+            wrap_in_bin(&[&src])
+        };
+        engine.add_source("cover-pg", Box::new(red)).expect("add programme cover");
+        engine
+            .add_preview_source("cover-pv", Box::new(red))
+            .expect("add preview cover");
+
+        std::thread::sleep(Duration::from_millis(500));
+        let prog_now = engine.latest_frame().unwrap();
+        let prev_now = engine.preview_frame_jpeg().unwrap();
+        engine.stop();
+
+        assert_ne!(prog_base, prog_now, "a full-canvas source must PAINT the PROGRAMME");
+        assert_ne!(prev_base, prev_now, "a full-canvas source must PAINT the PREVIEW (Aperçu)");
+    }
+
+    /// Replicates the (fixed) mod-overlays overlay — a LIVE appsrc repeating one
+    /// BGRA still → videoconvert → ghost — staged on the PREVIEW compositor. It
+    /// must PAINT the preview AND STAY attached. The pre-fix `appsrc(one frame +
+    /// EOS) → imagefreeze` was rejected by the running compositor's live-add
+    /// negotiation ("not-negotiated"), auto-detaching every overlay: the reported
+    /// "aucune source n'apparaît dans l'aperçu".
+    #[test]
+    fn a_still_overlay_paints_the_preview_and_stays_attached() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.preview_frame_jpeg().is_some() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "preview feed must produce JPEG frames");
+        std::thread::sleep(Duration::from_millis(250));
+        let prev_base = engine.preview_frame_jpeg().unwrap();
+
+        let still = || {
+            let (w, h) = (1920i32, 1080i32);
+            // A LIVE appsrc that repeats the one still at the canvas framerate —
+            // negotiates lazily like videotestsrc (which live-adds cleanly),
+            // instead of imagefreeze whose eager accept-caps races the live pad.
+            let caps = gst::Caps::builder("video/x-raw")
+                .field("format", "BGRA")
+                .field("width", w)
+                .field("height", h)
+                .field("framerate", gst::Fraction::new(OUTPUT_FPS, 1))
+                .build();
+            let appsrc = gst_app::AppSrc::builder()
+                .caps(&caps)
+                .is_live(true)
+                .do_timestamp(true)
+                .format(gst::Format::Time)
+                .build();
+            let mut data = vec![0u8; (w * h * 4) as usize];
+            for px in data.chunks_mut(4) {
+                px[0] = 255;
+                px[1] = 0;
+                px[2] = 255;
+                px[3] = 255;
+            }
+            // A ref-counted buffer we clone (cheap) on every demand.
+            let buffer = gst::Buffer::from_mut_slice(data);
+            appsrc.set_callbacks(
+                gst_app::AppSrcCallbacks::builder()
+                    .need_data(move |src, _| {
+                        let _ = src.push_buffer(buffer.clone());
+                    })
+                    .build(),
+            );
+            let convert = gst::ElementFactory::make("videoconvert").build()?;
+            let bin = gst::Bin::new();
+            let el = appsrc.upcast_ref::<gst::Element>();
+            bin.add_many([el, &convert])?;
+            gst::Element::link_many([el, &convert])?;
+            let tail = convert.static_pad("src").unwrap();
+            let ghost = gst::GhostPad::with_target(&tail)?;
+            ghost.set_active(true)?;
+            bin.add_pad(&ghost)?;
+            Ok(bin)
+        };
+        engine
+            .add_preview_source("still", Box::new(still))
+            .expect("add preview still");
+
+        std::thread::sleep(Duration::from_millis(600));
+        let still_active = engine.is_preview_source_active("still");
+        let reason = engine.take_ended_reason("still");
+        let prev_now = engine.preview_frame_jpeg().unwrap();
+        engine.stop();
+
+        assert!(
+            still_active,
+            "the imagefreeze overlay must STAY on the preview — detached, reason: {reason:?}"
+        );
+        assert_ne!(prev_base, prev_now, "the imagefreeze overlay must PAINT the preview");
+    }
+
     /// CHR-124 audio consolidation: a tone channel on the bus produces a REAL VU
     /// level (from its `level` element, read off the bus), and set_audio_channel
     /// drives it live. Headless — no audio device needed (the tone is the signal).

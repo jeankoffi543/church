@@ -26,7 +26,6 @@ use anyhow::{anyhow, Context, Result};
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use std::sync::{Arc, Mutex};
 
 use studio_core::{
     BorderStyle, ContainerShape, FontStyleKind, FontTransform, Layer, LayerKind, PositionMode,
@@ -36,6 +35,9 @@ use studio_core::{
 /// The programme canvas the overlay is rendered onto (matches the compositor).
 const CANVAS_W: i32 = 1920;
 const CANVAS_H: i32 = 1080;
+/// Frame rate the (static) overlay's live appsrc declares. The image is repeated;
+/// the compositor holds it between frames, so a modest rate keeps the CPU light.
+const OVERLAY_FPS: i32 = 30;
 
 /// Whether this module renders a given layer kind (text / bible / song).
 pub fn renders(kind: LayerKind) -> bool {
@@ -383,41 +385,43 @@ pub fn build_source(layer: &Layer, verse: Option<&ScriptureVerse>) -> Result<gst
     let _ = gst::init();
     let bytes = render_bgra(layer, verse)?;
 
+    // A LIVE appsrc that REPEATS the one rendered still at the canvas framerate.
+    // (Earlier this used `appsrc → imagefreeze` with a one-shot buffer + EOS, but
+    // imagefreeze's eager caps negotiation is rejected when the overlay is added
+    // to the ALREADY-RUNNING compositor — "not-negotiated" → the source errors and
+    // auto-detaches, so no overlay ever reached the Aperçu/Programme. A plain live
+    // appsrc negotiates lazily like videotestsrc, which live-adds cleanly.) The
+    // 8 MB buffer exceeds appsrc's default `max-bytes`, so pushes self-pace to the
+    // compositor's consumption; `clone` is a cheap refcount bump, not a copy.
     let caps = gst::Caps::builder("video/x-raw")
         .field("format", "BGRA")
         .field("width", CANVAS_W)
         .field("height", CANVAS_H)
-        .field("framerate", gst::Fraction::new(1, 1))
+        .field("framerate", gst::Fraction::new(OVERLAY_FPS, 1))
         .build();
-    let appsrc = gst_app::AppSrc::builder().caps(&caps).build();
+    let appsrc = gst_app::AppSrc::builder()
+        .caps(&caps)
+        .is_live(true)
+        .do_timestamp(true)
+        .format(gst::Format::Time)
+        .build();
 
-    // Push the one rendered frame on first demand, then EOS; imagefreeze turns it
-    // into a steady stream. The buffer lives in a slot the callback takes once.
     let buffer = gst::Buffer::from_mut_slice(bytes);
-    let slot = Arc::new(Mutex::new(Some(buffer)));
     appsrc.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |src, _| {
-                if let Ok(mut g) = slot.lock() {
-                    if let Some(buf) = g.take() {
-                        let _ = src.push_buffer(buf);
-                        let _ = src.end_of_stream();
-                    }
-                }
+                let _ = src.push_buffer(buffer.clone());
             })
             .build(),
     );
 
-    let freeze = gst::ElementFactory::make("imagefreeze")
-        .build()
-        .context("make imagefreeze")?;
     let convert = gst::ElementFactory::make("videoconvert").build()?;
 
     let bin = gst::Bin::new();
     let appsrc_el = appsrc.upcast_ref::<gst::Element>();
-    bin.add_many([appsrc_el, &freeze, &convert])
+    bin.add_many([appsrc_el, &convert])
         .context("add overlay elements to bin")?;
-    gst::Element::link_many([appsrc_el, &freeze, &convert]).context("link overlay chain")?;
+    gst::Element::link_many([appsrc_el, &convert]).context("link overlay chain")?;
 
     let tail_pad = convert
         .static_pad("src")
@@ -504,9 +508,20 @@ mod tests {
             }
         }
         let n = engine.frames();
+        // The overlay must STAY attached: if its source errored/EOS'd on the live
+        // compositor add (the pre-fix bug), it would already be auto-detached here
+        // and nothing would ever render. `latest_frame` alone can't catch that —
+        // the background feeds the JPEG regardless — so assert activity + presence.
+        std::thread::sleep(Duration::from_millis(300));
+        let still_attached = engine.is_source_active("overlay");
+        let ended = engine.take_ended_reason("overlay");
         engine.stop();
         let frame = frame.expect("no overlay frame produced");
         assert!(n > 0);
         assert_eq!(&frame[..2], &[0xFF, 0xD8], "not a JPEG");
+        assert!(
+            still_attached,
+            "overlay auto-detached (never renders) — reason: {ended:?}"
+        );
     }
 }
