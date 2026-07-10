@@ -44,6 +44,34 @@ return [
             'transaction_mode' => 'DEFERRED',
         ],
 
+        /*
+        | Central ("landlord") connection — the multi-tenant orchestration DB.
+        | Holds only tenants / domains / plans / subscriptions / studio keys,
+        | never a church's business data. Driver is env-switchable so dev runs
+        | on its own SQLite file while production points it at MySQL/Postgres.
+        | Referenced by tenancy.database.central_connection (CHR-133).
+        */
+        'central' => [
+            'driver' => env('CENTRAL_DB_DRIVER', 'sqlite'),
+            'url' => env('CENTRAL_DB_URL'),
+            'host' => env('CENTRAL_DB_HOST', '127.0.0.1'),
+            'port' => env('CENTRAL_DB_PORT', '3306'),
+            'database' => env('CENTRAL_DB_DATABASE', database_path('central.sqlite')),
+            'username' => env('CENTRAL_DB_USERNAME', 'root'),
+            'password' => env('CENTRAL_DB_PASSWORD', ''),
+            'charset' => env('CENTRAL_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('CENTRAL_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
