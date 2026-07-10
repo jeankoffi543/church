@@ -330,12 +330,16 @@ export function App() {
   };
   const sceneName = doc?.scenes.find((s) => s.id === doc.currentSceneId)?.name ?? "—";
 
-  // Inspector edit → persist the whole layer, then re-render it on the
-  // compositor if it's a currently-shown overlay (so style edits are live).
+  // Inspector edit → persist the whole layer, then re-render it wherever it's
+  // actually shown so the edit is live. It MUST re-render the PREVIEW (where the
+  // overlay is staged), not the programme — calling show_overlay here re-rendered
+  // the wrong compositor AND orphaned a programme overlay that nothing ever
+  // removed (edits didn't update the Aperçu; deleted sources kept showing).
   const onLayerChange = (l: StudioLayer) =>
     api.applyCommand({ type: "replaceLayer", layer: l }).then((d) => {
       refreshDoc(d);
-      if (shownRef.current.has(l.id)) api.showOverlay(l.id).catch(() => {});
+      if (shownRef.current.has(l.id)) api.showPreviewOverlay(l.id).catch(() => {});
+      if (progShownRef.current.has(l.id)) api.showOverlay(l.id).catch(() => {});
     }).catch(fail);
 
   const encStats: EncoderStats = {
