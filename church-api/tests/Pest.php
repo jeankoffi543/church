@@ -23,6 +23,11 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
+// Tenancy provisioning tests spin up real tenant databases and run migrations,
+// which conflicts with RefreshDatabase's transaction on the default connection.
+// They manage (and tear down) their own central + tenant databases instead.
+pest()->extend(TestCase::class)->in('Tenancy');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

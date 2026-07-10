@@ -41,5 +41,13 @@ class AppServiceProvider extends ServiceProvider
             'convert' => Convert::class,
             'member' => Member::class,
         ]);
+
+        // The church (tenant) schema lives in the tenant migration path (CHR-135).
+        // Feature tests exercise tenant-context features, so load that path in the
+        // test environment for RefreshDatabase to build the schema on the default
+        // connection. Production/tenant DBs get it through `tenants:migrate`.
+        if ($this->app->runningUnitTests()) {
+            $this->loadMigrationsFrom(database_path('migrations/tenant'));
+        }
     }
 }
