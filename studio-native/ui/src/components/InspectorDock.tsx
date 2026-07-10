@@ -16,7 +16,14 @@ import {
   TEXT_GRADIENTS,
   EASING_BEZIER,
 } from "../lib/studio-tokens";
-import { type Style, type StudioLayer } from "../lib/api";
+import { type Style, type StudioLayer, type ScriptureVerse } from "../lib/api";
+import {
+  getBibleTranslations,
+  searchBible,
+  bibleVersions,
+  setBibleVersions,
+  type BibleSearchResult,
+} from "../lib/bible";
 import {
   ANIM_EFFECTS,
   ANIM_CATEGORIES,
@@ -116,6 +123,8 @@ export function InspectorDock({
   replayGlobalDefault = true,
   reactionTestActive = false,
   onToggleReactionTest,
+  bibleVerse = null,
+  onSetBibleVerse,
 }: {
   layer: StudioLayer | null;
   onChange: (l: StudioLayer) => void;
@@ -127,6 +136,9 @@ export function InspectorDock({
   /** CHR-57 — whether the preview is currently simulating this layer's reaction. */
   reactionTestActive?: boolean;
   onToggleReactionTest?: () => void;
+  /** CHR-129 — the on-air bible verse candidate (store), for the bible content. */
+  bibleVerse?: ScriptureVerse | null;
+  onSetBibleVerse?: (v: ScriptureVerse | null) => void;
 }) {
   const [tab, setTab] = useState<InspTab>("contenu");
   const [typoEl, setTypoEl] = useState<"fontRef" | "fontBody" | "fontVer">("fontBody");
@@ -190,7 +202,14 @@ export function InspectorDock({
                 <input value={layer.name} onChange={(e) => patchData({ name: e.target.value })} className={FIELD} />
               </StickyBar>
             )}
-            {activeTab === "contenu" && <ContentPanel layer={layer} patchData={patchData} />}
+            {activeTab === "contenu" && (
+              <ContentPanel
+                layer={layer}
+                patchData={patchData}
+                bibleVerse={bibleVerse}
+                onSetBibleVerse={onSetBibleVerse}
+              />
+            )}
             {activeTab === "layout" && <LayoutPanel s={s} setField={setStudioField} />}
             {activeTab === "typo" && (
               <TypoPanel setField={setStudioField} typoEl={typoEl} setTypoEl={setTypoEl} tk={tk} tv={tv} />
@@ -224,7 +243,19 @@ export function InspectorDock({
 }
 
 /* ── Contenu (per kind) ── */
-function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p: Partial<StudioLayer>) => void }) {
+function ContentPanel({
+  layer,
+  patchData,
+  bibleVerse,
+  onSetBibleVerse,
+}: {
+  layer: StudioLayer;
+  patchData: (p: Partial<StudioLayer>) => void;
+  bibleVerse?: ScriptureVerse | null;
+  onSetBibleVerse?: (v: ScriptureVerse | null) => void;
+}) {
+  if (layer.kind === "bible")
+    return <BibleContent verse={bibleVerse ?? null} onSet={onSetBibleVerse} />;
   if (layer.kind === "text" || layer.kind === "song") {
     return (
       <>
@@ -288,6 +319,152 @@ function ContentPanel({ layer, patchData }: { layer: StudioLayer; patchData: (p:
   return (
     <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[11px] leading-relaxed text-white/50">
       Réglez le style dans les onglets ci-dessus.
+    </div>
+  );
+}
+
+/* ── Contenu · Bible (recherche + traductions, CHR-129) ── */
+function BibleContent({ verse, onSet }: { verse: ScriptureVerse | null; onSet?: (v: ScriptureVerse | null) => void }) {
+  const [translations, setTranslations] = useState<string[]>([]);
+  const [versions, setVersions] = useState<string[]>(bibleVersions());
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState<BibleSearchResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getBibleTranslations().then(setTranslations).catch(() => {});
+  }, []);
+
+  // Debounced live search (aborts the in-flight request on each keystroke).
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResult(null);
+      setErr(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    setBusy(true);
+    const t = setTimeout(async () => {
+      const r = await searchBible(q, versions, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      setBusy(false);
+      setResult(r);
+      setErr(r ? null : "Aucun résultat (ou backend bible injoignable).");
+    }, 350);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [query, versions]);
+
+  const toggleVersion = (v: string) => {
+    const next = versions.includes(v) ? versions.filter((x) => x !== v) : [...versions, v];
+    setVersions(next);
+    setBibleVersions(next);
+  };
+
+  const pick = (v: ScriptureVerse | null) => {
+    if (!v) return;
+    onSet?.(v);
+    setQuery("");
+    setResult(null);
+  };
+
+  const hits: ScriptureVerse[] = result
+    ? [result.match, ...result.suggestions].filter((v): v is ScriptureVerse => !!v)
+    : [];
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* On-air verse */}
+      <div className="rounded-[10px] border border-gold/25 bg-gold/[0.06] p-3">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[10px] font-bold tracking-wide text-gold/80 uppercase">Verset à l&apos;antenne</span>
+          {verse && (
+            <button
+              type="button"
+              onClick={() => onSet?.(null)}
+              className="rounded p-0.5 text-white/40 hover:bg-white/10 hover:text-white"
+              title="Retirer le verset"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+        {verse ? (
+          <>
+            <div className="text-[12px] font-extrabold text-white">{verse.reference}</div>
+            <div className="mt-0.5 line-clamp-3 text-[11px] leading-snug text-white/70">{verse.text}</div>
+            {verse.translation && <div className="mt-1 text-[9.5px] font-bold text-gold/70">{verse.translation}</div>}
+          </>
+        ) : (
+          <div className="text-[11px] text-white/45">Aucun verset chargé. Recherchez ci-dessous.</div>
+        )}
+      </div>
+
+      {/* Translations */}
+      {translations.length > 0 && (
+        <div>
+          <Label className="mb-1.5">Traductions</Label>
+          <div className="flex flex-wrap gap-1">
+            {translations.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleVersion(t)}
+                className={cn(
+                  "rounded-full border px-2 py-[3px] text-[9.5px] font-bold transition",
+                  versions.includes(t)
+                    ? "border-studio-purple/50 bg-studio-purple/15 text-studio-purple"
+                    : "border-white/10 bg-white/[0.03] text-white/50 hover:text-white",
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1 text-[9.5px] text-white/35">Aucune sélection = toutes les traductions du backend.</div>
+        </div>
+      )}
+
+      {/* Search */}
+      <div>
+        <Label className="mb-1.5">Rechercher un passage</Label>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Jean 3:16  ·  amour du monde…"
+          className={FIELD}
+        />
+        {busy && <div className="mt-1.5 text-[10px] text-white/40">Recherche…</div>}
+        {err && !busy && <div className="mt-1.5 text-[10px] text-studio-sandbox">{err}</div>}
+      </div>
+
+      {hits.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {hits.map((v, i) => (
+            <button
+              key={`${v.reference}-${i}`}
+              type="button"
+              onClick={() => pick(v)}
+              className="rounded-[9px] border border-white/8 bg-white/[0.03] p-2.5 text-left transition hover:border-studio-purple/40 hover:bg-white/[0.06]"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-white">{v.reference}</span>
+                {v.translation && <span className="shrink-0 text-[9px] font-bold text-gold/70">{v.translation}</span>}
+              </div>
+              <div className="mt-0.5 line-clamp-2 text-[10.5px] leading-snug text-white/60">{v.text}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-[9px] border border-white/8 bg-white/[0.03] p-3 text-[10px] leading-relaxed text-white/50">
+        Choisissez un verset : il devient le candidat à l&apos;antenne. Rendez la source bible visible
+        (œil) pour l&apos;afficher, et naviguez verset/chapitre depuis la barre centrale (entre les moniteurs).
+      </div>
     </div>
   );
 }

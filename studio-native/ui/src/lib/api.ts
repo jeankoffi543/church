@@ -92,13 +92,30 @@ export const POSITIONS: [string, string][] = [
   ["pip_bottom_right", "PiP bas droit"],
 ];
 export type StudioScene = { id: string; name: string; layers: StudioLayer[] };
+// A Bible verse — mirror of studio-core ScriptureVerse (camelCase).
+export type ScriptureVerse = {
+  id?: number | null;
+  book?: string | null;
+  chapter?: number | null;
+  verse?: number | null;
+  reference: string;
+  text: string;
+  translation?: string | null;
+  texts?: Record<string, string> | null;
+};
 export type StudioDoc = {
   scenes: StudioScene[];
   currentSceneId: string;
   selectedLayerId: string | null;
+  replayOnCut?: boolean;
+  bibleVerse?: ScriptureVerse | null;
   program?: { black: boolean; sceneId?: string };
 };
 export type StudioCommand = Record<string, unknown> & { type: string };
+
+// CHR-129: load / clear the on-air bible verse candidate (store SetBible).
+export const setBible = (verse: ScriptureVerse | null) =>
+  invoke<StudioDoc>("apply_command", { command: { type: "setBible", verse, style: null } });
 
 // ── capabilities & engine ──────────────────────────────────────────────────
 export const getCapabilities = () => invoke<Capabilities>("get_capabilities");
