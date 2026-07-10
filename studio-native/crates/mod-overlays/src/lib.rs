@@ -481,6 +481,43 @@ mod tests {
         assert_eq!(bytes.len(), (CANVAS_W * CANVAS_H * 4) as usize);
     }
 
+    /// The decisive one: a real TEXT layer with content must PAINT VISIBLE PIXELS
+    /// on the PREVIEW compositor — the frame CONTENT must change (staying attached
+    /// + a JPEG coming out is not enough; the background provides those). This is
+    /// exactly what show_preview_overlay does for a visible text/song source.
+    #[test]
+    fn a_text_overlay_paints_visible_pixels_on_the_preview() {
+        let mut layer = create_layer(LayerKind::Text, 0, "txt");
+        layer.content = Some("SALUT L'ÉGLISE — 1234".into());
+        let engine = studio_media::MediaEngine::start().expect("engine");
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.preview_frame_jpeg().is_some() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "preview feed must produce frames");
+        std::thread::sleep(Duration::from_millis(250));
+        let base = engine.preview_frame_jpeg().unwrap();
+
+        engine
+            .add_preview_source("overlay:txt", Box::new(move || build_source(&layer, None)))
+            .expect("attach text overlay on preview");
+
+        std::thread::sleep(Duration::from_millis(600));
+        let attached = engine.is_preview_source_active("overlay:txt");
+        let now = engine.preview_frame_jpeg().unwrap();
+        let ended = engine.take_ended_reason("overlay:txt");
+        engine.stop();
+        assert!(attached, "text overlay must stay attached — reason: {ended:?}");
+        assert_ne!(
+            base, now,
+            "the text overlay must PAINT visible pixels on the preview (frame unchanged ⇒ it renders nothing)"
+        );
+    }
+
     /// End-to-end: the overlay bin plugged into the real compositor produces
     /// frames — headless (no camera/display), so it runs everywhere.
     #[test]
