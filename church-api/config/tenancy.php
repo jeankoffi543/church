@@ -115,7 +115,7 @@ return [
         'disks' => [
             'local',
             'public',
-            // 's3',
+            's3', // production media — isolated per tenant via root_override below (CHR-136)
         ],
 
         /**
@@ -127,6 +127,9 @@ return [
             // Disks whose roots should be overridden after storage_path() is suffixed.
             'local' => '%storage_path%/app/',
             'public' => '%storage_path%/app/public/',
+            // S3 has no storage_path; prefix every object with `tenants/{id}/` so
+            // each church's media lives in a watertight bucket namespace (CHR-136).
+            's3' => 'tenants/%tenant%',
         ],
 
         /**
