@@ -297,6 +297,25 @@ mod media {
         engine.remove_source(id).map_err(|e| e.to_string())
     }
 
+    /// captureActive/ended status for a **shared device** (camera/screen), which
+    /// lives in the engine's device map (tee'd to both compositors, CHR-127). The
+    /// ended reason is shared with the source path.
+    fn device_read_status(state: &tauri::State<'_, MediaState>, id: &str) -> SourceStatus {
+        let guard = state.0.lock().ok();
+        let engine = guard.as_ref().and_then(|g| g.as_ref());
+        SourceStatus {
+            active: engine.map(|e| e.is_device_active(id)).unwrap_or(false),
+            ended_reason: engine.and_then(|e| e.take_ended_reason(id)),
+        }
+    }
+
+    /// Detach a shared device by id (the stop_camera / stop_screen path).
+    fn drop_device(state: &tauri::State<'_, MediaState>, id: &str) -> Result<(), String> {
+        let guard = state.0.lock().map_err(|_| "media state poisoned")?;
+        let engine = guard.as_ref().ok_or("no media engine running")?;
+        engine.remove_device_source(id).map_err(|e| e.to_string())
+    }
+
     /// Attach the screen-capture source, live (CHR-104 hot-add). Fails if the
     /// engine isn't running, it's already active, or no capture element exists.
     #[tauri::command]
@@ -306,7 +325,7 @@ mod media {
             let guard = state.0.lock().map_err(|_| "media state poisoned")?;
             let engine = guard.as_ref().ok_or("no media engine running")?;
             engine
-                .add_source(SCREEN_SOURCE_ID, Box::new(mod_screen_capture::add_source))
+                .add_device_source(SCREEN_SOURCE_ID, Box::new(mod_screen_capture::add_source))
                 .map_err(|e| e.to_string())
         }
         #[cfg(not(feature = "screen"))]
@@ -318,12 +337,12 @@ mod media {
 
     #[tauri::command]
     pub fn stop_screen_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
-        drop_source(&state, SCREEN_SOURCE_ID)
+        drop_device(&state, SCREEN_SOURCE_ID)
     }
 
     #[tauri::command]
     pub fn screen_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
-        read_status(&state, SCREEN_SOURCE_ID)
+        device_read_status(&state, SCREEN_SOURCE_ID)
     }
 
     /// The connected cameras for the UI picker (empty if the module is absent).
@@ -356,7 +375,7 @@ mod media {
             let guard = state.0.lock().map_err(|_| "media state poisoned")?;
             let engine = guard.as_ref().ok_or("no media engine running")?;
             engine
-                .add_source(
+                .add_device_source(
                     CAMERA_SOURCE_ID,
                     Box::new(move || mod_camera::build_source(device_id)),
                 )
@@ -371,12 +390,12 @@ mod media {
 
     #[tauri::command]
     pub fn stop_camera_source(state: tauri::State<'_, MediaState>) -> Result<(), String> {
-        drop_source(&state, CAMERA_SOURCE_ID)
+        drop_device(&state, CAMERA_SOURCE_ID)
     }
 
     #[tauri::command]
     pub fn camera_status(state: tauri::State<'_, MediaState>) -> SourceStatus {
-        read_status(&state, CAMERA_SOURCE_ID)
+        device_read_status(&state, CAMERA_SOURCE_ID)
     }
 
     /// Render a text/bible/song layer from the store and show it on the

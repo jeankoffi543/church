@@ -132,6 +132,30 @@ struct SourceHandle {
 }
 
 type SourceMap = Arc<Mutex<HashMap<String, SourceHandle>>>;
+
+/// One compositor branch of a shared device (CHR-127): the compositor a device
+/// paints onto, and the request pad it uses there. The buffering queue + tee tap
+/// live INSIDE the device's outer bin, so a branch only owns its compositor pad
+/// (the sole thing outside the bin to release on teardown).
+struct DeviceBranch {
+    compositor: gst::Element,
+    comp_pad: gst::Pad,
+}
+
+/// A **shared hardware device** (camera / screen-share): the exclusive OS handle
+/// (`/dev/videoN`, the portal stream) is opened **once** — its output is split by
+/// a `tee` (inside the outer `bin`) and painted onto BOTH the preview (Aperçu)
+/// and programme compositors, mirroring the web console, which opens the camera
+/// once and *clones* the tracks for the outgoing feed. The whole device (source +
+/// tee + branch queues) is ONE bin, so teardown is the same atomic bin-to-Null
+/// discipline as a plain source — just with two ghost src pads to unlink first.
+struct DeviceHandle {
+    bin: gst::Bin,
+    preview: DeviceBranch,
+    program: DeviceBranch,
+}
+
+type DeviceMap = Arc<Mutex<HashMap<String, DeviceHandle>>>;
 /// Reasons the most recent auto-detach happened, keyed by source id — read
 /// (and cleared) via [`MediaEngine::take_ended_reason`]. The CHR-104 parity for
 /// the web app's `captureActive`/`ended` events: a source dying no longer takes
@@ -192,6 +216,8 @@ struct Ready {
     preview_sources: SourceMap,
     preview_frames: Arc<AtomicU64>,
     preview_latest: FrameSlot,
+    // Shared hardware devices (camera/screen), tee'd to BOTH compositors (CHR-127).
+    device_sources: DeviceMap,
     // Audio bus: mixer + tee the outputs tap, its channels, and the VU levels.
     audio_mixer: gst::Element,
     audio_tee: gst::Element,
@@ -223,6 +249,9 @@ pub struct MediaEngine {
     preview_sources: SourceMap,
     preview_frames: Arc<AtomicU64>,
     preview_latest: FrameSlot,
+    /// Shared hardware devices (camera/screen): opened once, tee'd to BOTH
+    /// compositors so one exclusive OS handle drives Aperçu + Programme (CHR-127).
+    device_sources: DeviceMap,
     /// The audio bus (CHR-116): `audiomixer` + `audio-tee` the outputs tap, and
     /// the channels feeding it. Same pipeline as the video ⇒ shared clock ⇒ the
     /// recorded/broadcast A/V is synced by construction.
@@ -270,6 +299,7 @@ impl MediaEngine {
                 preview_sources: r.preview_sources,
                 preview_frames: r.preview_frames,
                 preview_latest: r.preview_latest,
+                device_sources: r.device_sources,
                 audio_mixer: r.audio_mixer,
                 audio_tee: r.audio_tee,
                 audio_channels: r.audio_channels,
@@ -356,6 +386,39 @@ impl MediaEngine {
         let handle = take_source(&self.sources, id)?;
         detach_source(&self.pipeline, &self.compositor, handle);
         Ok(())
+    }
+
+    /// Attach a **shared hardware device** (camera/screen), live (CHR-127): the
+    /// builder's bin is opened **once** and its output tee'd onto BOTH the preview
+    /// (Aperçu) and programme compositors — so the single exclusive OS handle
+    /// (`/dev/videoN`, the portal stream) drives both monitors and the outputs,
+    /// exactly like the web console cloning its one camera track. Errors if `id`
+    /// is already active or the builder fails (no device / permission denied).
+    pub fn add_device_source(&self, id: impl Into<String>, builder: SourceBuilder) -> Result<()> {
+        add_device_source_impl(
+            &self.pipeline,
+            &self.preview_compositor,
+            &self.compositor,
+            &self.device_sources,
+            id.into(),
+            builder,
+        )
+    }
+
+    /// Tear down a shared device, live: releases both compositor branches and the
+    /// single bin+tee. Mirrors [`MediaEngine::remove_source`] for devices.
+    pub fn remove_device_source(&self, id: &str) -> Result<()> {
+        let handle = take_device(&self.device_sources, id)?;
+        detach_device(&self.pipeline, handle);
+        Ok(())
+    }
+
+    /// Whether a shared device `id` is attached (its capture is live).
+    pub fn is_device_active(&self, id: &str) -> bool {
+        self.device_sources
+            .lock()
+            .map(|d| d.contains_key(id))
+            .unwrap_or(false)
     }
 
     /// Attach an output branch to the programme tap, live (CHR-108 record,
@@ -535,6 +598,11 @@ impl MediaEngine {
         if width <= 0 || height <= 0 {
             bail!("layer width/height must be positive, got {width}x{height}");
         }
+        // A shared device's programme pad lives in `device_sources`, not `sources`.
+        if let Some(pad) = self.device_pad(id, DeviceSide::Program) {
+            apply_pad_geometry(&pad, xpos, ypos, width, height);
+            return Ok(());
+        }
         set_pad_geometry(&self.sources, id, xpos, ypos, width, height)
     }
 
@@ -551,7 +619,23 @@ impl MediaEngine {
         if width <= 0 || height <= 0 {
             bail!("layer width/height must be positive, got {width}x{height}");
         }
+        // A shared device's preview pad lives in `device_sources`, not `preview_sources`.
+        if let Some(pad) = self.device_pad(id, DeviceSide::Preview) {
+            apply_pad_geometry(&pad, xpos, ypos, width, height);
+            return Ok(());
+        }
         set_pad_geometry(&self.preview_sources, id, xpos, ypos, width, height)
+    }
+
+    /// The compositor pad of a shared device `id` on one side (preview/programme),
+    /// if that device is attached — so transforms can move the right branch.
+    fn device_pad(&self, id: &str, side: DeviceSide) -> Option<gst::Pad> {
+        let devices = self.device_sources.lock().ok()?;
+        let h = devices.get(id)?;
+        Some(match side {
+            DeviceSide::Preview => h.preview.comp_pad.clone(),
+            DeviceSide::Program => h.program.comp_pad.clone(),
+        })
     }
 
     /// Play an **entrance animation** on a source's compositor pad (CHR-110):
@@ -1085,11 +1169,253 @@ fn set_pad_geometry(
     let handle = sources
         .get(id)
         .ok_or_else(|| anyhow!("no such source: {id}"))?;
-    handle.pad.set_property("xpos", xpos);
-    handle.pad.set_property("ypos", ypos);
-    handle.pad.set_property("width", width);
-    handle.pad.set_property("height", height);
+    apply_pad_geometry(&handle.pad, xpos, ypos, width, height);
     Ok(())
+}
+
+/// Set a compositor pad's box (xpos/ypos/width/height) — the raw geometry write
+/// shared by the source and shared-device transform paths.
+fn apply_pad_geometry(pad: &gst::Pad, xpos: i32, ypos: i32, width: i32, height: i32) {
+    pad.set_property("xpos", xpos);
+    pad.set_property("ypos", ypos);
+    pad.set_property("width", width);
+    pad.set_property("height", height);
+}
+
+/// Which compositor a shared-device transform targets.
+#[derive(Clone, Copy)]
+enum DeviceSide {
+    Preview,
+    Program,
+}
+
+/// Attach a shared hardware device (CHR-127): build its source bin **once**, wrap
+/// it with a `tee` + one buffering `queue` per compositor inside a SINGLE outer
+/// bin exposing two ghost src pads, then paint each onto its compositor. A single
+/// exclusive OS handle therefore feeds Aperçu + Programme + the outputs — the web
+/// console's "open the camera once, clone the track for the feed" model. Keeping
+/// the tee + queues inside one bin means teardown is the same atomic bin-to-Null
+/// as a plain source (proven), instead of surgery on loose pipeline elements.
+fn add_device_source_impl(
+    pipeline: &gst::Pipeline,
+    preview_compositor: &gst::Element,
+    program_compositor: &gst::Element,
+    devices: &DeviceMap,
+    id: String,
+    builder: SourceBuilder,
+) -> Result<()> {
+    if devices
+        .lock()
+        .map_err(|_| anyhow!("device sources lock poisoned"))?
+        .contains_key(&id)
+    {
+        bail!("device source '{id}' already active");
+    }
+
+    // Build the device source bin + the split (tee → 2 queues), all inside one
+    // outer bin so it lives and dies as a unit.
+    let device = builder().with_context(|| format!("build device source '{id}'"))?;
+    let tee = gst::ElementFactory::make("tee")
+        .build()
+        .context("make device tee")?;
+    let q_preview = gst::ElementFactory::make("queue")
+        .build()
+        .context("make device preview queue")?;
+    let q_program = gst::ElementFactory::make("queue")
+        .build()
+        .context("make device programme queue")?;
+
+    let outer = gst::Bin::new();
+    outer
+        .add_many([
+            device.upcast_ref::<gst::Element>(),
+            &tee,
+            &q_preview,
+            &q_program,
+        ])
+        .with_context(|| format!("assemble device '{id}' bin"))?;
+    device
+        .link(&tee)
+        .with_context(|| format!("link device '{id}' source → tee"))?;
+    link_tee_to_queue(&tee, &q_preview).context("tee → preview queue")?;
+    link_tee_to_queue(&tee, &q_program).context("tee → programme queue")?;
+
+    // Expose each queue's output as a ghost src pad on the outer bin (distinct
+    // names — two pads named alike can't coexist on one bin).
+    let g_preview = ghost_bin_output(&outer, &q_preview, "src_preview").context("ghost preview branch")?;
+    let g_program = ghost_bin_output(&outer, &q_program, "src_program").context("ghost programme branch")?;
+
+    pipeline
+        .add(&outer)
+        .with_context(|| format!("add device '{id}' bin to pipeline"))?;
+
+    // Relay a clean EOS (device unplugged / portal "stop") to the bus watch, so a
+    // shared device auto-detaches like any other source — the captureActive/ended
+    // parity (CHR-104), now covering the tee'd devices.
+    if let (Some(bus), Some(dev_src)) = (pipeline.bus(), device.static_pad("src")) {
+        let eos_id = id.clone();
+        dev_src.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_pad, info| {
+            if let Some(gst::EventView::Eos(_)) = info.event().map(|e| e.view()) {
+                let s = gst::Structure::builder(SOURCE_ENDED_MSG)
+                    .field("source-id", eos_id.as_str())
+                    .build();
+                let _ = bus.post(gst::message::Application::builder(s).build());
+            }
+            gst::PadProbeReturn::Ok
+        });
+    }
+
+    // Paint each ghost onto its compositor. Device layers sit just above the
+    // background (zorder 1); overlays, added later, stack on top.
+    let preview = paint_device_branch(&g_preview, preview_compositor)
+        .with_context(|| format!("paint device '{id}' onto preview"))?;
+    let program = paint_device_branch(&g_program, program_compositor)
+        .with_context(|| format!("paint device '{id}' onto programme"))?;
+
+    outer
+        .sync_state_with_parent()
+        .with_context(|| format!("sync device '{id}' state"))?;
+
+    devices
+        .lock()
+        .map_err(|_| anyhow!("device sources lock poisoned"))?
+        .insert(id, DeviceHandle { bin: outer, preview, program });
+    Ok(())
+}
+
+/// Request a tee src pad and link it to a queue's sink.
+fn link_tee_to_queue(tee: &gst::Element, queue: &gst::Element) -> Result<()> {
+    let tee_pad = tee
+        .request_pad_simple("src_%u")
+        .ok_or_else(|| anyhow!("device tee request pad failed"))?;
+    let q_sink = queue
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("device queue has no sink pad"))?;
+    tee_pad.link(&q_sink).context("link tee → queue")?;
+    Ok(())
+}
+
+/// Ghost a queue's src pad onto the outer bin (under `name`) so the branch can be
+/// linked to a compositor from outside.
+fn ghost_bin_output(outer: &gst::Bin, queue: &gst::Element, name: &str) -> Result<gst::GhostPad> {
+    let q_src = queue
+        .static_pad("src")
+        .ok_or_else(|| anyhow!("device queue has no src pad"))?;
+    let ghost = gst::GhostPad::builder_with_target(&q_src)
+        .context("ghost device branch")?
+        .name(name)
+        .build();
+    ghost.set_active(true).context("activate device ghost pad")?;
+    outer.add_pad(&ghost).context("add device ghost pad")?;
+    Ok(ghost)
+}
+
+/// Link a device branch's ghost src pad onto a compositor, full-canvas at zorder 1
+/// (above the background test pattern).
+fn paint_device_branch(ghost: &gst::GhostPad, compositor: &gst::Element) -> Result<DeviceBranch> {
+    let comp_pad = compositor
+        .request_pad_simple("sink_%u")
+        .ok_or_else(|| anyhow!("compositor request pad failed"))?;
+    apply_pad_geometry(&comp_pad, 0, 0, OUTPUT_W, OUTPUT_H);
+    comp_pad.set_property("zorder", 1u32);
+    ghost
+        .link(&comp_pad)
+        .context("link device branch → compositor")?;
+    Ok(DeviceBranch {
+        compositor: compositor.clone(),
+        comp_pad,
+    })
+}
+
+/// Remove a device from the map and hand back its handle for [`detach_device`] —
+/// shared by the bus watch (auto-detach) and [`MediaEngine::remove_device_source`].
+fn take_device(devices: &DeviceMap, id: &str) -> Result<DeviceHandle> {
+    devices
+        .lock()
+        .map_err(|_| anyhow!("device sources lock poisoned"))?
+        .remove(id)
+        .ok_or_else(|| anyhow!("no such device source: {id}"))
+}
+
+/// Auto-detach a shared device that ended (EOS) or errored, recording why — the
+/// device mirror of [`auto_detach`], writing the reason atomically under the lock.
+fn auto_detach_device(
+    pipeline: &gst::Pipeline,
+    devices: &DeviceMap,
+    ended: &EndedMap,
+    id: &str,
+    reason: String,
+) {
+    let handle = {
+        let mut guard = match devices.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        match guard.remove(id) {
+            Some(h) => {
+                if let Ok(mut e) = ended.lock() {
+                    e.insert(id.to_string(), reason);
+                }
+                h
+            }
+            None => return,
+        }
+    };
+    detach_device(pipeline, handle);
+}
+
+/// Tear a shared device out of the live graph: an `IDLE` probe on one of the
+/// outer bin's ghost src pads (fires the moment it carries no data — a stopped or
+/// errored device included) unlinks BOTH ghost pads from their compositors,
+/// releases the two compositor request pads, then drops the whole outer bin
+/// (source + tee + queues) to `Null` and removes it on a worker thread. Because
+/// the split lives inside the one bin, this is the exact same atomic discipline
+/// as [`detach_source`] — just two compositor pads to release first.
+fn detach_device(pipeline: &gst::Pipeline, handle: DeviceHandle) {
+    let DeviceHandle {
+        bin,
+        preview,
+        program,
+    } = handle;
+    // Probe a ghost src pad (the peer of a compositor pad) for IDLE, then tear the
+    // whole bin down. If it's somehow already unlinked, tear down immediately.
+    let probe_pad = preview.comp_pad.peer().or_else(|| program.comp_pad.peer());
+    let pipeline = pipeline.clone();
+    match probe_pad {
+        Some(pad) => {
+            pad.add_probe(gst::PadProbeType::IDLE, move |_pad, _info| {
+                teardown_device_now(&pipeline, &preview, &program, &bin);
+                gst::PadProbeReturn::Remove
+            });
+        }
+        None => teardown_device_now(&pipeline, &preview, &program, &bin),
+    }
+}
+
+/// Unlink both device branches from their compositors, release the two request
+/// pads, and drop the outer bin to `Null` + remove it on a worker thread. Uses
+/// everything by reference (never moved out of the caller's `Fn` probe closure).
+fn teardown_device_now(
+    pipeline: &gst::Pipeline,
+    preview: &DeviceBranch,
+    program: &DeviceBranch,
+    bin: &gst::Bin,
+) {
+    for br in [preview, program] {
+        if let Some(ghost) = br.comp_pad.peer() {
+            let _ = ghost.unlink(&br.comp_pad);
+        }
+        br.compositor.release_request_pad(&br.comp_pad);
+    }
+    let pipeline = pipeline.clone();
+    bin.call_async(move |bin| {
+        let _ = bin.set_state(gst::State::Null);
+        // Block until it has actually reached Null before removal, so we never
+        // dispose the bin mid-transition (a GStreamer-CRITICAL). Safe here: a
+        // worker thread, not the streaming thread.
+        let _ = bin.state(gst::ClockTime::from_seconds(2));
+        let _ = pipeline.remove(bin);
+    });
 }
 
 /// Remove an output from the map, for the error-teardown path in the bus watch.
@@ -1260,6 +1586,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let preview_frames = Arc::new(AtomicU64::new(0));
         let preview_latest: FrameSlot = Arc::new(Mutex::new(None));
         let preview_sources: SourceMap = Arc::new(Mutex::new(HashMap::new()));
+        let device_sources: DeviceMap = Arc::new(Mutex::new(HashMap::new()));
         let preview_compositor = build_edit_branch(&pipeline, &preview_frames, &preview_latest)?;
 
         // Audio bus in the SAME pipeline (CHR-116) — outputs tap this.
@@ -1296,6 +1623,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
         let ended_for_watch = ended.clone();
         let preview_compositor_for_watch = preview_compositor.clone();
         let preview_sources_for_watch = preview_sources.clone();
+        let device_sources_for_watch = device_sources.clone();
         let audio_levels_for_watch = audio_levels.clone();
         let _watch = bus
             .add_watch(move |_, msg| {
@@ -1372,6 +1700,27 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                             );
                             return glib::ControlFlow::Continue;
                         }
+                        // Or a shared DEVICE (camera/screen tee'd to both
+                        // compositors, CHR-127)? Detach both its branches and the
+                        // one bin — a dead webcam must not take the studio down.
+                        let dev_owner = msg.src().and_then(|src_obj| {
+                            device_sources_for_watch.lock().ok().and_then(|guard| {
+                                guard
+                                    .iter()
+                                    .find(|(_, h)| belongs_to(src_obj, &h.bin))
+                                    .map(|(id, _)| id.clone())
+                            })
+                        });
+                        if let Some(id) = dev_owner {
+                            auto_detach_device(
+                                &pipeline_for_watch,
+                                &device_sources_for_watch,
+                                &ended_for_watch,
+                                &id,
+                                err.error().to_string(),
+                            );
+                            return glib::ControlFlow::Continue;
+                        }
                         // Unrecognised (compositor/convert/jpeg chain, pipeline-level)
                         // → fatal, as before.
                         loop_for_watch.quit();
@@ -1386,10 +1735,20 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                                 .then(|| s.get::<String>("source-id").ok())
                                 .flatten()
                         }) {
+                            // A regular source, or a shared device (camera/screen)?
+                            // Only the matching map's entry acts; the other is a
+                            // no-op, so trying both cleanly covers both paths.
                             auto_detach(
                                 &pipeline_for_watch,
                                 &compositor_for_watch,
                                 &sources_for_watch,
+                                &ended_for_watch,
+                                &id,
+                                "flux terminé (partage arrêté)".to_string(),
+                            );
+                            auto_detach_device(
+                                &pipeline_for_watch,
+                                &device_sources_for_watch,
                                 &ended_for_watch,
                                 &id,
                                 "flux terminé (partage arrêté)".to_string(),
@@ -1426,6 +1785,7 @@ fn run_media_thread(ready: &mpsc::Sender<Result<Ready, String>>) -> Result<()> {
                 ended: ended.clone(),
                 preview_compositor: preview_compositor.clone(),
                 preview_sources: preview_sources.clone(),
+                device_sources: device_sources.clone(),
                 preview_frames: preview_frames.clone(),
                 preview_latest: preview_latest.clone(),
                 audio_mixer: audio_mixer.clone(),
@@ -2484,6 +2844,85 @@ mod tests {
         assert!(
             prev_after > prev_before,
             "preview feed must keep flowing through the add/remove"
+        );
+    }
+
+    /// CHR-127 shared device: a single source bin, opened once, is tee'd onto
+    /// BOTH compositors (Aperçu + Programme) — the web console's "open the camera
+    /// once, clone the track for the feed" model. Both feeds must keep flowing
+    /// through the add + transform + remove, and the one bin drives both pads.
+    #[test]
+    fn shared_device_feeds_both_compositors_from_one_open() {
+        let _guard = ENGINE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let engine = MediaEngine::start().expect("engine start");
+        let mut ok = false;
+        for _ in 0..60 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.frames() > 0 && engine.preview_frames() > 0 {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "both compositors should come alive");
+
+        let prog_before = engine.frames();
+        let prev_before = engine.preview_frames();
+
+        // One "device" bin (a live videotestsrc stand-in for a webcam), tee'd.
+        engine
+            .add_device_source(
+                "cam",
+                Box::new(|| {
+                    let src = gst::ElementFactory::make("videotestsrc")
+                        .property("is-live", true)
+                        .build()?;
+                    wrap_in_bin(&[&src])
+                }),
+            )
+            .expect("add device source");
+        assert!(engine.is_device_active("cam"));
+        // It is NOT in the plain source maps — it lives in its own device map.
+        assert!(!engine.is_source_active("cam"));
+        assert!(!engine.is_preview_source_active("cam"));
+
+        // Transforms address the right branch on each compositor (no error).
+        engine
+            .set_preview_layer_transform("cam", 100, 100, 640, 360)
+            .expect("preview transform on device");
+        engine
+            .set_layer_transform("cam", 0, 0, 1920, 1080)
+            .expect("programme transform on device");
+
+        std::thread::sleep(Duration::from_millis(400));
+        let prog_mid = engine.frames();
+        let prev_mid = engine.preview_frames();
+        assert!(prog_mid > prog_before, "programme feed flows with the device");
+        assert!(prev_mid > prev_before, "preview feed flows with the device");
+
+        // A second device open must be rejected while one is active.
+        assert!(
+            engine
+                .add_device_source("cam", Box::new(|| wrap_in_bin(&[])))
+                .is_err(),
+            "a duplicate device id must be rejected"
+        );
+
+        engine
+            .remove_device_source("cam")
+            .expect("remove device source");
+        assert!(!engine.is_device_active("cam"));
+
+        std::thread::sleep(Duration::from_millis(200));
+        let prog_after = engine.frames();
+        let prev_after = engine.preview_frames();
+        engine.stop();
+        assert!(
+            prog_after > prog_mid,
+            "programme feed must survive the device teardown"
+        );
+        assert!(
+            prev_after > prev_mid,
+            "preview feed must survive the device teardown"
         );
     }
 

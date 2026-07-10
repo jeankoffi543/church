@@ -248,11 +248,15 @@ export function App() {
 
   const currentLayer = () =>
     doc?.scenes.find((s) => s.id === doc.currentSceneId)?.layers.find((l) => l.id === selectedId) ?? null;
-  // A selected overlay that's staged on the preview compositor can be dragged on
-  // the Aperçu monitor.
+  // A selected overlay staged on the preview compositor — or a live shared device
+  // (camera/screen), now tee'd onto the Aperçu (CHR-127) — can be dragged there.
   const draggableLayer = () => {
     const l = currentLayer();
-    return !!l && OVERLAY_KINDS.includes(l.kind) && shownRef.current.has(l.id);
+    if (!l) return false;
+    if (OVERLAY_KINDS.includes(l.kind)) return shownRef.current.has(l.id);
+    if (l.kind === "camera") return cameraActive;
+    if (l.kind === "screen") return screenActive;
+    return false;
   };
   const sceneName = doc?.scenes.find((s) => s.id === doc.currentSceneId)?.name ?? "—";
 
