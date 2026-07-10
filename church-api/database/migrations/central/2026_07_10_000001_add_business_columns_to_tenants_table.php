@@ -15,7 +15,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::connection('central')->table('tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->string('name')->nullable()->after('id');
             $table->string('slug')->nullable()->unique()->after('name');
             $table->unsignedBigInteger('plan_id')->nullable()->index()->after('slug');
@@ -30,7 +30,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection('central')->table('tenants', function (Blueprint $table) {
+        Schema::table('tenants', function (Blueprint $table) {
             $table->dropColumn([
                 'name',
                 'slug',

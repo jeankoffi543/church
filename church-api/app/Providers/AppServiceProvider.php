@@ -48,6 +48,9 @@ class AppServiceProvider extends ServiceProvider
         // connection. Production/tenant DBs get it through `tenants:migrate`.
         if ($this->app->runningUnitTests()) {
             $this->loadMigrationsFrom(database_path('migrations/tenant'));
+            // Feature tests resolve a tenant by domain, so the central schema
+            // (tenants/domains) must exist on the shared in-memory connection too.
+            $this->loadMigrationsFrom(database_path('migrations/central'));
         }
     }
 }

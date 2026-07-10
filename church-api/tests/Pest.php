@@ -1,5 +1,8 @@
 <?php
 
+use App\Enums\DomainType;
+use App\Enums\TenantStatus;
+use App\Models\Tenant;
 use App\Models\User;
 use App\Support\AccessControl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,6 +24,29 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    ->beforeEach(function () {
+        // The church API is served in tenant context (resolved by domain). In
+        // tests the tenant shares the seeded default connection: central lives
+        // on it and tenancy is context-only (no DB/cache/filesystem switch), so
+        // every existing feature test runs against a `localhost` tenant without
+        // change. The real infra switching is covered by the Tenancy suite.
+        config([
+            'tenancy.database.central_connection' => config('database.default'),
+            'tenancy.bootstrappers' => [],
+        ]);
+
+        $tenant = new Tenant;
+        $tenant->name = 'Test Church';
+        $tenant->status = TenantStatus::Active;
+        $tenant->setInternal('create_database', false);
+        $tenant->save();
+
+        $tenant->domains()->create([
+            'domain' => 'localhost',
+            'type' => DomainType::Subdomain,
+            'is_primary' => true,
+        ]);
+    })
     ->in('Feature');
 
 // Tenancy provisioning tests spin up real tenant databases and run migrations,

@@ -13,7 +13,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::connection('central')->table('domains', function (Blueprint $table) {
+        Schema::table('domains', function (Blueprint $table) {
             $table->string('type')->default('subdomain')->after('domain');
             $table->boolean('is_primary')->default(false)->after('type');
             $table->timestamp('verified_at')->nullable()->after('is_primary');
@@ -23,7 +23,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection('central')->table('domains', function (Blueprint $table) {
+        Schema::table('domains', function (Blueprint $table) {
             $table->dropColumn(['type', 'is_primary', 'verified_at', 'ssl_status']);
         });
     }

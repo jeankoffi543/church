@@ -10,6 +10,7 @@ use Spatie\Permission\Exceptions\UnauthorizedException;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Stancl\Tenancy\Contracts\TenantCouldNotBeIdentifiedException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -54,6 +55,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => "Accès restreint : Vous n'avez pas les privilèges requis pour accéder à ce département.",
                 ], 403);
+            }
+
+            return null;
+        });
+
+        // No tenant maps to the request Host (unknown/central domain): answer a
+        // clean JSON 404 the front-end shows as an "église introuvable" screen.
+        $exceptions->render(function (TenantCouldNotBeIdentifiedException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return response()->json([
+                    'message' => 'Aucune église ne correspond à cette adresse.',
+                ], 404);
             }
 
             return null;
