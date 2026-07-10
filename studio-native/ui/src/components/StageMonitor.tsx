@@ -46,15 +46,20 @@ export function StageMonitor({
       )}
 
       {/* Letterboxed viewport → the compositor's JPEG feed, contain-fit; the
-          ring marks the broadcast frame edge. */}
+          ring marks the broadcast frame edge. The box needs a CONCRETE base
+          dimension (`h-full`) — `aspect-video max-h-full max-w-full` around a
+          `size-full` img is a circular size dependency that WebKitGTK (the Tauri
+          webview) collapses to 0×0, so the feed showed nothing on the real app
+          even though the JPEG was correct (Blink/Chromium sized it fine, hiding
+          the bug in headless checks). */}
       <div className="absolute inset-0 grid place-items-center">
         {frame ? (
-          <div className="relative aspect-video max-h-full max-w-full overflow-hidden ring-1 ring-white/15">
+          <div className="relative h-full aspect-video max-w-full overflow-hidden ring-1 ring-white/15">
             <img
               src={frame}
               alt={isProgram ? "Programme" : "Aperçu"}
               draggable={false}
-              className="block size-full object-contain"
+              className="block h-full w-full object-contain"
             />
             {overlay}
           </div>
