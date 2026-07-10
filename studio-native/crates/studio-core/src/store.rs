@@ -84,7 +84,11 @@ impl Default for Studio {
 /// A command mutating the store. Serialisable so the frontend sends one straight
 /// over IPC (internally tagged: `{ "type": "addLayer", "kind": "text", … }`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+// `rename_all` renames the VARIANTS (addLayer, reorderLayerTo…); `rename_all_fields`
+// renames struct-variant FIELDS (drag_id→dragId, parent_id→parentId) — a plain
+// `rename_all` does NOT touch fields, which left dragId/targetId/parentId from the
+// UI unmatched ("missing field drag_id" on drag-reorder; parentId silently dropped).
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Command {
     // ── scenes ──
     AddScene {
@@ -764,6 +768,32 @@ mod tests {
         );
         let cut: Command = serde_json::from_str(r#"{"type":"cut"}"#).unwrap();
         assert_eq!(cut, Command::Cut);
+
+        // Multi-word struct-variant fields arrive camelCased from the UI — they
+        // must map onto the snake_case Rust fields (regression: "missing field
+        // drag_id" on drag-reorder, and a silently-dropped parentId on group add).
+        let reorder: Command =
+            serde_json::from_str(r#"{"type":"reorderLayerTo","dragId":"a","targetId":"b"}"#)
+                .expect("reorderLayerTo must accept camelCase dragId/targetId");
+        assert_eq!(
+            reorder,
+            Command::ReorderLayerTo {
+                drag_id: "a".into(),
+                target_id: "b".into(),
+            }
+        );
+        let grouped: Command = serde_json::from_str(
+            r#"{"type":"addLayer","kind":"text","id":"t1","parentId":"g1"}"#,
+        )
+        .expect("addLayer must accept a camelCase parentId");
+        assert_eq!(
+            grouped,
+            Command::AddLayer {
+                kind: LayerKind::Text,
+                id: "t1".into(),
+                parent_id: Some("g1".into()),
+            }
+        );
     }
 
     #[test]
