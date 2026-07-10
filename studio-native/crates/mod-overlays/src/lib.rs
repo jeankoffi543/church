@@ -481,6 +481,57 @@ mod tests {
         assert_eq!(bytes.len(), (CANVAS_W * CANVAS_H * 4) as usize);
     }
 
+    /// Removing an overlay must actually TAKE IT OFF the preview — the frame must
+    /// revert toward the background. The CHR-130 overlay is a continuously-pushing
+    /// LIVE appsrc; if detach_source's IDLE pad probe never fires on it, the
+    /// overlay is never torn down → it stays on screen forever and can't be
+    /// updated/deleted (the reported "j'ai supprimé la source, elle continue
+    /// d'apparaître").
+    #[test]
+    fn an_overlay_can_be_removed_from_the_preview() {
+        let mut layer = create_layer(LayerKind::Text, 0, "txt");
+        layer.content = Some("À RETIRER 987".into());
+        let engine = studio_media::MediaEngine::start().expect("engine");
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(50));
+            if engine.preview_frame_jpeg().is_some() {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "preview feed");
+        std::thread::sleep(Duration::from_millis(250));
+        let base = engine.preview_frame_jpeg().unwrap();
+
+        engine
+            .add_preview_source("overlay:txt", Box::new(move || build_source(&layer, None)))
+            .expect("attach");
+        std::thread::sleep(Duration::from_millis(500));
+        let painted = engine.preview_frame_jpeg().unwrap();
+        assert_ne!(base, painted, "overlay must paint first");
+        assert!(engine.is_preview_source_active("overlay:txt"));
+
+        engine.remove_preview_source("overlay:txt").expect("remove");
+        // Give detach_source's IDLE probe time to fire + tear down.
+        let mut removed = false;
+        for _ in 0..60 {
+            std::thread::sleep(Duration::from_millis(50));
+            if !engine.is_preview_source_active("overlay:txt") {
+                removed = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        let after = engine.preview_frame_jpeg().unwrap();
+        engine.stop();
+        assert!(removed, "the overlay must actually detach (map entry gone)");
+        assert_ne!(
+            painted, after,
+            "after removal the preview must change back (overlay gone), not keep showing it"
+        );
+    }
+
     /// The decisive one: a real TEXT layer with content must PAINT VISIBLE PIXELS
     /// on the PREVIEW compositor — the frame CONTENT must change (staying attached
     /// + a JPEG coming out is not enough; the background provides those). This is
