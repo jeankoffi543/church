@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CentralUser;
 use App\Models\User;
 
 return [
@@ -51,6 +52,14 @@ return [
             'driver' => 'sanctum',
             'provider' => 'users',
         ],
+
+        // Platform ("landlord") staff. Sanctum's guard checks the tokenable
+        // against this provider's model, so a tenant user's token can never
+        // authenticate here — platform access is isolated by construction.
+        'central' => [
+            'driver' => 'sanctum',
+            'provider' => 'central_users',
+        ],
     ],
 
     /*
@@ -74,6 +83,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'central_users' => [
+            'driver' => 'eloquent',
+            'model' => CentralUser::class,
         ],
 
         // 'users' => [
