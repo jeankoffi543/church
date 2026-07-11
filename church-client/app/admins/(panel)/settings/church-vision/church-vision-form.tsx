@@ -2,6 +2,7 @@
 
 import React, { useState, useTransition, useMemo, useRef, useEffect } from "react";
 import * as Lucide from "lucide-react";
+import { assetUrl } from "@/lib/asset-url";
 import {
   ChevronUp,
   ChevronDown,
@@ -101,15 +102,7 @@ export function ChurchVisionForm({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-  const ASSET_BASE = API_URL.replace(/\/api\/v1\/?$/, "");
-
-  const getFullPhotoUrl = (path: string | null) => {
-    if (!path) return null;
-    if (path.startsWith("data:") || path.startsWith("blob:")) return path; // local preview
-    if (/^https?:\/\//i.test(path)) return path;
-    return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-  };
+  const getFullPhotoUrl = (path: string | null) => assetUrl(path);
 
   // Close selectors when clicking outside
   useEffect(() => {

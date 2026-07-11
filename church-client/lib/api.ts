@@ -25,17 +25,10 @@ import {
   type SermonMediaType,
 } from "./data";
 import { tenantApiBase } from "./tenant/api-base";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-/** Origin serving uploaded assets (the API base without the `/api/v1` suffix). */
-const ASSET_BASE = API_URL.replace(/\/api\/v1\/?$/, "");
-
-/** Resolve a stored `/storage/...` path to an absolute URL. */
-function assetUrl(path?: string | null): string | null {
-  if (!path) return null;
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-}
+// Stored `/storage/...` paths resolve to the current tenant's assets via the
+// same-origin proxy route (CHR-154); one shared helper keeps server + client
+// rendering identical.
+import { assetUrl } from "./asset-url";
 
 /** Revalidate cached API data every 60s (content changes rarely). */
 const REVALIDATE = 60;

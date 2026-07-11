@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Loader2, Save, Upload, User, AlertCircle, CheckCircle2, Plus, Trash2, HelpCircle } from "lucide-react";
 import { SearchableSelect, type SearchableOption } from "../../_components/searchable-select";
 import { updateAdminPastorWord, type AdminPastorWord, type AdminUserOption } from "@/lib/admin-api";
+import { assetUrl } from "@/lib/asset-url";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandButton } from "@/components/ui/brand-button";
@@ -119,15 +120,7 @@ export function PastorWordForm({ pastorWord, churchPresentationBanner, pastorLon
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-  const ASSET_BASE = API_URL.replace(/\/api\/v1\/?$/, "");
-
-  const getFullPhotoUrl = (path: string | null) => {
-    if (!path) return null;
-    if (path.startsWith("data:")) return path; // local preview
-    if (/^https?:\/\//i.test(path)) return path;
-    return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-  };
+  const getFullPhotoUrl = (path: string | null) => assetUrl(path);
 
   const initialPhotoUrl = getFullPhotoUrl(pastorWord?.photo_path ?? null);
   const currentPreview = photoPreview || initialPhotoUrl;

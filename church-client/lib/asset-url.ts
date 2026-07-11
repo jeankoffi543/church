@@ -1,11 +1,19 @@
 // Resolve a backend-stored asset path (e.g. "/storage/ministries/x.jpg") into a
-// fully-qualified URL pointing at the Laravel origin. The API base looks like
-// "http://host:port/api/v1"; assets are served from the host root ("/storage").
+// URL the browser can load for the CURRENT tenant.
+//
+// CHR-154 — the file lives in the tenant's own storage on church-api, served
+// same-origin via the proxy route `app/tenancy/assets/[...path]/route.ts`. So we
+// emit a relative `/tenancy/assets/...` URL: it resolves against the current
+// (tenant) host and renders identically in Server and Client Components. Absolute
+// URLs (external images, YouTube thumbnails) pass through untouched.
 
-const ASSET_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/api\/v1\/?$/, "");
-
-export function assetUrl(path?: any): string | null {
+export function assetUrl(path?: unknown): string | null {
   if (!path || typeof path !== "string") return null;
   if (/^https?:\/\//i.test(path)) return path; // already absolute
-  return `${ASSET_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
+  if (/^(data|blob):/i.test(path)) return path; // local preview
+
+  // Strip a leading `/storage/` (or an already-mapped `/tenancy/assets/`) so the
+  // path is relative to the tenant's public disk root.
+  const rel = path.replace(/^\/+/, "").replace(/^(storage|tenancy\/assets)\//, "");
+  return `/tenancy/assets/${rel}`;
 }
