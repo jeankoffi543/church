@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { SiteFrame } from "@/components/layout/site-frame";
@@ -21,7 +22,19 @@ const cormorant = Cormorant_Garamond({
   style: ["normal", "italic"],
 });
 
+async function isCentralZone(): Promise<boolean> {
+  return (await headers()).get("x-app-zone") === "central";
+}
+
 export async function generateMetadata(): Promise<Metadata> {
+  if (await isCentralZone()) {
+    return {
+      title: "ChurchApp — le site de votre église, clé en main",
+      description:
+        "La plateforme tout-en-un pour créer le site de votre église : présence en ligne, gestion des membres, dons, live et Studio.",
+    };
+  }
+
   const theme = await getTenantTheme();
 
   return {
@@ -36,8 +49,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Per-tenant brand: recolour the site via CSS-variable overrides at SSR.
-  const themeCss = themeCssVars(await getTenantTheme());
+  const central = await isCentralZone();
+  // Per-tenant brand: recolour the church site via CSS-variable overrides at SSR
+  // (the marketing site has its own, fixed brand).
+  const themeCss = central ? "" : themeCssVars(await getTenantTheme());
 
   return (
     <html
@@ -46,13 +61,18 @@ export default async function RootLayout({
     >
       <body className="min-h-full">
         {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
-        <CurrencyProvider>
-          <AudioPlayerProvider>
-            <SiteFrame navbar={<Navbar />} footer={<Footer />}>
-              {children}
-            </SiteFrame>
-          </AudioPlayerProvider>
-        </CurrencyProvider>
+        {central ? (
+          // The SaaS marketing site brings its own chrome (app/central/layout).
+          children
+        ) : (
+          <CurrencyProvider>
+            <AudioPlayerProvider>
+              <SiteFrame navbar={<Navbar />} footer={<Footer />}>
+                {children}
+              </SiteFrame>
+            </AudioPlayerProvider>
+          </CurrencyProvider>
+        )}
       </body>
     </html>
   );
