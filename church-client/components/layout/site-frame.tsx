@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 
 import { ADMIN_PREFIX } from "@/lib/auth/config";
+import { isTenantStatusPath } from "@/lib/tenant/config";
 import { PlaybackProvider } from "./playback-context";
 
 /**
@@ -26,7 +27,8 @@ export function SiteFrame({
   const isAdmin =
     pathname === ADMIN_PREFIX || pathname.startsWith(ADMIN_PREFIX + "/");
 
-  if (isAdmin) {
+  // The admin backoffice and the tenant status screens render their own chrome.
+  if (isAdmin || isTenantStatusPath(pathname)) {
     return <>{children}</>;
   }
 
