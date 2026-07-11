@@ -428,6 +428,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     // Public plan catalogue for the SaaS marketing pricing page (CHR-146).
     Route::get('plans', [Platform\PlanController::class, 'index'])->name('plans');
 
+    // Self-service church signup (CHR-147) — throttled against abuse.
+    Route::post('signup', [Platform\SignupController::class, 'signup'])
+        ->middleware('throttle:8,1')
+        ->name('signup');
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');

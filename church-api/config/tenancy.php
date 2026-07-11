@@ -30,6 +30,12 @@ return [
     ))),
 
     /**
+     * The root domain new churches get a subdomain under at signup (CHR-147),
+     * e.g. `{slug}.churchapp.io`.
+     */
+    'central_root_domain' => env('CENTRAL_ROOT_DOMAIN', 'churchapp.io'),
+
+    /**
      * Tenancy bootstrappers are executed when tenancy is initialized.
      * Their responsibility is making Laravel features tenant-aware.
      *
