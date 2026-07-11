@@ -6,6 +6,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { AudioPlayerProvider } from "@/components/audio/audio-player";
 import { CurrencyProvider } from "@/components/currency/currency-context";
+import { getTenantTheme, themeCssVars } from "@/lib/theme";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -20,23 +21,31 @@ const cormorant = Cormorant_Garamond({
   style: ["normal", "italic"],
 });
 
-export const metadata: Metadata = {
-  title: "MFM Ficgayo · Maison du Feu",
-  description:
-    "Église MFM Ficgayo — un lieu de grâce, de feu et de miracles au cœur d'Abidjan.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const theme = await getTenantTheme();
 
-export default function RootLayout({
+  return {
+    title: theme?.siteName ?? "MFM Ficgayo · Maison du Feu",
+    description:
+      "Église MFM Ficgayo — un lieu de grâce, de feu et de miracles au cœur d'Abidjan.",
+  };
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Per-tenant brand: recolour the site via CSS-variable overrides at SSR.
+  const themeCss = themeCssVars(await getTenantTheme());
+
   return (
     <html
       lang="fr"
       className={`${jakarta.variable} ${cormorant.variable} h-full`}
     >
       <body className="min-h-full">
+        {themeCss && <style dangerouslySetInnerHTML={{ __html: themeCss }} />}
         <CurrencyProvider>
           <AudioPlayerProvider>
             <SiteFrame navbar={<Navbar />} footer={<Footer />}>

@@ -13,6 +13,19 @@ class SettingSeeder extends Seeder
     public function run(): void
     {
         $settings = [
+            // ── Theming (per-tenant brand) — consumed by the Next.js SSR (CHR-145) ──
+            ['key' => 'primary', 'group' => 'theme', 'value' => '#e2b85f'],   // accent (gold role)
+            ['key' => 'secondary', 'group' => 'theme', 'value' => '#211648'], // headings (indigo role)
+            ['key' => 'site_name', 'group' => 'theme', 'value' => 'MFM Ficgayo'],
+            ['key' => 'logo', 'group' => 'theme', 'value' => null],
+            ['key' => 'banner', 'group' => 'theme', 'value' => null],
+            ['key' => 'sections', 'group' => 'theme', 'value' => [
+                ['id' => 'hero', 'on' => true],
+                ['id' => 'live', 'on' => true],
+                ['id' => 'sermons', 'on' => true],
+                ['id' => 'store', 'on' => true],
+            ]],
+
             // ── Phase 1 · Landing — general texts ──────────────────────
             ['key' => 'church_name', 'group' => 'general', 'value' => '✦ Église MFM Ficgayo ✦'],
             ['key' => 'hero_title', 'group' => 'general', 'value' => 'Bienvenue à la Maison'],
