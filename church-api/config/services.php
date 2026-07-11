@@ -39,6 +39,11 @@ return [
         'public_key' => env('PAYSTACK_PUBLIC_KEY'),
         'secret_key' => env('PAYSTACK_SECRET_KEY'),
         'currency' => env('PAYSTACK_CURRENCY', 'XOF'),
+        // The SaaS's OWN Paystack account, used to bill churches for their plan
+        // (distinct from a tenant's keys for donations). Falls back to the main
+        // key in single-account setups (CHR-141).
+        'platform_secret_key' => env('PAYSTACK_PLATFORM_SECRET_KEY', env('PAYSTACK_SECRET_KEY')),
+        'platform_public_key' => env('PAYSTACK_PLATFORM_PUBLIC_KEY', env('PAYSTACK_PUBLIC_KEY')),
     ],
 
     // Self-hosted RTMP→HLS server: the secret stream key OBS must push with.

@@ -10,6 +10,7 @@ use App\Enums\TenantStatus;
 use Database\Factories\TenantFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDomains;
@@ -83,6 +84,14 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
+    }
+
+    /**
+     * The tenant's current platform subscription (central DB).
+     */
+    public function subscription(): HasOne
+    {
+        return $this->hasOne(Subscription::class)->latestOfMany();
     }
 
     /**

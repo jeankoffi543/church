@@ -415,6 +415,9 @@ Route::prefix('v1')
 Route::prefix('platform')->name('api.platform.')->group(function (): void {
     Route::post('login', [Platform\AuthController::class, 'login'])->name('login');
 
+    // Paystack billing webhook — no auth, authenticated by HMAC signature.
+    Route::post('webhooks/paystack', [Platform\WebhookController::class, 'paystack'])->name('webhooks.paystack');
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');
@@ -429,6 +432,7 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::post('tenants/{tenant}/suspend', [Platform\TenantController::class, 'suspend'])->name('tenants.suspend');
             Route::post('tenants/{tenant}/restore', [Platform\TenantController::class, 'restore'])->name('tenants.restore');
             Route::post('tenants/{tenant}/impersonate', [Platform\TenantController::class, 'impersonate'])->name('tenants.impersonate');
+            Route::post('tenants/{tenant}/subscribe', [Platform\SubscriptionController::class, 'subscribe'])->name('tenants.subscribe');
         });
     });
 });
