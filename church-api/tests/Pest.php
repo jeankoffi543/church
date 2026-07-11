@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\DomainType;
+use App\Enums\Feature;
 use App\Enums\TenantStatus;
 use App\Models\Tenant;
 use App\Models\User;
@@ -38,6 +39,9 @@ pest()->extend(TestCase::class)
         $tenant = new Tenant;
         $tenant->name = 'Test Church';
         $tenant->status = TenantStatus::Active;
+        // Enable every feature by default so existing feature tests aren't gated;
+        // tests that assert gating override this on their own tenant.
+        $tenant->features = array_fill_keys(Feature::values(), true);
         $tenant->setInternal('create_database', false);
         $tenant->save();
 

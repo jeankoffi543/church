@@ -166,9 +166,11 @@ Route::prefix('v1')
                     Route::put('live/scripture/prepared', [Admin\LiveScriptureController::class, 'updatePrepared'])->name('live.scripture.prepared.update');
                     Route::post('studio/media', [Admin\StudioMediaController::class, 'store'])->name('studio.media.store');
                     Route::post('studio/media/from-url', [Admin\StudioMediaController::class, 'storeFromUrl'])->name('studio.media.from-url');
-                    // Studio → Facebook broadcast (own SRS + ffmpeg relay).
-                    Route::post('studio/broadcast/facebook/start', [Admin\StudioBroadcastController::class, 'startFacebook'])->name('studio.broadcast.facebook.start');
-                    Route::post('studio/broadcast/facebook/stop', [Admin\StudioBroadcastController::class, 'stopFacebook'])->name('studio.broadcast.facebook.stop');
+                    // Studio → Facebook broadcast (own SRS + ffmpeg relay) — Studio Live tier.
+                    Route::middleware('feature:studio')->group(function (): void {
+                        Route::post('studio/broadcast/facebook/start', [Admin\StudioBroadcastController::class, 'startFacebook'])->name('studio.broadcast.facebook.start');
+                        Route::post('studio/broadcast/facebook/stop', [Admin\StudioBroadcastController::class, 'stopFacebook'])->name('studio.broadcast.facebook.stop');
+                    });
                 });
 
                 // Médiathèque / messages
@@ -199,7 +201,7 @@ Route::prefix('v1')
                 });
 
                 // Finances — livre de caisse des dons + journal des webhooks.
-                Route::middleware('permission:view_finances')->group(function (): void {
+                Route::middleware(['permission:view_finances', 'feature:finances'])->group(function (): void {
                     Route::get('donations', [Admin\DonationController::class, 'index'])->name('donations.index');
                     Route::get('donations/stats', [Admin\DonationController::class, 'stats'])->name('donations.stats');
                     Route::get('donations/export', [Admin\DonationController::class, 'export'])->name('donations.export');
@@ -232,11 +234,11 @@ Route::prefix('v1')
                     ->name('services.attendances.upsert');
 
                 // Équipes de service — planning des équipes (roster complet par culte).
-                Route::middleware('permission:view_teams|manage_teams')->group(function (): void {
+                Route::middleware(['permission:view_teams|manage_teams', 'feature:teams'])->group(function (): void {
                     Route::get('teams', [Admin\TeamController::class, 'index'])->name('teams.index');
                     Route::get('teams/{team}', [Admin\TeamController::class, 'show'])->name('teams.show');
                 });
-                Route::middleware('permission:manage_teams')->group(function (): void {
+                Route::middleware(['permission:manage_teams', 'feature:teams'])->group(function (): void {
                     Route::post('teams', [Admin\TeamController::class, 'store'])->name('teams.store');
                     Route::match(['put', 'patch'], 'teams/{team}', [Admin\TeamController::class, 'update'])->name('teams.update');
                     Route::delete('teams/{team}', [Admin\TeamController::class, 'destroy'])->name('teams.destroy');
@@ -255,13 +257,13 @@ Route::prefix('v1')
                 });
 
                 // Évangélisation — campagnes de sortie + nouvelles âmes.
-                Route::middleware('permission:view_evangelism|manage_evangelism')->group(function (): void {
+                Route::middleware(['permission:view_evangelism|manage_evangelism', 'feature:evangelism'])->group(function (): void {
                     Route::get('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'index'])->name('evangelism-campaigns.index');
                     Route::get('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'show'])->name('evangelism-campaigns.show');
                     Route::get('converts', [Admin\ConvertController::class, 'index'])->name('converts.index');
                     Route::get('converts/{convert}', [Admin\ConvertController::class, 'show'])->name('converts.show');
                 });
-                Route::middleware('permission:manage_evangelism')->group(function (): void {
+                Route::middleware(['permission:manage_evangelism', 'feature:evangelism'])->group(function (): void {
                     Route::post('evangelism-campaigns', [Admin\EvangelismCampaignController::class, 'store'])->name('evangelism-campaigns.store');
                     Route::match(['put', 'patch'], 'evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'update'])->name('evangelism-campaigns.update');
                     Route::delete('evangelism-campaigns/{evangelismCampaign}', [Admin\EvangelismCampaignController::class, 'destroy'])->name('evangelism-campaigns.destroy');
@@ -273,11 +275,11 @@ Route::prefix('v1')
 
                 // Suivi des âmes — dossiers de discipulat (données pastorales sensibles,
                 // scopées au conseiller assigné à l'intérieur des contrôleurs).
-                Route::middleware('permission:view_followups|manage_followups')->group(function (): void {
+                Route::middleware(['permission:view_followups|manage_followups', 'feature:followups'])->group(function (): void {
                     Route::get('follow-ups', [Admin\FollowUpController::class, 'index'])->name('follow-ups.index');
                     Route::get('follow-ups/{followUp}', [Admin\FollowUpController::class, 'show'])->name('follow-ups.show');
                 });
-                Route::middleware('permission:manage_followups')->group(function (): void {
+                Route::middleware(['permission:manage_followups', 'feature:followups'])->group(function (): void {
                     Route::post('follow-ups', [Admin\FollowUpController::class, 'store'])->name('follow-ups.store');
                     Route::match(['put', 'patch'], 'follow-ups/{followUp}', [Admin\FollowUpController::class, 'update'])->name('follow-ups.update');
                     Route::delete('follow-ups/{followUp}', [Admin\FollowUpController::class, 'destroy'])->name('follow-ups.destroy');
@@ -285,12 +287,12 @@ Route::prefix('v1')
                 });
 
                 // Logistique — inventaire des ressources (salles, véhicules, matériel) + réservations.
-                Route::middleware('permission:view_resources|manage_resources')->group(function (): void {
+                Route::middleware(['permission:view_resources|manage_resources', 'feature:resources'])->group(function (): void {
                     Route::get('resources', [Admin\ResourceController::class, 'index'])->name('resources.index');
                     Route::get('resources/{resource}', [Admin\ResourceController::class, 'show'])->name('resources.show');
                     Route::get('resource-bookings', [Admin\ResourceBookingController::class, 'index'])->name('resource-bookings.index');
                 });
-                Route::middleware('permission:manage_resources')->group(function (): void {
+                Route::middleware(['permission:manage_resources', 'feature:resources'])->group(function (): void {
                     Route::post('resources', [Admin\ResourceController::class, 'store'])->name('resources.store');
                     Route::match(['put', 'patch'], 'resources/{resource}', [Admin\ResourceController::class, 'update'])->name('resources.update');
                     Route::delete('resources/{resource}', [Admin\ResourceController::class, 'destroy'])->name('resources.destroy');
@@ -380,7 +382,7 @@ Route::prefix('v1')
                 });
 
                 // ── Store / Boutique Admin ─────────────────────────────────
-                Route::middleware('permission:manage_store')->group(function (): void {
+                Route::middleware(['permission:manage_store', 'feature:store'])->group(function (): void {
                     Route::get('store/products/categories', [Admin\ProductController::class, 'categories'])->name('store.products.categories');
                     Route::apiResource('store/products', Admin\ProductController::class)
                         ->parameter('products', 'product')

@@ -49,7 +49,12 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->profilePayload($request->user())]);
+        return response()->json([
+            'data' => $this->profilePayload($request->user()),
+            // The tenant's active features let the admin UI hide modules that
+            // aren't in the church's plan (CHR-140).
+            'features' => tenant()?->activeFeatures() ?? [],
+        ]);
     }
 
     /**

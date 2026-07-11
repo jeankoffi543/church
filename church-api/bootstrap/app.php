@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureTenantHasFeature;
 use App\Http\Middleware\SetCurrencyMiddleware;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -31,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             'set.currency' => SetCurrencyMiddleware::class,
+            'feature' => EnsureTenantHasFeature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
