@@ -428,8 +428,9 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     Route::post('webhooks/paystack', [Platform\WebhookController::class, 'paystack'])->name('webhooks.paystack');
 
     // Studio-native app — authenticated by the activation key itself (no session).
-    Route::post('studio/activate', [Platform\StudioController::class, 'activate'])->name('studio.activate');
-    Route::post('studio/heartbeat', [Platform\StudioController::class, 'heartbeat'])->name('studio.heartbeat');
+    // Throttled: the key IS the credential, so cap activation brute-force (CHR-151).
+    Route::post('studio/activate', [Platform\StudioController::class, 'activate'])->middleware('throttle:20,1')->name('studio.activate');
+    Route::post('studio/heartbeat', [Platform\StudioController::class, 'heartbeat'])->middleware('throttle:40,1')->name('studio.heartbeat');
 
     // Public domain → tenant resolver for the Next.js proxy (CHR-144).
     Route::get('resolve', [Platform\ResolveController::class, 'resolve'])->name('resolve');
@@ -444,7 +445,7 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
 
     // Mobile Hub foundations (CHR-149): church discovery + per-tenant push registry.
     Route::get('tenants/search', [Platform\DiscoveryController::class, 'search'])->name('tenants.search');
-    Route::prefix('push')->name('push.')->group(function (): void {
+    Route::prefix('push')->name('push.')->middleware('throttle:30,1')->group(function (): void {
         Route::get('subscriptions', [Platform\PushController::class, 'index'])->name('subscriptions');
         Route::post('subscribe', [Platform\PushController::class, 'subscribe'])->name('subscribe');
         Route::post('unsubscribe', [Platform\PushController::class, 'unsubscribe'])->name('unsubscribe');
