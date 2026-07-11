@@ -4,7 +4,7 @@
  * coming over the socket and over HTTP share one shape.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { clientTenantApiBase } from "./tenant/client-api-base";
 
 export type ChatMessage = {
   id: number;
@@ -18,7 +18,7 @@ export type ReactionType = "heart" | "flame" | "hands" | "dove" | "crown";
 
 async function getJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${clientTenantApiBase()}${path}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -31,7 +31,7 @@ async function getJson<T>(path: string): Promise<T | null> {
 
 async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T | null> {
   try {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${clientTenantApiBase()}${path}`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -84,7 +84,7 @@ export async function sendPresence(clientId: string): Promise<number> {
 
 /** Best-effort departure — also fired via `sendBeacon` on page unload. */
 export function sendLeave(clientId: string): void {
-  const url = `${API_URL}/public/live/leave`;
+  const url = `${clientTenantApiBase()}/public/live/leave`;
   const payload = JSON.stringify({ client_id: clientId });
   if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
     navigator.sendBeacon(url, new Blob([payload], { type: "application/json" }));

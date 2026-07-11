@@ -24,6 +24,7 @@ import {
   type Sermon,
   type SermonMediaType,
 } from "./data";
+import { tenantApiBase } from "./tenant/api-base";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 /** Origin serving uploaded assets (the API base without the `/api/v1` suffix). */
@@ -44,7 +45,7 @@ const REVALIDATE = 60;
  */
 async function apiGet<T>(path: string, tags?: string[], opts?: { noStore?: boolean }): Promise<T | null> {
   try {
-    const res = await fetch(`${API_URL}${path}`, {
+    const res = await fetch(`${await tenantApiBase()}${path}`, {
       headers: { Accept: "application/json" },
       // Some views (e.g. the lives archive, updated by the live engine outside
       // Next's cache) must always reflect the latest server state.
@@ -784,7 +785,7 @@ export async function submitHomeGroupApplication(data: {
   application?: unknown;
 }> {
   try {
-    const res = await fetch(`${API_URL}/public/home-groups/applications`, {
+    const res = await fetch(`${await tenantApiBase()}/public/home-groups/applications`, {
       method: "POST",
       headers: {
         "Accept": "application/json",
@@ -828,7 +829,7 @@ export async function verifyHomeGroupApplication(data: {
   message?: string;
 }> {
   try {
-    const res = await fetch(`${API_URL}/public/home-groups/applications/verify`, {
+    const res = await fetch(`${await tenantApiBase()}/public/home-groups/applications/verify`, {
       method: "POST",
       headers: {
         "Accept": "application/json",
@@ -880,7 +881,7 @@ export type HomeGroupApplicationStatusItem = {
 export async function checkHomeGroupApplicationStatus(
   contact: string
 ): Promise<HomeGroupApplicationStatusItem[]> {
-  const res = await fetch(`${API_URL}/public/home-groups/applications/status`, {
+  const res = await fetch(`${await tenantApiBase()}/public/home-groups/applications/status`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ contact }),
@@ -909,7 +910,7 @@ export async function submitMinistryApplication(data: {
   message?: string;
 }> {
   try {
-    const res = await fetch(`${API_URL}/public/ministries/applications`, {
+    const res = await fetch(`${await tenantApiBase()}/public/ministries/applications`, {
       method: "POST",
       headers: {
         "Accept": "application/json",
@@ -950,7 +951,7 @@ export async function checkMinistryApplicationStatus(
   contact: string
 ): Promise<MinistryApplicationStatusItem[]> {
   try {
-    const res = await fetch(`${API_URL}/public/ministries/applications/status`, {
+    const res = await fetch(`${await tenantApiBase()}/public/ministries/applications/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ contact }),

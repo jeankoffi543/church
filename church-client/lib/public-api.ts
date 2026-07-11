@@ -1,7 +1,7 @@
 // Client-side calls to the public Laravel API (no auth, no next/headers), used
 // by interactive public forms such as the ministry recruitment dialog.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { clientTenantApiBase } from "./tenant/client-api-base";
 
 export type ApplicationStatus = "pending" | "approved" | "rejected";
 
@@ -62,7 +62,7 @@ async function readError(res: Response): Promise<never> {
 export async function submitMinistryApplication(
   payload: MinistryApplicationPayload
 ): Promise<SubmitResult> {
-  const res = await fetch(`${API_URL}/public/ministries/applications`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/ministries/applications`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(payload),
@@ -80,7 +80,7 @@ export async function submitMinistryApplication(
 export async function checkMinistryApplicationStatus(
   contact: string
 ): Promise<ApplicationStatusItem[]> {
-  const res = await fetch(`${API_URL}/public/ministries/applications/status`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/ministries/applications/status`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ contact }),
@@ -103,7 +103,7 @@ export type ContactMessagePayload = {
 export async function submitContactMessage(
   payload: ContactMessagePayload
 ): Promise<{ message: string }> {
-  const res = await fetch(`${API_URL}/public/contact`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/contact`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(payload),
@@ -116,7 +116,7 @@ export async function submitContactMessage(
 }
 
 export async function getStoreProducts(): Promise<any[]> {
-  const res = await fetch(`${API_URL}/public/store/products`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/store/products`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) return [];
@@ -125,7 +125,7 @@ export async function getStoreProducts(): Promise<any[]> {
 }
 
 export async function getStoreProduct(id: string): Promise<any | null> {
-  const res = await fetch(`${API_URL}/public/store/products/${id}`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/store/products/${id}`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) return null;
@@ -134,7 +134,7 @@ export async function getStoreProduct(id: string): Promise<any | null> {
 }
 
 export async function placeStoreOrder(payload: any): Promise<any> {
-  const res = await fetch(`${API_URL}/public/store/orders`, {
+  const res = await fetch(`${clientTenantApiBase()}/public/store/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(payload),

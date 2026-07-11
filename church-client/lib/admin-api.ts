@@ -1,10 +1,9 @@
 "use server";
 
 import { getAdminSession } from "@/lib/auth/session";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { revalidatePath, revalidateTag } from "next/cache";
-
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL || ""}/admin`;
 
 export type AdminMinistry = {
   id: number;
@@ -89,7 +88,7 @@ export async function adminFetch<T>(path: string, options: RequestInit = {}): Pr
   }
   headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${await tenantApiBase()}/admin${path}`, {
     ...options,
     headers,
   });
@@ -1216,7 +1215,7 @@ export async function exportDonationsCsv(params: Record<string, string> = {}): P
   if (!token) throw new Error("UNAUTHORIZED");
 
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_URL}/donations/export${qs ? `?${qs}` : ""}`, {
+  const res = await fetch(`${await tenantApiBase()}/admin/donations/export${qs ? `?${qs}` : ""}`, {
     headers: { Accept: "text/csv", Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error("Export impossible");

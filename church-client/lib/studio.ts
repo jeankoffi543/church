@@ -4,7 +4,7 @@
  * directly from the browser for instant autocomplete.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { clientTenantApiBase } from "./tenant/client-api-base";
 
 /* ── Types ──────────────────────────────────────────────────────── */
 
@@ -254,7 +254,7 @@ export type NavigateDirection = "next_verse" | "prev_verse" | "next_chapter" | "
 
 export async function getBibleTranslations(): Promise<string[]> {
   try {
-    const res = await fetch(`${API_URL}/public/bible/translations`, {
+    const res = await fetch(`${clientTenantApiBase()}/public/bible/translations`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -284,7 +284,7 @@ export async function searchBible(
   }
 
   try {
-    const res = await fetch(`${API_URL}/public/bible/search?${params.toString()}`, {
+    const res = await fetch(`${clientTenantApiBase()}/public/bible/search?${params.toString()}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal,
@@ -315,7 +315,7 @@ export async function navigateBible(
     });
   }
   try {
-    const res = await fetch(`${API_URL}/public/bible/navigate?${params.toString()}`, {
+    const res = await fetch(`${clientTenantApiBase()}/public/bible/navigate?${params.toString()}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
@@ -330,7 +330,7 @@ export async function navigateBible(
 /** The overlay currently on air — lets a viewer catch up when joining mid-stream. */
 export async function getCurrentScripture(): Promise<ScripturePayload | null> {
   try {
-    const res = await fetch(`${API_URL}/public/live/scripture`, {
+    const res = await fetch(`${clientTenantApiBase()}/public/live/scripture`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
