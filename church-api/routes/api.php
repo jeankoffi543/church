@@ -422,6 +422,9 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     Route::post('studio/activate', [Platform\StudioController::class, 'activate'])->name('studio.activate');
     Route::post('studio/heartbeat', [Platform\StudioController::class, 'heartbeat'])->name('studio.heartbeat');
 
+    // Public domain → tenant resolver for the Next.js proxy (CHR-144).
+    Route::get('resolve', [Platform\ResolveController::class, 'resolve'])->name('resolve');
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');

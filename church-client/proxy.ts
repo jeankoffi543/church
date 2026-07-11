@@ -10,21 +10,57 @@ import {
   isPublicAdminPath,
   isProtectedUserPath,
 } from "@/lib/auth/config";
+import {
+  normalizeHost,
+  isCentralHost,
+  isTenantStatusPath,
+  TENANT_UNKNOWN_PATH,
+  TENANT_SUSPENDED_PATH,
+} from "@/lib/tenant/config";
+import { resolveTenant } from "@/lib/tenant/resolve";
 
 /**
- * Routing + access-control gate (Next.js 16 "proxy" convention — the renamed
- * `middleware`). Runs before every (non-static) request is rendered.
+ * Multi-tenant routing + access-control gate (Next.js 16 "proxy" convention —
+ * the renamed `middleware`, Node runtime). Runs before every (non-static)
+ * request.
  *
- * - `/admins/*`  → requires an admin session, otherwise → `/admins/login`.
- * - user routes  → require a standard user session, otherwise → `/login`.
- * - everything else (the public church site) is left untouched.
- *
- * NOTE: this only checks for the *presence* of a session cookie. Cryptographic
- * verification (JWT signature, DB lookup, expiry…) belongs in `lib/auth/session`
- * and the route handlers — the proxy stays cheap and edge-safe.
+ * 1. Tenant resolution (CHR-144): a church request arrives on its own domain.
+ *    The host is resolved against the central API — an unknown domain shows the
+ *    "église introuvable" screen, a suspended one the "indisponible" screen, and
+ *    a live one gets `x-tenant-id` / `x-tenant-domain` injected for the server
+ *    components (theming in CHR-145) + the tenant API. Central hosts (the SaaS
+ *    marketing site) skip this entirely.
+ * 2. Session gate: `/admins/*` needs an admin cookie, protected user routes a
+ *    user cookie — presence only; real verification lives in `lib/auth/session`.
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = normalizeHost(request.headers.get("host") ?? request.nextUrl.host);
+
+  // ── Tenant resolution ────────────────────────────────────────────
+  let tenantHeaders: Headers | undefined;
+  if (!isCentralHost(host) && !isTenantStatusPath(pathname)) {
+    const resolution = await resolveTenant(host);
+
+    if (resolution.status === "unknown") {
+      return NextResponse.rewrite(new URL(TENANT_UNKNOWN_PATH, request.url));
+    }
+    if (resolution.status === "suspended") {
+      return NextResponse.rewrite(new URL(TENANT_SUSPENDED_PATH, request.url));
+    }
+
+    // "active" (id known) or "unavailable" (backend blip → fail open): carry the
+    // domain downstream so server components + the tenant API resolve the church.
+    tenantHeaders = new Headers(request.headers);
+    tenantHeaders.set("x-tenant-domain", host);
+    if (resolution.status === "active") {
+      tenantHeaders.set("x-tenant-id", resolution.id);
+    }
+  }
+
+  // Preserve the injected tenant headers on every pass-through response.
+  const next = () =>
+    NextResponse.next(tenantHeaders ? { request: { headers: tenantHeaders } } : undefined);
 
   // ── Admin backoffice ─────────────────────────────────────────────
   if (isAdminPath(pathname)) {
@@ -36,7 +72,7 @@ export function proxy(request: NextRequest) {
       if (hasAdminSession && pathname === ADMIN_LOGIN_PATH) {
         return NextResponse.redirect(new URL(ADMIN_HOME_PATH, request.url));
       }
-      return NextResponse.next();
+      return next();
     }
 
     if (!hasAdminSession) {
@@ -45,7 +81,7 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    return NextResponse.next();
+    return next();
   }
 
   // ── Standard user area ───────────────────────────────────────────
@@ -58,11 +94,11 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    return NextResponse.next();
+    return next();
   }
 
   // ── Public church site ───────────────────────────────────────────
-  return NextResponse.next();
+  return next();
 }
 
 export const config = {
