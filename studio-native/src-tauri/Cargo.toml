@@ -58,3 +58,7 @@ mod-output-record = { path = "../crates/mod-output-record", optional = true }
 mod-output-broadcast = { path = "../crates/mod-output-broadcast", optional = true }
 # Preview frames are shipped to the webview as base64 data-URLs.
 base64 = { version = "0.22", optional = true }
+# CHR-143 — Studio Live activation: HTTP to the central activate/heartbeat
+# endpoints (rustls to avoid a system OpenSSL dep) + a stable device id.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
