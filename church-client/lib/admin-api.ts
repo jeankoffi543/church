@@ -3,7 +3,7 @@
 import { getAdminSession } from "@/lib/auth/session";
 import { tenantApiBase } from "@/lib/tenant/api-base";
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 export type AdminMinistry = {
   id: number;
@@ -147,7 +147,7 @@ export async function updateAdminSettings(
   });
   
   // Revalidate public cache
-  revalidateTag("settings", { expire: 0 });
+  updateTag("settings");
   revalidatePath("/");
   revalidatePath("/eglise");
   revalidatePath("/agenda");
@@ -280,7 +280,7 @@ export async function updateAdminPastorWord(formData: FormData): Promise<{
     body: formData,
   });
 
-  revalidateTag("settings", { expire: 0 });
+  updateTag("settings");
   revalidatePath("/");
   revalidatePath("/eglise");
   revalidatePath("/eglise/presentation");
@@ -331,7 +331,7 @@ export async function updateAdminChurchVision(formData: FormData): Promise<{
     body: formData,
   });
 
-  revalidateTag("settings", { expire: 0 });
+  updateTag("settings");
   revalidatePath("/");
   revalidatePath("/eglise");
   return result;
@@ -372,7 +372,7 @@ function buildMinistryFormData(
 }
 
 function revalidateMinistries() {
-  revalidateTag("ministries", { expire: 0 });
+  updateTag("ministries");
   revalidatePath("/");
   revalidatePath("/eglise");
   revalidatePath("/ministeres");
@@ -411,7 +411,7 @@ export async function deleteMinistry(id: number): Promise<void> {
   await adminFetch<void>(`/ministries/${id}`, {
     method: "DELETE",
   });
-  revalidateTag("ministries", { expire: 0 });
+  updateTag("ministries");
   revalidatePath("/");
   revalidatePath("/eglise");
 }
@@ -471,7 +471,7 @@ function buildSermonFormData(data: SermonInput, files?: SermonFiles): FormData {
 }
 
 function revalidateSermons() {
-  revalidateTag("sermons", { expire: 0 });
+  updateTag("sermons");
   revalidatePath("/");
   revalidatePath("/mediatheque");
 }
@@ -507,7 +507,7 @@ export async function deleteSermon(id: number): Promise<void> {
   await adminFetch<void>(`/sermons/${id}`, {
     method: "DELETE",
   });
-  revalidateTag("sermons", { expire: 0 });
+  updateTag("sermons");
   revalidatePath("/");
   revalidatePath("/mediatheque");
 }
@@ -535,7 +535,7 @@ export async function createEvent(
     method: "POST",
     body: formData,
   });
-  revalidateTag("events", { expire: 0 });
+  updateTag("events");
   revalidatePath("/");
   revalidatePath("/agenda");
   return result;
@@ -550,7 +550,7 @@ export async function updateEvent(
     method: "POST",
     body: formData,
   });
-  revalidateTag("events", { expire: 0 });
+  updateTag("events");
   revalidatePath("/");
   revalidatePath("/agenda");
   return result;
@@ -560,7 +560,7 @@ export async function deleteEvent(id: number): Promise<void> {
   await adminFetch<void>(`/events/${id}`, {
     method: "DELETE",
   });
-  revalidateTag("events", { expire: 0 });
+  updateTag("events");
   revalidatePath("/");
   revalidatePath("/agenda");
 }
@@ -591,7 +591,7 @@ export async function createHomeGroup(data: {
     method: "POST",
     body: JSON.stringify(data),
   });
-  revalidateTag("home-groups", { expire: 0 });
+  updateTag("home-groups");
   revalidatePath("/eglise");
   return result;
 }
@@ -615,7 +615,7 @@ export async function updateHomeGroup(id: number, data: {
     method: "PUT",
     body: JSON.stringify(data),
   });
-  revalidateTag("home-groups", { expire: 0 });
+  updateTag("home-groups");
   revalidatePath("/eglise");
   return result;
 }
@@ -624,7 +624,7 @@ export async function deleteHomeGroup(id: number): Promise<void> {
   await adminFetch<void>(`/home-groups/${id}`, {
     method: "DELETE",
   });
-  revalidateTag("home-groups", { expire: 0 });
+  updateTag("home-groups");
   revalidatePath("/eglise");
 }
 
@@ -1022,7 +1022,7 @@ function buildAlbumFormData(data: AlbumInput, cover?: File | null, removeCover?:
 }
 
 function revalidateGallery() {
-  revalidateTag("albums", { expire: 0 });
+  updateTag("albums");
   revalidatePath("/galerie");
 }
 
@@ -1137,7 +1137,7 @@ function buildPastLiveFormData(data: PastLiveInput, files?: PastLiveFiles): Form
 }
 
 function revalidatePastLives() {
-  revalidateTag("past-lives", { expire: 0 });
+  updateTag("past-lives");
   revalidatePath("/lives-archives");
 }
 
@@ -1286,7 +1286,7 @@ export async function createBranch(data: Partial<AdminBranch>): Promise<{ data: 
     method: "POST",
     body: JSON.stringify(data),
   });
-  revalidateTag("branches", { expire: 0 });
+  updateTag("branches");
   revalidatePath("/branches");
   return result;
 }
@@ -1296,14 +1296,14 @@ export async function updateBranch(id: number, data: Partial<AdminBranch>): Prom
     method: "PUT",
     body: JSON.stringify(data),
   });
-  revalidateTag("branches", { expire: 0 });
+  updateTag("branches");
   revalidatePath("/branches");
   return result;
 }
 
 export async function deleteBranch(id: number): Promise<void> {
   await adminFetch<void>(`/branches/${id}`, { method: "DELETE" });
-  revalidateTag("branches", { expire: 0 });
+  updateTag("branches");
   revalidatePath("/branches");
 }
 

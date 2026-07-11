@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use Illuminate\Cache\TaggableStore;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use RuntimeException;
 use Stancl\JobPipeline\JobPipeline;
+use Stancl\Tenancy\Bootstrappers\CacheTenancyBootstrapper;
 use Stancl\Tenancy\Events;
 use Stancl\Tenancy\Jobs;
 use Stancl\Tenancy\Listeners;
@@ -100,10 +104,40 @@ class TenancyServiceProvider extends ServiceProvider
 
     public function boot()
     {
+        self::guardTaggableCacheStore();
+
         $this->bootEvents();
         $this->mapRoutes();
 
         $this->makeTenancyMiddlewareHighestPriority();
+    }
+
+    /**
+     * Fail fast when tenant cache isolation is enabled on a non-taggable store.
+     *
+     * {@see CacheTenancyBootstrapper} scopes every cache key with a per-tenant
+     * tag, so the store must support tagging (redis / memcached / array). On a
+     * `database` or `file` store this otherwise surfaces mid-request, deep inside
+     * a tenant, as a cryptic "This cache store does not support tagging".
+     */
+    public static function guardTaggableCacheStore(): void
+    {
+        $bootstrappers = (array) config('tenancy.bootstrappers');
+
+        if (! in_array(CacheTenancyBootstrapper::class, $bootstrappers, true)) {
+            return;
+        }
+
+        if (Cache::store()->getStore() instanceof TaggableStore) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'CACHE_STORE="%s" does not support cache tags, which multitenancy requires: '
+            .'CacheTenancyBootstrapper scopes each tenant\'s cache with a per-tenant tag. '
+            .'Set CACHE_STORE to "redis", "memcached", or "array".',
+            config('cache.default'),
+        ));
     }
 
     protected function bootEvents()
