@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Platform;
 use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Api\V1\Webhooks;
+use App\Http\Middleware\EnsureCentralSuperAdmin;
 use App\Http\Middleware\EnsureTenantIsActive;
 use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -415,5 +416,17 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');
+
+        // Tenant back-office — super-admins only (support/billing are read-only later).
+        Route::middleware(EnsureCentralSuperAdmin::class)->group(function (): void {
+            Route::get('tenants', [Platform\TenantController::class, 'index'])->name('tenants.index');
+            Route::post('tenants', [Platform\TenantController::class, 'store'])->name('tenants.store');
+            Route::get('tenants/{tenant}', [Platform\TenantController::class, 'show'])->name('tenants.show');
+            Route::match(['put', 'patch'], 'tenants/{tenant}', [Platform\TenantController::class, 'update'])->name('tenants.update');
+            Route::delete('tenants/{tenant}', [Platform\TenantController::class, 'destroy'])->name('tenants.destroy');
+            Route::post('tenants/{tenant}/suspend', [Platform\TenantController::class, 'suspend'])->name('tenants.suspend');
+            Route::post('tenants/{tenant}/restore', [Platform\TenantController::class, 'restore'])->name('tenants.restore');
+            Route::post('tenants/{tenant}/impersonate', [Platform\TenantController::class, 'impersonate'])->name('tenants.impersonate');
+        });
     });
 });
