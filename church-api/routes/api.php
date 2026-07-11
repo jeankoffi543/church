@@ -425,6 +425,9 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     // Public domain → tenant resolver for the Next.js proxy (CHR-144).
     Route::get('resolve', [Platform\ResolveController::class, 'resolve'])->name('resolve');
 
+    // Public plan catalogue for the SaaS marketing pricing page (CHR-146).
+    Route::get('plans', [Platform\PlanController::class, 'index'])->name('plans');
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');

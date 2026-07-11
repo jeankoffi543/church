@@ -26,3 +26,28 @@ export const TENANT_SUSPENDED_PATH = "/tenant-suspended";
 export function isTenantStatusPath(pathname: string): boolean {
   return pathname === TENANT_UNKNOWN_PATH || pathname === TENANT_SUSPENDED_PATH;
 }
+
+// ── SaaS marketing site (CHR-146) ──────────────────────────────────
+// The marketing site lives under /central. Its real hosts (the SaaS domains)
+// serve it at the root; on other central hosts (dev localhost) it stays at
+// /central so the church app is untouched.
+const MARKETING_HOSTS = (process.env.NEXT_PUBLIC_MARKETING_HOSTS || "")
+  .split(",")
+  .map((d) => d.trim().toLowerCase())
+  .filter(Boolean);
+
+export const CENTRAL_TREE = "/central";
+
+export function isMarketingHost(host: string): boolean {
+  return MARKETING_HOSTS.includes(host);
+}
+
+/** Paths a marketing host maps into the /central tree (everything but internals). */
+export function shouldServeMarketing(pathname: string): boolean {
+  return (
+    !pathname.startsWith(CENTRAL_TREE) &&
+    !pathname.startsWith("/_next") &&
+    !pathname.startsWith("/api") &&
+    !pathname.startsWith("/admins")
+  );
+}
