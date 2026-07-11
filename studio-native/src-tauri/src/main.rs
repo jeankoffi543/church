@@ -1035,6 +1035,267 @@ mod studio {
     }
 }
 
+/// CHR-143 — Studio Live activation. The desktop app is gated behind a per-seat
+/// key: it exchanges the long-lived `chr_live_*` key (kept in the OS app-data
+/// dir, never in the UI after entry) for a short session + the tenant's stream
+/// credentials, and re-checks it on a heartbeat. Feature-independent.
+mod activation {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize, Clone, Default)]
+    pub struct StreamCreds {
+        #[serde(default)]
+        pub whip_url: Option<String>,
+        #[serde(default)]
+        pub stream_key: Option<String>,
+    }
+
+    #[derive(Serialize, Deserialize, Clone, Default)]
+    pub struct TenantInfo {
+        #[serde(default)]
+        pub id: String,
+        #[serde(default)]
+        pub domain: Option<String>,
+    }
+
+    /// The activate/heartbeat response from the central API.
+    #[derive(Serialize, Deserialize, Clone, Default)]
+    pub struct Session {
+        #[serde(default)]
+        pub session_token: Option<String>,
+        #[serde(default)]
+        pub expires_at: Option<String>,
+        #[serde(default)]
+        pub tenant: TenantInfo,
+        #[serde(default)]
+        pub stream: StreamCreds,
+    }
+
+    /// What we persist so the app comes back activated after a restart.
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct Stored {
+        pub base_url: String,
+        pub key: String,
+        pub session: Session,
+    }
+
+    fn activation_file(dir: &Path) -> PathBuf {
+        dir.join("studio-activation.json")
+    }
+
+    fn device_file(dir: &Path) -> PathBuf {
+        dir.join("studio-device.id")
+    }
+
+    /// Load the stored activation, or None if absent/corrupt (never fails).
+    fn load_stored(dir: &Path) -> Option<Stored> {
+        std::fs::read_to_string(activation_file(dir))
+            .ok()
+            .and_then(|s| serde_json::from_str::<Stored>(&s).ok())
+    }
+
+    /// Write the activation to disk (best-effort). Creates the dir if needed.
+    fn persist_stored(dir: &Path, stored: &Stored) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let json = serde_json::to_string_pretty(stored)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(activation_file(dir), json)
+    }
+
+    /// Stable per-install device id: read it, or generate + persist once. Kept
+    /// even across deactivation, so re-activating the same machine reuses its seat.
+    fn ensure_fingerprint(dir: &Path) -> String {
+        if let Ok(id) = std::fs::read_to_string(device_file(dir)) {
+            let id = id.trim().to_string();
+            if !id.is_empty() {
+                return id;
+            }
+        }
+        let id = format!("dev_{}", uuid::Uuid::new_v4().simple());
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(device_file(dir), &id);
+        id
+    }
+
+    /// POST the key to a central studio endpoint (`activate` / `heartbeat`).
+    fn post(
+        base_url: &str,
+        endpoint: &str,
+        key: &str,
+        fingerprint: &str,
+    ) -> Result<Session, String> {
+        let url = format!(
+            "{}/api/platform/studio/{}",
+            base_url.trim_end_matches('/'),
+            endpoint,
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let resp = client
+            .post(&url)
+            .json(&serde_json::json!({ "key": key, "device_fingerprint": fingerprint }))
+            .send()
+            .map_err(|e| format!("Connexion impossible au serveur : {e}"))?;
+
+        if !resp.status().is_success() {
+            let message = resp
+                .json::<serde_json::Value>()
+                .ok()
+                .and_then(|v| {
+                    v.get("message")
+                        .and_then(|m| m.as_str().map(str::to_string))
+                })
+                .unwrap_or_else(|| "Activation refusée.".into());
+            return Err(message);
+        }
+
+        resp.json::<Session>().map_err(|e| e.to_string())
+    }
+
+    /// The managed activation: the in-memory record + where it persists.
+    pub struct ActivationState {
+        pub dir: PathBuf,
+        pub current: Mutex<Option<Stored>>,
+    }
+
+    impl ActivationState {
+        pub fn load(dir: PathBuf) -> Self {
+            let current = load_stored(&dir);
+            ActivationState {
+                current: Mutex::new(current),
+                dir,
+            }
+        }
+    }
+
+    /// The current session if the app is activated (UI gate), else None.
+    #[tauri::command]
+    pub fn activation_status(state: tauri::State<'_, ActivationState>) -> Option<Session> {
+        state
+            .current
+            .lock()
+            .ok()?
+            .as_ref()
+            .map(|s| s.session.clone())
+    }
+
+    /// Exchange a key for a session: bind the device, store the key + session.
+    #[tauri::command]
+    pub fn activate(
+        state: tauri::State<'_, ActivationState>,
+        base_url: String,
+        key: String,
+    ) -> Result<Session, String> {
+        let fingerprint = ensure_fingerprint(&state.dir);
+        let session = post(&base_url, "activate", &key, &fingerprint)?;
+
+        let stored = Stored {
+            base_url,
+            key,
+            session: session.clone(),
+        };
+        let _ = persist_stored(&state.dir, &stored);
+        *state.current.lock().map_err(|_| "activation poisoned")? = Some(stored);
+
+        Ok(session)
+    }
+
+    /// Re-check the activation (subscription may have lapsed / key revoked) and
+    /// refresh the session token. On failure the UI drops back to the gate.
+    #[tauri::command]
+    pub fn heartbeat(state: tauri::State<'_, ActivationState>) -> Result<Session, String> {
+        let stored = state
+            .current
+            .lock()
+            .map_err(|_| "activation poisoned")?
+            .clone()
+            .ok_or_else(|| "Non activé.".to_string())?;
+
+        let fingerprint = ensure_fingerprint(&state.dir);
+        let session = post(&stored.base_url, "heartbeat", &stored.key, &fingerprint)?;
+
+        let updated = Stored {
+            session: session.clone(),
+            ..stored
+        };
+        let _ = persist_stored(&state.dir, &updated);
+        *state.current.lock().map_err(|_| "activation poisoned")? = Some(updated);
+
+        Ok(session)
+    }
+
+    /// Forget the activation (the device id is kept so re-activation reuses the seat).
+    #[tauri::command]
+    pub fn deactivate(state: tauri::State<'_, ActivationState>) {
+        let _ = std::fs::remove_file(activation_file(&state.dir));
+        if let Ok(mut cur) = state.current.lock() {
+            *cur = None;
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn temp_dir(tag: &str) -> PathBuf {
+            let mut p = std::env::temp_dir();
+            p.push(format!(
+                "studio-activation-test-{tag}-{}",
+                std::process::id()
+            ));
+            p
+        }
+
+        #[test]
+        fn missing_activation_loads_none() {
+            let d = temp_dir("missing");
+            let _ = std::fs::remove_dir_all(&d);
+            assert!(load_stored(&d).is_none());
+        }
+
+        #[test]
+        fn stored_round_trips_through_disk() {
+            let d = temp_dir("roundtrip");
+            let _ = std::fs::remove_dir_all(&d);
+
+            let stored = Stored {
+                base_url: "https://app.churchapp.io".into(),
+                key: "chr_live_secret".into(),
+                session: Session::default(),
+            };
+            persist_stored(&d, &stored).expect("write");
+
+            let back = load_stored(&d).expect("read");
+            assert_eq!(back.key, "chr_live_secret");
+            assert_eq!(back.base_url, "https://app.churchapp.io");
+
+            let _ = std::fs::remove_dir_all(&d);
+        }
+
+        #[test]
+        fn fingerprint_is_stable_and_survives_deactivation() {
+            let d = temp_dir("fp");
+            let _ = std::fs::remove_dir_all(&d);
+
+            let first = ensure_fingerprint(&d);
+            assert!(first.starts_with("dev_"));
+            // Deactivation removes the activation file but NOT the device id.
+            let _ = std::fs::remove_file(activation_file(&d));
+            let second = ensure_fingerprint(&d);
+            assert_eq!(first, second);
+
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+}
+
 fn main() {
     use tauri::Manager;
 
@@ -1042,16 +1303,17 @@ fn main() {
         // Native file-open dialog for the local audio/media picker.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-        // The studio document persists in the OS app-data dir; fall back to a
-        // temp path if it can't be resolved (headless/dev), so the app still runs.
-        let path = app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir())
-            .join("studio.json");
-        app.manage(studio::StudioState::load(path));
-        Ok(())
-    });
+            // The studio document + activation persist in the OS app-data dir; fall
+            // back to a temp path if it can't be resolved (headless/dev), so the app
+            // still runs.
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
+            app.manage(studio::StudioState::load(data_dir.join("studio.json")));
+            app.manage(activation::ActivationState::load(data_dir));
+            Ok(())
+        });
 
     // With `media`, every source command is present (bodies cfg-gated per module
     // inside `mod media`). The audio mixer has its own state, so it's the one
@@ -1064,6 +1326,10 @@ fn main() {
                 get_capabilities,
                 studio::get_studio_state,
                 studio::apply_command,
+                activation::activation_status,
+                activation::activate,
+                activation::heartbeat,
+                activation::deactivate,
                 media::start_preview,
                 media::stop_preview,
                 media::media_status,
@@ -1129,7 +1395,11 @@ fn main() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         get_capabilities,
         studio::get_studio_state,
-        studio::apply_command
+        studio::apply_command,
+        activation::activation_status,
+        activation::activate,
+        activation::heartbeat,
+        activation::deactivate
     ]);
 
     builder
