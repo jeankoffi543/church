@@ -129,7 +129,9 @@ class TenantController extends Controller
         $expiresAt = now()->addMinutes(30);
 
         $tenant->run(function () use (&$token, &$impersonated, $expiresAt): void {
-            $user = User::role(AccessControl::SUPER_ADMIN)->first() ?? User::query()->first();
+            // whereHas (not the Spatie role() scope) so an absent role doesn't throw.
+            $user = User::query()->whereHas('roles', fn ($q) => $q->where('name', AccessControl::SUPER_ADMIN))->first()
+                ?? User::query()->first();
 
             abort_if($user === null, JsonResponse::HTTP_UNPROCESSABLE_ENTITY, "Cette église n'a aucun administrateur à incarner.");
 

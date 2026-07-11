@@ -418,6 +418,10 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     // Paystack billing webhook — no auth, authenticated by HMAC signature.
     Route::post('webhooks/paystack', [Platform\WebhookController::class, 'paystack'])->name('webhooks.paystack');
 
+    // Studio-native app — authenticated by the activation key itself (no session).
+    Route::post('studio/activate', [Platform\StudioController::class, 'activate'])->name('studio.activate');
+    Route::post('studio/heartbeat', [Platform\StudioController::class, 'heartbeat'])->name('studio.heartbeat');
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');
@@ -433,6 +437,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::post('tenants/{tenant}/restore', [Platform\TenantController::class, 'restore'])->name('tenants.restore');
             Route::post('tenants/{tenant}/impersonate', [Platform\TenantController::class, 'impersonate'])->name('tenants.impersonate');
             Route::post('tenants/{tenant}/subscribe', [Platform\SubscriptionController::class, 'subscribe'])->name('tenants.subscribe');
+
+            // Studio Live activation keys.
+            Route::get('tenants/{tenant}/studio/keys', [Platform\StudioController::class, 'keys'])->name('tenants.studio.keys');
+            Route::post('tenants/{tenant}/studio/keys', [Platform\StudioController::class, 'createKey'])->name('tenants.studio.keys.create');
+            Route::post('studio/keys/{activation}/revoke', [Platform\StudioController::class, 'revokeKey'])->name('studio.keys.revoke');
         });
     });
 });
