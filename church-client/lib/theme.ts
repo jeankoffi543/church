@@ -4,7 +4,7 @@
 // single Next.js codebase recolors per church. Best-effort: any failure falls
 // back to the app's default brand.
 import { cache } from "react";
-import { headers } from "next/headers";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 export type SiteTheme = {
   primary?: string;
@@ -29,10 +29,7 @@ const safeColor = (v: unknown): string | undefined =>
  * so the layout + metadata share one fetch.
  */
 export const getTenantTheme = cache(async (): Promise<SiteTheme | null> => {
-  const domain = (await headers()).get("x-tenant-domain");
-  // Prod: the church site + API share the tenant domain (the proxy routes /api
-  // to Laravel). Dev/central: the fixed backend.
-  const base = domain ? `https://${domain}/api/v1` : process.env.NEXT_PUBLIC_API_URL || "";
+  const base = await tenantApiBase();
   if (!base) return null;
 
   try {

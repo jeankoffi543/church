@@ -8,6 +8,7 @@ import {
   ADMIN_HOME_PATH,
   ADMIN_LOGIN_PATH,
 } from "@/lib/auth/config";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 
@@ -23,8 +24,7 @@ export async function loginAdmin(formData: FormData) {
   let redirectTo: string | null = null;
 
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-    const response = await fetch(`${apiUrl}/admin/login`, {
+    const response = await fetch(`${await tenantApiBase()}/admin/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -74,8 +74,7 @@ export async function logoutAdmin() {
   if (token) {
     try {
       // Call Laravel logout endpoint to revoke token
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      await fetch(`${apiUrl}/admin/logout`, {
+      await fetch(`${await tenantApiBase()}/admin/logout`, {
         method: "POST",
         headers: {
           "Accept": "application/json",
