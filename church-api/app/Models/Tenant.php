@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Enums\Feature;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantStatus;
 use Database\Factories\TenantFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDomains;
@@ -73,5 +75,44 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'tenancy_db_username' => 'encrypted',
             'tenancy_db_password' => 'encrypted',
         ];
+    }
+
+    /**
+     * The subscription plan this tenant is on (central DB).
+     */
+    public function plan(): BelongsTo
+    {
+        return $this->belongsTo(Plan::class);
+    }
+
+    /**
+     * Whether a product feature is enabled for this tenant. A per-tenant override
+     * in the `features` column (add-on / grandfathering) wins; otherwise the plan
+     * decides.
+     */
+    public function hasFeature(string|Feature $feature): bool
+    {
+        $key = $feature instanceof Feature ? $feature->value : $feature;
+
+        $overrides = $this->features ?? [];
+        if (array_key_exists($key, $overrides)) {
+            return (bool) $overrides[$key];
+        }
+
+        return (bool) $this->plan?->hasFeature($key);
+    }
+
+    /**
+     * The flat list of enabled feature keys — handed to the front-end so it can
+     * hide the modules a tenant's plan doesn't include.
+     *
+     * @return list<string>
+     */
+    public function activeFeatures(): array
+    {
+        return array_values(array_map(
+            fn (Feature $f): string => $f->value,
+            array_filter(Feature::cases(), fn (Feature $f): bool => $this->hasFeature($f)),
+        ));
     }
 }
