@@ -442,6 +442,14 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
         ->middleware('throttle:8,1')
         ->name('signup');
 
+    // Mobile Hub foundations (CHR-149): church discovery + per-tenant push registry.
+    Route::get('tenants/search', [Platform\DiscoveryController::class, 'search'])->name('tenants.search');
+    Route::prefix('push')->name('push.')->group(function (): void {
+        Route::get('subscriptions', [Platform\PushController::class, 'index'])->name('subscriptions');
+        Route::post('subscribe', [Platform\PushController::class, 'subscribe'])->name('subscribe');
+        Route::post('unsubscribe', [Platform\PushController::class, 'unsubscribe'])->name('unsubscribe');
+    });
+
     Route::middleware('auth:central')->group(function (): void {
         Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');
