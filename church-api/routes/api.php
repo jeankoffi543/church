@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Platform;
 use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Api\V1\Webhooks;
@@ -398,3 +399,21 @@ Route::prefix('v1')
             });
         });
     });
+
+/*
+|--------------------------------------------------------------------------
+| Platform (central / landlord) API
+|--------------------------------------------------------------------------
+| Runs in CENTRAL context — deliberately outside the tenant `v1` group, so it
+| carries no tenancy middleware and resolves against the central DB. Auth is the
+| `central` guard, isolated from tenant users (CHR-138). Tenant management lands
+| here in CHR-139.
+*/
+Route::prefix('platform')->name('api.platform.')->group(function (): void {
+    Route::post('login', [Platform\AuthController::class, 'login'])->name('login');
+
+    Route::middleware('auth:central')->group(function (): void {
+        Route::get('me', [Platform\AuthController::class, 'me'])->name('me');
+        Route::post('logout', [Platform\AuthController::class, 'logout'])->name('logout');
+    });
+});
