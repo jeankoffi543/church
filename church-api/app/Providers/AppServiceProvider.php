@@ -25,12 +25,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Super Admin immunity: a user holding the Super Admin role is granted
-        // every ability automatically, even abilities not attached to it in the
-        // database. Returning `null` lets all other checks fall through to the
-        // normal Spatie permission resolution.
-        Gate::before(function (User $user, string $ability): ?bool {
-            return $user->hasRole(AccessControl::SUPER_ADMIN) ? true : null;
+        // Super Admin immunity: a TENANT user holding the Super Admin role is
+        // granted every ability automatically, even abilities not attached to it
+        // in the database. Returning `null` lets all other checks fall through to
+        // the normal Spatie permission resolution. This is a tenant-side role, so
+        // a non-User principal (e.g. a central super-admin resolving the Horizon
+        // gate) is not our concern here — let it fall through untouched.
+        Gate::before(function (mixed $user, string $ability): ?bool {
+            return $user instanceof User && $user->hasRole(AccessControl::SUPER_ADMIN) ? true : null;
         });
 
         // Stable aliases for FollowUp::followable — stored in the DB instead
