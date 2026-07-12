@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
 use App\Http\Controllers\Api\V1\Webhooks;
 use App\Http\Middleware\EnsureCentralSuperAdmin;
+use App\Http\Middleware\EnsureIdentityTenantScope;
 use App\Http\Middleware\EnsureTenantIsActive;
 use Illuminate\Support\Facades\Route;
 use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
@@ -503,5 +504,12 @@ Route::prefix('identity')->name('api.identity.')->group(function (): void {
         Route::patch('memberships/{tenant}', [Identity\MembershipController::class, 'update'])->name('memberships.update');
         Route::delete('memberships/{tenant}', [Identity\MembershipController::class, 'destroy'])->name('memberships.destroy');
         Route::post('memberships/{tenant}/claim', [Identity\MembershipController::class, 'claim'])->name('memberships.claim');
+
+        // Central → tenant token exchange (CHR-167): trade the broad identity token
+        // for one scoped to a single church, then reach per-church endpoints.
+        Route::post('churches/{tenant}/token', [Identity\TenantAccessController::class, 'token'])->name('churches.token');
+        Route::get('churches/{tenant}/member', [Identity\TenantAccessController::class, 'member'])
+            ->middleware(EnsureIdentityTenantScope::class)
+            ->name('churches.member');
     });
 });
