@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Public;
 
+use App\Events\PrayerRequestReceived;
 use App\Http\Controllers\Controller;
 use App\Models\PrayerRequest;
 use App\Services\PrayerNotificationService;
@@ -30,6 +31,9 @@ class PrayerRequestController extends Controller
         // TODO: Implémenter ici l'envoi réel via le canal WhatsApp / SMS / Email en utilisant prayer_automated_notification_message
         // Send automated notification
         app(PrayerNotificationService::class)->sendConfirmation($prayer);
+
+        // Notify the church's back office in real time on its private admin channel.
+        broadcast(new PrayerRequestReceived($prayer));
 
         return response()->json([
             'message' => PrayerNotificationService::getSuccessMessage(),
