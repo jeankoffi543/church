@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Listeners\AssignTenantToShard;
 use Illuminate\Cache\TaggableStore;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +28,11 @@ class TenancyServiceProvider extends ServiceProvider
     {
         return [
             // Tenant events
-            Events\CreatingTenant::class => [],
+            Events\CreatingTenant::class => [
+                // Place the new tenant on a shard from the registry before its
+                // database is provisioned (CHR-163).
+                AssignTenantToShard::class,
+            ],
             Events\TenantCreated::class => [
                 JobPipeline::make([
                     Jobs\CreateDatabase::class,
