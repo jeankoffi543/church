@@ -495,5 +495,13 @@ Route::prefix('identity')->name('api.identity.')->group(function (): void {
     Route::middleware('auth:identity')->group(function (): void {
         Route::get('me', [Identity\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Identity\AuthController::class, 'logout'])->name('logout');
+
+        // The identity's churches (CHR-166): follow / leave, privacy, claim a
+        // local member record.
+        Route::get('memberships', [Identity\MembershipController::class, 'index'])->name('memberships.index');
+        Route::post('memberships/{tenant}/follow', [Identity\MembershipController::class, 'follow'])->name('memberships.follow');
+        Route::patch('memberships/{tenant}', [Identity\MembershipController::class, 'update'])->name('memberships.update');
+        Route::delete('memberships/{tenant}', [Identity\MembershipController::class, 'destroy'])->name('memberships.destroy');
+        Route::post('memberships/{tenant}/claim', [Identity\MembershipController::class, 'claim'])->name('memberships.claim');
     });
 });
