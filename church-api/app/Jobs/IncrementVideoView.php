@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\QueueName;
+use App\Jobs\Middleware\LimitPerTenant;
 use App\Models\PastLive;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -24,5 +25,13 @@ class IncrementVideoView implements ShouldQueue
     public function handle(): void
     {
         PastLive::query()->whereKey($this->pastLiveId)->increment('views_count');
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new LimitPerTenant];
     }
 }

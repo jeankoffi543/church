@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\QueueName;
+use App\Jobs\Middleware\LimitPerTenant;
 use App\Mail\DonationReceiptMail;
 use App\Models\Donation;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -25,5 +26,13 @@ class SendDonationReceipt implements ShouldQueue
     public function handle(): void
     {
         Mail::to($this->donation->donor_email)->send(new DonationReceiptMail($this->donation));
+    }
+
+    /**
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [new LimitPerTenant];
     }
 }
