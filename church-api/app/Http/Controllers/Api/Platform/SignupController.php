@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Platform;
 
 use App\Enums\DomainType;
+use App\Enums\ProvisioningStatus;
 use App\Enums\SslStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantStatus;
@@ -10,20 +11,20 @@ use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
-use App\Models\User;
 use App\Services\Signup\SubdomainAvailability;
-use App\Support\AccessControl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Spatie\Permission\Models\Role;
 
 /**
- * Self-service church signup (CHR-147). Public + central: provisions a fresh
- * tenant (DB, migrations, baseline seed via the CHR-135 pipeline), reserves its
- * subdomain, and creates the church's first Super Admin.
+ * Self-service church signup (CHR-147, async provisioning CHR-173). Public +
+ * central: reserves the subdomain, records the tenant, and hands the heavy
+ * database build (create + migrate + seed baseline + first admin) to the
+ * ProvisionTenant job. Returns 202 with a status URL the wizard polls until the
+ * church is ready.
  */
 class SignupController extends Controller
 {
@@ -79,16 +80,22 @@ class SignupController extends Controller
             ->first()
             ?? Plan::query()->where('code', 'free')->first();
 
-        // Creating the tenant fires the provisioning pipeline (CHR-135): its
-        // database is created, migrated and seeded with the baseline (roles,
-        // currencies, bible) before we return.
+        // Record the tenant as Provisioning; creating it fires the ProvisionTenant
+        // job (CHR-173) which builds the database off the request and seeds the
+        // first admin from the credentials stashed here (cleared once used).
         $tenant = Tenant::create([
             'name' => $validated['church_name'],
             'slug' => $validated['slug'],
-            'status' => TenantStatus::Active,
+            'status' => TenantStatus::Provisioning,
+            'provisioning_status' => ProvisioningStatus::Pending,
             'plan_id' => $plan?->id,
             'subscription_status' => SubscriptionStatus::Trialing,
             'trial_ends_at' => now()->addDays(14),
+            'pending_admin' => [
+                'name' => $validated['admin_name'],
+                'email' => $validated['admin_email'],
+                'password' => Hash::make($validated['password']),
+            ],
         ]);
 
         $domain = $validated['slug'].'.'.config('tenancy.central_root_domain');
@@ -101,18 +108,6 @@ class SignupController extends Controller
             'ssl_status' => SslStatus::Issued,
         ]);
 
-        // Create the church's first Super Admin inside its own database.
-        $tenant->run(function () use ($validated): void {
-            $user = User::create([
-                'name' => $validated['admin_name'],
-                'email' => $validated['admin_email'],
-                'password' => $validated['password'], // hashed by the model cast
-                'is_active' => true,
-            ]);
-
-            $user->assignRole(Role::findOrCreate(AccessControl::SUPER_ADMIN, 'web'));
-        });
-
         TenantAudit::create([
             'tenant_id' => $tenant->id,
             'action' => 'signup',
@@ -123,7 +118,31 @@ class SignupController extends Controller
             'tenant_id' => $tenant->id,
             'slug' => $tenant->slug,
             'domain' => $domain,
+            'provisioning_status' => $tenant->provisioning_status->value,
+            'status_url' => route('api.platform.signup.status', ['tenant' => $tenant->id]),
             'admin_url' => Str::of("https://{$domain}/admins/login")->toString(),
-        ], JsonResponse::HTTP_CREATED);
+        ], JsonResponse::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Provisioning status for the signup wizard's poller (CHR-173). Keyed by the
+     * tenant's opaque id, so it is safe to expose without auth.
+     */
+    public function status(Tenant $tenant): JsonResponse
+    {
+        $provisioning = $tenant->provisioning_status ?? ProvisioningStatus::Pending;
+        $domain = $tenant->domains()->where('is_primary', true)->value('domain');
+
+        return response()->json([
+            'tenant_id' => $tenant->id,
+            'slug' => $tenant->slug,
+            'provisioning_status' => $provisioning->value,
+            'ready' => $provisioning->isReady(),
+            'failed' => $provisioning === ProvisioningStatus::Failed,
+            'error' => $provisioning === ProvisioningStatus::Failed ? $tenant->provisioning_error : null,
+            'admin_url' => $provisioning->isReady() && $domain !== null
+                ? "https://{$domain}/admins/login"
+                : null,
+        ]);
     }
 }

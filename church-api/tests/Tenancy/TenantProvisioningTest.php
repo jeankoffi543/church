@@ -1,12 +1,16 @@
 <?php
 
+use App\Enums\ProvisioningStatus;
+use App\Enums\TenantStatus;
 use App\Models\BibleVerse;
 use App\Models\Currency;
 use App\Models\Domain;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\AccessControl;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -43,6 +47,36 @@ afterEach(function () {
     foreach (glob(database_path('chr135_legacy_*.sqlite')) ?: [] as $leftover) {
         @unlink($leftover);
     }
+});
+
+it('walks the provisioning state machine through to ready (CHR-173)', function () {
+    $tenant = Tenant::factory()->create(); // ProvisionTenant runs synchronously here
+
+    $fresh = $tenant->fresh();
+
+    expect($fresh->provisioning_status)->toBe(ProvisioningStatus::Ready)
+        ->and($fresh->status)->toBe(TenantStatus::Active)
+        ->and($fresh->provisioned_at)->not->toBeNull();
+});
+
+it('seeds the deferred first admin from the stashed signup credentials (CHR-173)', function () {
+    $tenant = Tenant::factory()->create([
+        'pending_admin' => [
+            'name' => 'Pasteur Paul',
+            'email' => 'paul@grace.test',
+            'password' => Hash::make('secret123'),
+        ],
+    ]);
+
+    // The credentials are consumed then wiped from the central record.
+    expect($tenant->fresh()->pending_admin)->toBeNull();
+
+    $tenant->run(function () {
+        $admin = User::query()->where('email', 'paul@grace.test')->first();
+        expect($admin)->not->toBeNull()
+            ->and($admin->hasRole(AccessControl::SUPER_ADMIN))->toBeTrue()
+            ->and(Hash::check('secret123', $admin->password))->toBeTrue();
+    });
 });
 
 it('provisions a tenant database with the full church schema and baseline seed', function () {

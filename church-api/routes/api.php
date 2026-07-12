@@ -462,6 +462,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
         ->middleware('throttle:8,1')
         ->name('signup');
 
+    // Async provisioning status for the wizard poller (CHR-173).
+    Route::get('signup/status/{tenant}', [Platform\SignupController::class, 'status'])
+        ->middleware('throttle:120,1')
+        ->name('signup.status');
+
     // Mobile Hub foundations (CHR-149): church discovery + per-tenant push registry.
     Route::get('tenants/search', [Platform\DiscoveryController::class, 'search'])->name('tenants.search');
     Route::prefix('push')->name('push.')->middleware('throttle:30,1')->group(function (): void {

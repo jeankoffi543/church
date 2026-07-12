@@ -1,22 +1,24 @@
 <?php
 
+use App\Enums\ProvisioningStatus;
 use App\Enums\SubscriptionStatus;
+use App\Enums\TenantStatus;
+use App\Jobs\ProvisionTenant;
 use App\Models\Domain;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
-use App\Models\User;
-use App\Support\AccessControl;
-use Stancl\Tenancy\Events\TenantCreated;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Hash;
 
 /*
-| CHR-147 — self-service church signup: creates the tenant (provisioning faked
-| here — covered for real by the CHR-135 suite), reserves its subdomain and
-| provisions the first Super Admin.
+| CHR-147 / CHR-173 — self-service church signup: records the tenant as
+| Provisioning, reserves its subdomain, and hands the database build to the
+| async ProvisionTenant job (faked here; run for real in the Tenancy suite).
 */
 
 beforeEach(function () {
-    Event::fake([TenantCreated::class]);
+    Bus::fake([ProvisionTenant::class]);
     Plan::query()->create(['code' => 'free', 'name' => 'Assemblée', 'features' => [], 'limits' => ['members' => 100], 'is_active' => true]);
 });
 
@@ -32,26 +34,35 @@ function signupPayload(array $overrides = []): array
     ], $overrides);
 }
 
-it('signs up a church and provisions its super-admin', function () {
+it('signs up a church and queues its provisioning', function () {
     $this->postJson('/api/platform/signup', signupPayload())
-        ->assertCreated()
+        ->assertAccepted()
         ->assertJsonPath('slug', 'grace-chapel')
         ->assertJsonPath('domain', 'grace-chapel.churchapp.io')
-        ->assertJsonStructure(['tenant_id', 'slug', 'domain', 'admin_url']);
+        ->assertJsonPath('provisioning_status', 'pending')
+        ->assertJsonStructure(['tenant_id', 'slug', 'domain', 'provisioning_status', 'status_url', 'admin_url']);
 
     $tenant = Tenant::query()->where('slug', 'grace-chapel')->firstOrFail();
 
-    expect($tenant->subscription_status)->toBe(SubscriptionStatus::Trialing)
+    expect($tenant->status)->toBe(TenantStatus::Provisioning)
+        ->and($tenant->provisioning_status)->toBe(ProvisioningStatus::Pending)
+        ->and($tenant->subscription_status)->toBe(SubscriptionStatus::Trialing)
         ->and($tenant->plan_id)->not->toBeNull()
         ->and(Domain::query()->where('domain', 'grace-chapel.churchapp.io')->exists())->toBeTrue()
         ->and(TenantAudit::query()->where('action', 'signup')->where('tenant_id', $tenant->id)->exists())->toBeTrue();
 
-    // The Super Admin lives inside the tenant's own database.
-    $tenant->run(function () {
-        $admin = User::query()->where('email', 'paul@grace.test')->first();
-        expect($admin)->not->toBeNull()
-            ->and($admin->hasRole(AccessControl::SUPER_ADMIN))->toBeTrue();
-    });
+    // The heavy database build (and first-admin seed) is deferred to the queue.
+    Bus::assertDispatched(ProvisionTenant::class, fn (ProvisionTenant $job) => $job->tenant->is($tenant));
+});
+
+it('stashes the first-admin credentials hashed for the provisioning job', function () {
+    $this->postJson('/api/platform/signup', signupPayload())->assertAccepted();
+
+    $tenant = Tenant::query()->where('slug', 'grace-chapel')->firstOrFail();
+
+    expect($tenant->pending_admin['email'])->toBe('paul@grace.test')
+        ->and($tenant->pending_admin['password'])->not->toBe('secret123')
+        ->and(Hash::check('secret123', $tenant->pending_admin['password']))->toBeTrue();
 });
 
 it('rejects a reserved slug', function () {
@@ -127,4 +138,52 @@ it('requires a subdomain query parameter', function () {
     $this->getJson('/api/platform/signup/subdomain')
         ->assertStatus(422)
         ->assertJsonValidationErrorFor('subdomain');
+});
+
+/*
+| CHR-173 — async provisioning status polling + failure handling.
+*/
+
+it('reports a pending provisioning status', function () {
+    $tenant = Tenant::factory()->create(['slug' => 'pending-church', 'status' => TenantStatus::Provisioning]);
+    $tenant->domains()->create(['domain' => 'pending-church.churchapp.io', 'is_primary' => true]);
+
+    $this->getJson("/api/platform/signup/status/{$tenant->id}")
+        ->assertOk()
+        ->assertJsonPath('provisioning_status', 'pending')
+        ->assertJsonPath('ready', false)
+        ->assertJsonPath('failed', false)
+        ->assertJsonPath('admin_url', null);
+});
+
+it('exposes the admin url once provisioning is ready', function () {
+    $tenant = Tenant::factory()->create(['slug' => 'ready-church']);
+    $tenant->domains()->create(['domain' => 'ready-church.churchapp.io', 'is_primary' => true]);
+    $tenant->markReady();
+
+    $this->getJson("/api/platform/signup/status/{$tenant->id}")
+        ->assertOk()
+        ->assertJsonPath('provisioning_status', 'ready')
+        ->assertJsonPath('ready', true)
+        ->assertJsonPath('admin_url', 'https://ready-church.churchapp.io/admins/login');
+});
+
+it('surfaces the error when provisioning failed', function () {
+    $tenant = Tenant::factory()->create(['slug' => 'broken-church']);
+    $tenant->markFailed('Could not reach the database shard');
+
+    $this->getJson("/api/platform/signup/status/{$tenant->id}")
+        ->assertOk()
+        ->assertJsonPath('provisioning_status', 'failed')
+        ->assertJsonPath('failed', true)
+        ->assertJsonPath('error', 'Could not reach the database shard');
+});
+
+it('marks the tenant failed when the provisioning job fails', function () {
+    $tenant = Tenant::factory()->create(['slug' => 'doomed-church']);
+
+    (new ProvisionTenant($tenant))->failed(new RuntimeException('shard offline'));
+
+    expect($tenant->fresh()->provisioning_status)->toBe(ProvisioningStatus::Failed)
+        ->and($tenant->fresh()->provisioning_error)->toBe('shard offline');
 });
