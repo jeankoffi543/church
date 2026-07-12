@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Models\Convert;
 use App\Models\Member;
+use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Support\AccessControl;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,6 +36,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (mixed $user, string $ability): ?bool {
             return $user instanceof User && $user->hasRole(AccessControl::SUPER_ADMIN) ? true : null;
         });
+
+        // Look tokens up in the right database per context — central vs tenant
+        // (CHR-165). Without this, platform/identity tokens (central DB) were
+        // searched on the default connection and never authenticated in prod.
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
 
         // Stable aliases for FollowUp::followable — stored in the DB instead
         // of the FQCN so a future namespace/class rename doesn't orphan rows.

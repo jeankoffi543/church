@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Identity;
 use App\Http\Controllers\Api\Platform;
 use App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Api\V1\Public;
@@ -476,5 +477,23 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::post('tenants/{tenant}/studio/keys', [Platform\StudioController::class, 'createKey'])->name('tenants.studio.keys.create');
             Route::post('studio/keys/{activation}/revoke', [Platform\StudioController::class, 'revokeKey'])->name('studio.keys.revoke');
         });
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Identity API (global end-user identities — churchgoers)
+|--------------------------------------------------------------------------
+| Central context (no tenancy middleware): identities live in the landlord DB and
+| span every church. Auth is the `identity` guard, isolated from tenant users and
+| platform staff (CHR-165). Memberships / church discovery land in CHR-166–168.
+*/
+Route::prefix('identity')->name('api.identity.')->group(function (): void {
+    Route::post('register', [Identity\AuthController::class, 'register'])->middleware('throttle:8,1')->name('register');
+    Route::post('login', [Identity\AuthController::class, 'login'])->middleware('throttle:12,1')->name('login');
+
+    Route::middleware('auth:identity')->group(function (): void {
+        Route::get('me', [Identity\AuthController::class, 'me'])->name('me');
+        Route::post('logout', [Identity\AuthController::class, 'logout'])->name('logout');
     });
 });
