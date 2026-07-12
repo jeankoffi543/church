@@ -16,6 +16,7 @@ import {
   type ChatMessage,
 } from "@/lib/data";
 import type { SermonPoint } from "@/lib/api";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 export type LiveTab = "chat" | "priere" | "notes" | "description";
 
@@ -176,8 +177,9 @@ export function PrayerTab() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-        const res = await fetch(`${apiUrl}/public/settings?group=prayers`, {
+        // Tenant-aware: resolve THIS church's API from the current host, not a
+        // fixed origin (which lands on a central domain → 404).
+        const res = await fetch(`${await tenantApiBase()}/public/settings?group=prayers`, {
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
@@ -220,7 +222,7 @@ export function PrayerTab() {
     setLoading(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/public/prayer-requests`,
+        `${await tenantApiBase()}/public/prayer-requests`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
