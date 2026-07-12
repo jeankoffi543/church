@@ -40,20 +40,6 @@ class AssignTenantToShard
             return;
         }
 
-        $tenant->database_server_id = $server->id;
-        $tenant->setInternal('db_connection', $server->connection);
-        $tenant->setInternal('db_host', $server->host);
-
-        if ($server->port !== null) {
-            $tenant->setInternal('db_port', $server->port);
-        }
-
-        if ($server->username !== null) {
-            $tenant->setInternal('db_username', $server->username);
-        }
-
-        if ($server->password !== null) {
-            $tenant->setInternal('db_password', $server->password);
-        }
+        $server->applyTo($tenant);
     }
 }
