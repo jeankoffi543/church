@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\QueueName;
 use App\Mail\DonationReceiptMail;
 use App\Models\Donation;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,7 +17,10 @@ class SendDonationReceipt implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public Donation $donation) {}
+    public function __construct(public Donation $donation)
+    {
+        $this->onQueue(QueueName::Mail->value);
+    }
 
     public function handle(): void
     {
