@@ -73,3 +73,58 @@ it('requires a matching password confirmation', function () {
         ->assertStatus(422)
         ->assertJsonValidationErrorFor('password');
 });
+
+/*
+| CHR-172 — debounced subdomain availability for the signup wizard.
+*/
+
+it('reports a free subdomain as available with its full domain', function () {
+    $this->getJson('/api/platform/signup/subdomain?subdomain=grace-chapel')
+        ->assertOk()
+        ->assertJsonPath('available', true)
+        ->assertJsonPath('reason', null)
+        ->assertJsonPath('domain', 'grace-chapel.churchapp.io');
+});
+
+it('reports a reserved subdomain as unavailable', function () {
+    $this->getJson('/api/platform/signup/subdomain?subdomain=admin')
+        ->assertOk()
+        ->assertJsonPath('available', false)
+        ->assertJsonPath('reason', 'reserved')
+        ->assertJsonPath('domain', null);
+});
+
+it('reports a taken subdomain as unavailable', function () {
+    Tenant::factory()->create(['slug' => 'taken']);
+
+    $this->getJson('/api/platform/signup/subdomain?subdomain=taken')
+        ->assertOk()
+        ->assertJsonPath('available', false)
+        ->assertJsonPath('reason', 'taken');
+});
+
+it('rejects a malformed subdomain', function (string $subdomain) {
+    $this->getJson('/api/platform/signup/subdomain?subdomain='.urlencode($subdomain))
+        ->assertOk()
+        ->assertJsonPath('available', false)
+        ->assertJsonPath('reason', 'invalid');
+})->with([
+    'too short' => ['ab'],
+    'leading hyphen' => ['-bad'],
+    'trailing hyphen' => ['bad-'],
+    'illegal chars' => ['bad_slug!'],
+    'double hyphen edge' => ['a--'],
+]);
+
+it('normalises case and whitespace before checking', function () {
+    $this->getJson('/api/platform/signup/subdomain?subdomain='.urlencode('  Grace-Chapel  '))
+        ->assertOk()
+        ->assertJsonPath('subdomain', 'grace-chapel')
+        ->assertJsonPath('available', true);
+});
+
+it('requires a subdomain query parameter', function () {
+    $this->getJson('/api/platform/signup/subdomain')
+        ->assertStatus(422)
+        ->assertJsonValidationErrorFor('subdomain');
+});
