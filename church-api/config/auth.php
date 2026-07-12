@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CentralUser;
+use App\Models\Identity;
 use App\Models\User;
 
 return [
@@ -60,6 +61,14 @@ return [
             'driver' => 'sanctum',
             'provider' => 'central_users',
         ],
+
+        // Global end-user identities — churchgoers (CHR-165). A separate realm
+        // again: an identity token can never authenticate as a tenant user or
+        // platform staff, and vice versa (Sanctum checks the tokenable model).
+        'identity' => [
+            'driver' => 'sanctum',
+            'provider' => 'identities',
+        ],
     ],
 
     /*
@@ -88,6 +97,11 @@ return [
         'central_users' => [
             'driver' => 'eloquent',
             'model' => CentralUser::class,
+        ],
+
+        'identities' => [
+            'driver' => 'eloquent',
+            'model' => Identity::class,
         ],
 
         // 'users' => [
