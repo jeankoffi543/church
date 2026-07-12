@@ -23,7 +23,10 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
           const json = await res.json();
           const live = json.data;
           if (live) {
-            setConfig({
+            // The tenant channel prefix is immutable, so carry it over from the
+            // server-rendered config instead of refetching it each poll (CHR-155).
+            setConfig((prev) => ({
+              channelPrefix: prev.channelPrefix,
               isLive: Boolean(live.live_status),
               streamUrl: (live.live_embed_url as string) ?? "",
               chatEnabled: live.live_chat_enabled !== false,
@@ -33,7 +36,7 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
               sermonTitle: (live.live_sermon_title as string) ?? "La grâce qui transforme",
               sermonReference: (live.live_sermon_reference as string) ?? "Romains 5.1-11",
               sermonPoints: (live.live_sermon_points as SermonPoint[]) ?? [],
-            });
+            }));
           }
         }
       } catch (err) {

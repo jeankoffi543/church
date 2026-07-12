@@ -606,12 +606,25 @@ export type LiveConfig = {
   sermonTitle: string;
   sermonReference: string;
   sermonPoints: SermonPoint[];
+  /** `tenant.{key}.` prefix the Echo client mirrors so it only hears this church's live (CHR-155). */
+  channelPrefix: string;
 };
 
+/**
+ * The current tenant's realtime channel prefix. The backend broadcasts on
+ * `tenant.{key}.live`; the client must subscribe with the same prefix so a
+ * shared Reverb server never crosses one church's live stream into another's.
+ */
+export async function getRealtimeChannelPrefix(): Promise<string> {
+  const json = await apiGet<{ data: { channel_prefix: string } }>("/public/realtime", ["realtime"]);
+  return json?.data?.channel_prefix ?? "";
+}
+
 export async function getLiveConfig(): Promise<LiveConfig> {
-  const live = await getSettingsGroup("live");
+  const [live, channelPrefix] = await Promise.all([getSettingsGroup("live"), getRealtimeChannelPrefix()]);
 
   return {
+    channelPrefix,
     isLive: Boolean(live?.live_status),
     streamUrl: (live?.live_embed_url as string) ?? "",
     chatEnabled: live?.live_chat_enabled !== false,

@@ -86,6 +86,10 @@ Route::prefix('v1')
             Route::post('donations/initialize', [Public\DonationController::class, 'initialize'])->name('donations.initialize');
             Route::get('donations/{reference}/status', [Public\DonationController::class, 'status'])->name('donations.status');
 
+            // Reverb coordinates for this tenant: the `tenant.{key}.` channel
+            // prefix the client must mirror when subscribing (CHR-155).
+            Route::get('realtime', [Public\RealtimeController::class, 'index'])->name('realtime.index');
+
             // Live engine (Reverb realtime) — audience, chat & reactions.
             Route::get('live/chat', [Public\LiveController::class, 'messages'])->name('live.messages');
             Route::post('live/chat', [Public\LiveController::class, 'chat'])->name('live.chat');

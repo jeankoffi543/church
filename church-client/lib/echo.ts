@@ -46,11 +46,14 @@ export type LiveHandlers = {
 };
 
 /**
- * Subscribe to the public `live` channel. Handlers are kept in a ref so they
- * stay fresh without re-subscribing, and the channel is left on unmount — no
- * socket leak, single subscription for the component's lifetime.
+ * Subscribe to this church's live channel. The channel is tenant-scoped —
+ * `tenant.{key}.live` — so on a shared Reverb server one church never receives
+ * another's broadcasts (CHR-155); `channelPrefix` comes from the backend's public
+ * `realtime` endpoint. Handlers are kept in a ref so they stay fresh without
+ * re-subscribing, and the channel is left on unmount — no socket leak, single
+ * subscription for the component's lifetime.
  */
-export function useLiveChannel(handlers: LiveHandlers): void {
+export function useLiveChannel(channelPrefix: string, handlers: LiveHandlers): void {
   const ref = useRef(handlers);
 
   // Keep the latest handlers without re-subscribing the socket.
@@ -60,9 +63,12 @@ export function useLiveChannel(handlers: LiveHandlers): void {
 
   useEffect(() => {
     const echo = getEcho();
-    if (!echo) return;
+    // Without a tenant prefix the backend broadcasts nowhere we'd hear, so skip
+    // subscribing rather than listen on a stale/global name.
+    if (!echo || !channelPrefix) return;
 
-    const channel = echo.channel("live");
+    const channelName = `${channelPrefix}live`;
+    const channel = echo.channel(channelName);
     channel.listen(".chat.message", (d: ChatMessage) => ref.current.onChat?.(d));
     channel.listen(".reaction", (d: { type: string; total: number }) => ref.current.onReaction?.(d));
     channel.listen(".audience", (d: { count: number }) => ref.current.onAudience?.(d.count));
@@ -71,7 +77,7 @@ export function useLiveChannel(handlers: LiveHandlers): void {
     channel.listen(".scripture", (d: ScripturePayload) => ref.current.onScripture?.(d));
 
     return () => {
-      echo.leaveChannel("live");
+      echo.leaveChannel(channelName);
     };
-  }, []);
+  }, [channelPrefix]);
 }

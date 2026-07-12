@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Broadcasting\TenantChannel;
 use App\Models\LiveChatMessage;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -20,7 +21,7 @@ class ChatMessageSent implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [new Channel('live')];
+        return [new TenantChannel('live')];
     }
 
     public function broadcastAs(): string
