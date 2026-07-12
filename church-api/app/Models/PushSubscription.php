@@ -17,6 +17,7 @@ class PushSubscription extends Model
     use CentralConnection;
 
     protected $fillable = [
+        'identity_id',
         'device_token',
         'platform',
         'tenant_id',
@@ -33,6 +34,16 @@ class PushSubscription extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    /**
+     * The global identity (churchgoer) this device belongs to, if linked (CHR-168).
+     *
+     * @return BelongsTo<Identity, $this>
+     */
+    public function identity(): BelongsTo
+    {
+        return $this->belongsTo(Identity::class);
     }
 
     /**
