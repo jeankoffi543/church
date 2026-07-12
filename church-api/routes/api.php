@@ -269,6 +269,12 @@ Route::prefix('v1')
                     Route::post('members', [Admin\MemberController::class, 'store'])->name('members.store');
                     Route::match(['put', 'patch'], 'members/{member}', [Admin\MemberController::class, 'update'])->name('members.update');
                     Route::delete('members/{member}', [Admin\MemberController::class, 'destroy'])->name('members.destroy');
+
+                    // Push campaigns (CHR-170): compose then fan out to this church's
+                    // subscribers in the central registry.
+                    Route::get('push/campaigns', [Admin\PushCampaignController::class, 'index'])->name('push.campaigns.index');
+                    Route::post('push/campaigns', [Admin\PushCampaignController::class, 'store'])->name('push.campaigns.store');
+                    Route::post('push/campaigns/{campaign}/send', [Admin\PushCampaignController::class, 'send'])->name('push.campaigns.send');
                 });
 
                 // Évangélisation — campagnes de sortie + nouvelles âmes.
