@@ -11,11 +11,13 @@ use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
 use App\Models\User;
+use App\Services\Signup\SubdomainAvailability;
 use App\Support\AccessControl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -25,19 +27,52 @@ use Spatie\Permission\Models\Role;
  */
 class SignupController extends Controller
 {
-    /** Subdomains reserved for the platform itself. */
-    private const RESERVED = ['www', 'app', 'admin', 'admins', 'api', 'central', 'platform', 'mail', 'static', 'assets', 'churchapp'];
+    public function __construct(private readonly SubdomainAvailability $availability) {}
+
+    /** Debounced availability check for the signup wizard (CHR-172). */
+    public function checkSubdomain(Request $request): JsonResponse
+    {
+        $request->validate([
+            'subdomain' => ['required', 'string', 'max:60'],
+        ]);
+
+        $subdomain = strtolower(trim((string) $request->query('subdomain')));
+        $result = $this->availability->check($subdomain);
+
+        return response()->json([
+            'subdomain' => $subdomain,
+            'available' => $result['available'],
+            'reason' => $result['reason'],
+            'domain' => $result['available']
+                ? $subdomain.'.'.config('tenancy.central_root_domain')
+                : null,
+        ]);
+    }
 
     public function signup(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'church_name' => ['required', 'string', 'max:255'],
-            'slug' => ['required', 'string', 'lowercase', 'alpha_dash', 'min:3', 'max:40', Rule::notIn(self::RESERVED), Rule::unique(Tenant::class, 'slug')],
+            'slug' => ['required', 'string', 'lowercase', 'alpha_dash', 'min:3', 'max:40'],
             'admin_name' => ['required', 'string', 'max:255'],
             'admin_email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'plan_code' => ['nullable', 'string', Rule::exists(Plan::class, 'code')],
         ]);
+
+        // Reserve the subdomain through the shared service so uniqueness hits the
+        // central connection (a `unique` rule would query the tenant/default DB).
+        $availability = $this->availability->check($validated['slug']);
+
+        if (! $availability['available']) {
+            throw ValidationException::withMessages([
+                'slug' => [match ($availability['reason']) {
+                    'reserved' => 'Ce sous-domaine est réservé.',
+                    'taken' => 'Ce sous-domaine est déjà pris.',
+                    default => 'Ce sous-domaine est invalide.',
+                }],
+            ]);
+        }
 
         $plan = Plan::query()->where('is_active', true)
             ->where('code', $validated['plan_code'] ?? 'free')

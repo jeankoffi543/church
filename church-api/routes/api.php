@@ -452,6 +452,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     // Public plan catalogue for the SaaS marketing pricing page (CHR-146).
     Route::get('plans', [Platform\PlanController::class, 'index'])->name('plans');
 
+    // Debounced subdomain availability for the signup wizard (CHR-172).
+    Route::get('signup/subdomain', [Platform\SignupController::class, 'checkSubdomain'])
+        ->middleware('throttle:60,1')
+        ->name('signup.subdomain');
+
     // Self-service church signup (CHR-147) — throttled against abuse.
     Route::post('signup', [Platform\SignupController::class, 'signup'])
         ->middleware('throttle:8,1')
