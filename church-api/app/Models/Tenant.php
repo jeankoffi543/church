@@ -50,6 +50,7 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'name',
             'slug',
             'plan_id',
+            'database_server_id',
             'subscription_status',
             'trial_ends_at',
             'features',
@@ -84,6 +85,17 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     public function plan(): BelongsTo
     {
         return $this->belongsTo(Plan::class);
+    }
+
+    /**
+     * The physical database server (shard) this tenant lives on (central DB,
+     * CHR-162). Null = the implicit default server, until moved (CHR-164).
+     *
+     * @return BelongsTo<DatabaseServer, $this>
+     */
+    public function databaseServer(): BelongsTo
+    {
+        return $this->belongsTo(DatabaseServer::class);
     }
 
     /**
