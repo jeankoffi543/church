@@ -1249,7 +1249,6 @@ export function LiveStudioConsole({
   // TODO(studio): habillage OBS — disposition non encore reliée à un vrai moteur.
   const [dualLayout, setDualLayout] = useState(true);
   const [recTime, setRecTime] = useState(0);
-  const recLabel = `${String(Math.floor(recTime / 60)).padStart(2, "0")}:${String(recTime % 60).padStart(2, "0")}`;
   // The program-mode switch is wired to the REAL broadcast: switching to LIVE
   // starts the stream. Starting is EXCLUSIVELY the dock's "Démarrer le live"
   // (runs the real compositor+WHIP+Facebook sequence via `startLive`); the
@@ -1341,14 +1340,20 @@ export function LiveStudioConsole({
   }, []);
   // Feed the latest inputs to the preview-replay freeze (read only when an
   // action fires bumpPreviewAnim, so toggling a setting never replays — like the
-  // antenne). Assigned here, after the inputs' state exists.
-  previewReplayInputs.current = { layers, sel: selectedLayerId, global: replayOnCut };
+  // antenne). Written in an effect (never during render) so it stays fresh for
+  // the next action without violating the refs-during-render rule.
+  useEffect(() => {
+    previewReplayInputs.current = { layers, sel: selectedLayerId, global: replayOnCut };
+  });
 
   // CHR-57 — the TRIGGER sources currently on air. ANY source can be a trigger,
   // each judged by its own "on air" condition: audio → diffused (audioLiveActive);
   // bible → a diffused verse (`live` + `bibleOnAir`); every other (visual) source
   // → simply visible in the program (and not blacked out). Memoised so the
   // broadcast effect only re-runs when the on-air set actually changes.
+  // `live` presence (not its identity) is what matters for the bible gate, so
+  // depend on the boolean — a simple, stable dependency.
+  const livePresent = !!live;
   const onAirTriggerIds = useMemo(() => {
     const s = new Set<string>();
     if (programBlack) return s;
@@ -1359,15 +1364,13 @@ export function LiveStudioConsole({
       }
       if (!l.visible) continue;
       if (l.type === "bible") {
-        if (live && l.bibleOnAir !== false) s.add(l.id);
+        if (livePresent && l.bibleOnAir !== false) s.add(l.id);
       } else {
         s.add(l.id);
       }
     }
     return s;
-    // `live` presence (not identity) is what matters for the bible gate.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programLayers, programBlack, !!live]);
+  }, [programLayers, programBlack, livePresent]);
 
   // Preview "Tester la réaction": the id of the layer whose reaction is being
   // simulated in the Preview; the preview then treats that layer's trigger as
@@ -1414,13 +1417,16 @@ export function LiveStudioConsole({
   // header/dock's visual "REC 00:00" readout, ticking only while it's genuinely
   // recording.
   useEffect(() => {
-    if (!broadcast.recording) {
-      setRecTime(0);
-      return;
-    }
-    const id = setInterval(() => setRecTime((t) => t + 1), 1000);
+    if (!broadcast.recording) return;
+    // Derive elapsed from a start stamp so the effect never setStates
+    // synchronously; the label shows 00:00 whenever we're not recording.
+    const startedAt = Date.now();
+    const id = setInterval(() => setRecTime(Math.floor((Date.now() - startedAt) / 1000)), 250);
     return () => clearInterval(id);
   }, [broadcast.recording]);
+  const recLabel = broadcast.recording
+    ? `${String(Math.floor(recTime / 60)).padStart(2, "0")}:${String(recTime % 60).padStart(2, "0")}`
+    : "00:00";
   const [recBusy, setRecBusy] = useState(false);
   const toggleRecording = async () => {
     setRecBusy(true);
