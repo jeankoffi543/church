@@ -75,7 +75,7 @@ export function SettingsForm({
   const handleUpdateDeliveryOption = (
     index: number,
     field: "label" | "desc" | "price" | "icon" | "key",
-    val: any
+    val: string | number
   ) => {
     setStoreDeliveryOptions((prev) =>
       prev.map((opt, i) => (i === index ? { ...opt, [field]: val } : opt))

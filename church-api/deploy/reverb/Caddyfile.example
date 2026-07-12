@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Caddy — TLS termination for the Reverb WebSocket server (CHR-158)
+# ---------------------------------------------------------------------------
+# The browser/Echo connects over wss:// on 443; Caddy terminates TLS and proxies
+# to the local `reverb:start` process on :8080 (WebSocket upgrade is automatic).
+# Caddy auto-provisions/renews certificates — and its on-demand TLS is what lets
+# each tenant's custom domain get a cert on first request (see the multitenant
+# architecture). Set the client env to match:
+#
+#   REVERB_HOST=ws.churchapp.io   REVERB_PORT=443   REVERB_SCHEME=https
+#
+# Run `reverb:start` under supervisor (deploy/supervisor/church-api.conf).
+
+ws.churchapp.io {
+	# All traffic on this host is the Reverb WebSocket app.
+	reverse_proxy 127.0.0.1:8080
+}
+
+# If you prefer to serve WebSockets under a path on the API host instead of a
+# dedicated subdomain, mount them at /app (Reverb's default path) and keep
+# REVERB_HOST=api.churchapp.io, REVERB_PORT=443, REVERB_SCHEME=https:
+#
+# api.churchapp.io {
+# 	@reverb path /app/* /apps/*
+# 	reverse_proxy @reverb 127.0.0.1:8080
+# 	# … your normal PHP/FPM handling for the rest …
+# }
