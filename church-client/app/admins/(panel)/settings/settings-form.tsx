@@ -17,6 +17,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { updateAdminSettings } from "@/lib/admin-api";
+import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import { LocationPicker } from "../_components/location-picker";
 
@@ -164,17 +165,9 @@ export function SettingsForm({
 
   // Live states have been transferred to Live Studio console.
 
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace("/api/v1", "")
-    : "http://127.0.0.1:8000";
-
-  const getPreviewUrl = (urlOrBlob: string) => {
-    if (!urlOrBlob) return "";
-    if (urlOrBlob.startsWith("blob:") || urlOrBlob.startsWith("data:")) {
-      return urlOrBlob;
-    }
-    return urlOrBlob.startsWith("/") ? `${backendUrl}${urlOrBlob}` : urlOrBlob;
-  };
+  // Tenant-aware asset URL (CHR-154): relative `/tenancy/assets/...` served
+  // same-origin from THIS church's storage; blob/data/http pass through.
+  const getPreviewUrl = (urlOrBlob: string) => assetUrl(urlOrBlob) ?? "";
 
   // Image handler for live fallback image removed.
 

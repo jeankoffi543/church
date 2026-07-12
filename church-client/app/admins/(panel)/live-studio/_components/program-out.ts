@@ -19,6 +19,7 @@
  * headers, and external links without CORS simply won't appear.
  */
 
+import { assetUrl } from "@/lib/asset-url";
 import { getAudioContext, getAudioController } from "./studio-audio";
 import { getCameraStream, subscribeCameraStreams } from "./studio-camera";
 import {
@@ -45,13 +46,10 @@ export type BibleContext = { verse: ScriptureVerse | null; style: StudioSettings
 
 /* ── URL + geometry helpers (mirror composite-layer / studio-style) ──────── */
 
-/** Resolve a backend-relative path to an absolute URL (same rule as the DOM
- *  renderer's `getImageUrl`). */
+/** Resolve a stored media path for THIS tenant (same rule as the DOM renderer's
+ *  `getImageUrl`): a same-origin `/tenancy/assets/…` URL (CHR-154). */
 function resolveMediaUrl(url: string | undefined | null): string {
-  if (!url) return "";
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-  const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
-  return url.startsWith("/") ? `${backendUrl}${url}` : url;
+  return assetUrl(url) ?? "";
 }
 
 type Box = { x: number; y: number; w: number; h: number };

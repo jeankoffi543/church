@@ -3,7 +3,7 @@
 // All conversion math happens here so it stays out of components.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -76,7 +76,7 @@ export function formatPrice(amount: number, currency: Currency): string {
 /** Fetch active currencies from the public API. */
 export async function fetchPublicCurrencies(): Promise<Currency[]> {
   try {
-    const res = await fetch(`${API_URL}/public/store/currencies`, {
+    const res = await fetch(`${await tenantApiBase()}/public/store/currencies`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 300, tags: ["currencies"] },
     });

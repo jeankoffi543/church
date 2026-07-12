@@ -1,6 +1,6 @@
 // Client-side helpers for the public Paystack donation flow.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 export type DonationFrequency = "unique" | "mensuel";
 
@@ -34,7 +34,7 @@ export type DonationStatusResult = {
 
 /** Open a transaction server-side; returns the keys for the Paystack popup. */
 export async function initializeDonation(input: DonationInitInput): Promise<DonationInit> {
-  const res = await fetch(`${API_URL}/public/donations/initialize`, {
+  const res = await fetch(`${await tenantApiBase()}/public/donations/initialize`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(input),
@@ -48,7 +48,7 @@ export async function initializeDonation(input: DonationInitInput): Promise<Dona
 
 /** Poll the accounting status (the webhook flips it to `success`). */
 export async function getDonationStatus(reference: string): Promise<DonationStatusResult> {
-  const res = await fetch(`${API_URL}/public/donations/${reference}/status`, {
+  const res = await fetch(`${await tenantApiBase()}/public/donations/${reference}/status`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error("Statut indisponible.");

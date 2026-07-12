@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Heart, Share2, BookOpen } from "lucide-react";
 import { IMG } from "@/lib/data";
+import { assetUrl } from "@/lib/asset-url";
 import type { LiveConfig } from "@/lib/api";
 import type Hls from "hls.js";
 
@@ -52,14 +53,8 @@ export function LivePlayer({
     }
   }
 
-  // Prepend backend URL to public storage paths if they are relative
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL 
-    ? process.env.NEXT_PUBLIC_API_URL.replace("/api/v1", "") 
-    : "http://127.0.0.1:8000";
-
-  const fallbackImageSrc = config.fallbackImage
-    ? (config.fallbackImage.startsWith("/") ? `${backendUrl}${config.fallbackImage}` : config.fallbackImage)
-    : IMG.livePlayer;
+  // Resolve the stored fallback image for THIS tenant (CHR-154 same-origin proxy).
+  const fallbackImageSrc = assetUrl(config.fallbackImage) ?? IMG.livePlayer;
 
   useEffect(() => {
     const video = videoRef.current;

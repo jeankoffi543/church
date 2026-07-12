@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from "react-dom";
 import { CheckCircle, AlertCircle, AlertTriangle, Square, Maximize } from "lucide-react";
 
+import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import {
   searchBible,
@@ -285,15 +286,8 @@ function sanitizeScenes(scenes: StudioScene[]): StudioScene[] {
   }));
 }
 
-const getAudioUrl = (url: string | undefined | null): string => {
-  if (!url) return "";
-  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("http:") || url.startsWith("https:")) {
-    return url;
-  }
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-  const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
-  return url.startsWith("/") ? `${backendUrl}${url}` : url;
-};
+// Same-origin `/tenancy/assets/…` for THIS tenant (CHR-154); blob/data/http pass through.
+const getAudioUrl = (url: string | undefined | null): string => assetUrl(url) ?? "";
 
 function AudioElementPlayer({
   layer,
@@ -693,10 +687,6 @@ export function LiveStudioConsole({
   const [defaultVersion, setDefaultVersionState] = useState<string>(
     (liveSettings.bible_default_version as string) || "LSG"
   );
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL
-    ? process.env.NEXT_PUBLIC_API_URL.replace("/api/v1", "")
-    : "http://127.0.0.1:8000";
-
   // Hide the admin layout topbar header for the live studio console
   useEffect(() => {
     const topbar = document.getElementById("admin-topbar");
@@ -1082,13 +1072,7 @@ export function LiveStudioConsole({
   );
 
   // Media & Settings Handlers
-  const getPreviewUrl = (urlOrBlob: string) => {
-    if (!urlOrBlob) return "";
-    if (urlOrBlob.startsWith("blob:") || urlOrBlob.startsWith("data:")) {
-      return urlOrBlob;
-    }
-    return urlOrBlob.startsWith("/") ? `${backendUrl}${urlOrBlob}` : urlOrBlob;
-  };
+  const getPreviewUrl = (urlOrBlob: string) => assetUrl(urlOrBlob) ?? "";
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

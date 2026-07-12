@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 
 import { LiveDot } from "@/components/ui/live-dot";
 import { updateAdminSettings } from "@/lib/admin-api";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 /**
  * Live status indicator shown in the admin top bar on every backoffice page.
@@ -19,11 +20,10 @@ export function LiveStatusControl({ initialIsLive }: { initialIsLive: boolean })
 
   // Keep the indicator fresh across the whole backoffice.
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
     let active = true;
     const refresh = async () => {
       try {
-        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+        const res = await fetch(`${await tenantApiBase()}/public/settings?group=live`, {
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
