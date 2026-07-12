@@ -8,6 +8,7 @@ use App\Enums\PushCampaignStatus;
 use Database\Factories\PushCampaignFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A church's push campaign (CHR-170), in the tenant DB. Fans out to the church's
@@ -40,5 +41,13 @@ class PushCampaign extends Model
             'status' => PushCampaignStatus::class,
             'sent_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @return HasMany<PushReceipt, $this>
+     */
+    public function receipts(): HasMany
+    {
+        return $this->hasMany(PushReceipt::class);
     }
 }

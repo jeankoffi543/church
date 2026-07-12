@@ -22,12 +22,14 @@ class PushSubscription extends Model
         'platform',
         'tenant_id',
         'topics',
+        'muted',
     ];
 
     protected function casts(): array
     {
         return [
             'topics' => 'array',
+            'muted' => 'boolean',
         ];
     }
 

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Identity;
 
 use App\Enums\TenantStatus;
 use App\Http\Controllers\Controller;
+use App\Models\PushReceipt;
 use App\Models\PushSubscription;
 use App\Models\Tenant;
 use Illuminate\Http\JsonResponse;
@@ -90,6 +91,59 @@ class HubController extends Controller
         $removed = $request->user()->pushSubscriptions()->where('device_token', $validated['device_token'])->delete();
 
         return response()->json(['removed' => $removed]);
+    }
+
+    /** Mute a church's push on all this identity's devices (opt-out, CHR-171). */
+    public function mute(Request $request, Tenant $tenant): JsonResponse
+    {
+        return $this->setMuted($request, $tenant, true);
+    }
+
+    /** Re-enable a church's push (opt back in). */
+    public function unmute(Request $request, Tenant $tenant): JsonResponse
+    {
+        return $this->setMuted($request, $tenant, false);
+    }
+
+    /** Report that a campaign notification was opened, for the church's analytics. */
+    public function markOpened(Request $request, Tenant $tenant): JsonResponse
+    {
+        $validated = $request->validate([
+            'campaign_id' => ['required', 'integer'],
+            'device_token' => ['required', 'string', 'max:512'],
+        ]);
+
+        $ownsDevice = $request->user()->pushSubscriptions()
+            ->where('tenant_id', $tenant->id)
+            ->where('device_token', $validated['device_token'])
+            ->exists();
+
+        if (! $ownsDevice) {
+            return response()->json(['message' => 'Appareil inconnu pour cette église.'], 403);
+        }
+
+        tenancy()->initialize($tenant);
+
+        try {
+            $opened = PushReceipt::query()
+                ->where('push_campaign_id', $validated['campaign_id'])
+                ->where('device_token', $validated['device_token'])
+                ->whereNull('opened_at')
+                ->update(['opened_at' => now()]);
+        } finally {
+            tenancy()->end();
+        }
+
+        return response()->json(['opened' => $opened > 0]);
+    }
+
+    private function setMuted(Request $request, Tenant $tenant, bool $muted): JsonResponse
+    {
+        $devices = $request->user()->pushSubscriptions()
+            ->where('tenant_id', $tenant->id)
+            ->update(['muted' => $muted]);
+
+        return response()->json(['muted' => $muted, 'devices' => $devices]);
     }
 
     /**

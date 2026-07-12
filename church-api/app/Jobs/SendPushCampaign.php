@@ -8,6 +8,7 @@ use App\Enums\PushCampaignStatus;
 use App\Enums\QueueName;
 use App\Jobs\Middleware\LimitPerTenant;
 use App\Models\PushCampaign;
+use App\Models\PushReceipt;
 use App\Models\PushSubscription;
 use App\Services\Push\PushManager;
 use App\Services\Push\PushMessage;
@@ -44,6 +45,7 @@ class SendPushCampaign implements ShouldQueue
         // job, but we don't depend on it for the central query).
         $subscriptions = PushSubscription::query()
             ->where('tenant_id', $this->tenantId)
+            ->where('muted', false) // opt-out (CHR-171)
             ->get();
 
         if ($campaign->segment !== null) {
@@ -56,6 +58,15 @@ class SendPushCampaign implements ShouldQueue
             new PushMessage($campaign->title, $campaign->body, $campaign->data ?? []),
             $subscriptions,
         );
+
+        // Per-device receipts for analytics + open tracking (CHR-171).
+        $delivered = array_flip($result->delivered);
+        foreach ($subscriptions as $subscription) {
+            PushReceipt::updateOrCreate(
+                ['push_campaign_id' => $campaign->id, 'device_token' => $subscription->device_token],
+                ['delivered' => isset($delivered[$subscription->device_token])],
+            );
+        }
 
         // Drop tokens the provider rejected (unregistered devices).
         if ($result->failed !== []) {

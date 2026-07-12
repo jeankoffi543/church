@@ -273,7 +273,9 @@ Route::prefix('v1')
                     // Push campaigns (CHR-170): compose then fan out to this church's
                     // subscribers in the central registry.
                     Route::get('push/campaigns', [Admin\PushCampaignController::class, 'index'])->name('push.campaigns.index');
+                    Route::get('push/audience', [Admin\PushCampaignController::class, 'audience'])->name('push.audience');
                     Route::post('push/campaigns', [Admin\PushCampaignController::class, 'store'])->name('push.campaigns.store');
+                    Route::get('push/campaigns/{campaign}', [Admin\PushCampaignController::class, 'show'])->name('push.campaigns.show');
                     Route::post('push/campaigns/{campaign}/send', [Admin\PushCampaignController::class, 'send'])->name('push.campaigns.send');
                 });
 
@@ -523,5 +525,10 @@ Route::prefix('identity')->name('api.identity.')->group(function (): void {
         Route::get('devices', [Identity\HubController::class, 'devices'])->name('devices.index');
         Route::post('memberships/{tenant}/device', [Identity\HubController::class, 'registerDevice'])->name('devices.register');
         Route::post('devices/forget', [Identity\HubController::class, 'forgetDevice'])->name('devices.forget');
+
+        // Push preferences + open tracking (CHR-171).
+        Route::post('churches/{tenant}/push/mute', [Identity\HubController::class, 'mute'])->name('push.mute');
+        Route::post('churches/{tenant}/push/unmute', [Identity\HubController::class, 'unmute'])->name('push.unmute');
+        Route::post('churches/{tenant}/push/opened', [Identity\HubController::class, 'markOpened'])->name('push.opened');
     });
 });
