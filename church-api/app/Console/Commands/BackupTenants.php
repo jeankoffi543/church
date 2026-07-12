@@ -2,21 +2,40 @@
 
 namespace App\Console\Commands;
 
+use App\Models\DatabaseServer;
 use App\Models\Tenant;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
-#[Signature('tenants:backup {--tenant= : One tenant id; omit to back up every tenant}')]
-#[Description('Back up each tenant database (CHR-150). SQLite databases are copied; for MySQL/Postgres run the driver dump printed as guidance.')]
+#[Signature('tenants:backup
+    {--tenant= : One tenant id; omit to back up every tenant}
+    {--server= : Only tenants on this database server (per-shard backup, CHR-164)}')]
+#[Description('Back up each tenant database (CHR-150). SQLite databases are copied; for MySQL/Postgres run the driver dump printed as guidance. --server backs up a single shard.')]
 class BackupTenants extends Command
 {
     public function handle(): int
     {
-        $tenants = $this->option('tenant')
-            ? Tenant::query()->whereKey($this->option('tenant'))->get()
-            : Tenant::all();
+        $query = Tenant::query();
+
+        if ($this->option('tenant')) {
+            $query->whereKey($this->option('tenant'));
+        }
+
+        if ($server = $this->option('server')) {
+            $databaseServer = DatabaseServer::firstWhere('name', $server);
+
+            if ($databaseServer === null) {
+                $this->error("Serveur « {$server} » introuvable dans le registre.");
+
+                return self::FAILURE;
+            }
+
+            $query->where('database_server_id', $databaseServer->id);
+        }
+
+        $tenants = $query->get();
 
         if ($tenants->isEmpty()) {
             $this->warn('Aucune église à sauvegarder.');

@@ -40,4 +40,12 @@ class DatabaseServerFactory extends Factory
     {
         return $this->state(['max_tenants' => $max]);
     }
+
+    /** A server that has a read replica (read/write split). */
+    public function withReadReplica(?string $host = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'read_host' => $host ?? 'replica-'.($attributes['host'] ?? fake()->localIpv4()),
+        ]);
+    }
 }

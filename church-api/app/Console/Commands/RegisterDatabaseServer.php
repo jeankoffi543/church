@@ -13,6 +13,7 @@ use Illuminate\Console\Command;
     {name : Unique label for the server (e.g. shard-eu-1)}
     {host : Hostname/IP of the database server}
     {--connection=mysql : DB manager / driver (mysql, mariadb, pgsql, sqlite)}
+    {--read-host= : Read replica host — reads are routed there, writes to --host (CHR-164)}
     {--port= : Port (blank = driver default)}
     {--username= : DB user used to create tenant databases}
     {--password= : DB password for that user}
@@ -32,6 +33,7 @@ class RegisterDatabaseServer extends Command
             [
                 'connection' => $this->option('connection'),
                 'host' => $this->argument('host'),
+                'read_host' => $this->option('read-host'),
                 'port' => $port !== null ? (int) $port : null,
                 'username' => $this->option('username'),
                 'password' => $this->option('password'),

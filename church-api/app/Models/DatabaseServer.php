@@ -27,6 +27,7 @@ class DatabaseServer extends Model
         'name',
         'connection',
         'host',
+        'read_host',
         'port',
         'username',
         'password',
@@ -56,6 +57,41 @@ class DatabaseServer extends Model
     public function tenants(): HasMany
     {
         return $this->hasMany(Tenant::class);
+    }
+
+    /**
+     * Point a tenant at this server: write its per-DB connection internals
+     * (host/port/user/pass + the `db_connection` template) and link it in the
+     * registry. Shared by shard SELECTION at provisioning (CHR-163) and the
+     * move command (CHR-164). When a read replica is set, the tenant gets a
+     * read/write-split connection (reads → replica, writes → primary).
+     */
+    public function applyTo(Tenant $tenant): void
+    {
+        $tenant->database_server_id = $this->id;
+        // NB: read the `connection` COLUMN via getAttribute — inside the model
+        // `$this->connection` resolves Eloquent's protected connection-name
+        // property, not the column (they collide by name).
+        $tenant->setInternal('db_connection', $this->getAttribute('connection'));
+        $tenant->setInternal('db_host', $this->host);
+
+        if ($this->port !== null) {
+            $tenant->setInternal('db_port', $this->port);
+        }
+
+        if ($this->username !== null) {
+            $tenant->setInternal('db_username', $this->username);
+        }
+
+        if ($this->password !== null) {
+            $tenant->setInternal('db_password', $this->password);
+        }
+
+        if ($this->read_host !== null) {
+            $tenant->setInternal('db_read', ['host' => [$this->read_host]]);
+            $tenant->setInternal('db_write', ['host' => [$this->host]]);
+            $tenant->setInternal('db_sticky', true);
+        }
     }
 
     /** Whether this server can still take on another tenant (null cap = unlimited). */
