@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Public;
 
 use App\Enums\VideoSourceType;
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateLiveThumbnail;
 use App\Models\PastLive;
 use App\Models\Setting;
 use Illuminate\Http\Request;
@@ -62,10 +63,16 @@ class RtmpController extends Controller
             ->latest('id')
             ->first();
 
-        $live?->update([
-            'video_path' => "/storage/lives/recordings/{$file}",
-            'embed_url' => null,
-        ]);
+        if ($live !== null) {
+            $live->update([
+                'video_path' => "/storage/lives/recordings/{$file}",
+                'embed_url' => null,
+            ]);
+
+            // Poster thumbnail + real duration off the request path, on the media
+            // queue (CHR-161).
+            GenerateLiveThumbnail::dispatch($live->id);
+        }
 
         return response('', 200);
     }
