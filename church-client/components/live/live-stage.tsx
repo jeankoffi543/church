@@ -140,7 +140,8 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
   }, []);
 
   // Single socket subscription, fanned out to chat / audience / reactions / state.
-  useLiveChannel({
+  // The channel is tenant-scoped so this church only hears its own live (CHR-155).
+  useLiveChannel(config.channelPrefix, {
     onChat: appendMessage,
     onAudience: setAudience,
     onReaction: ({ type }) => reactionsRef.current?.spawn(type as ReactionType),

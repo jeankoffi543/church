@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Broadcasting\TenantChannel;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -24,7 +25,7 @@ class LiveStateChanged implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [new Channel('live')];
+        return [new TenantChannel('live')];
     }
 
     public function broadcastAs(): string

@@ -6,8 +6,19 @@ use App\Events\ScriptureStreamEvent;
 use App\Models\LiveChatMessage;
 use App\Models\PastLive;
 use App\Models\Setting;
+use App\Models\Tenant;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+
+// The live events now broadcast on a tenant-scoped channel (CHR-155), so their
+// `broadcastOn()` needs an active tenant. HTTP requests get one from the tenancy
+// middleware; the `mfm:archive-live` command is exercised here standalone via
+// artisan(), so bind the seeded tenant the way its real callers (tenant HTTP
+// requests) always do. Re-initialising the same tenant inside a request is a
+// no-op (stancl short-circuits), so this is transparent to the HTTP tests.
+beforeEach(function () {
+    tenancy()->initialize(Tenant::first());
+});
 
 /* ── Chat, reactions, audience ──────────────────────────────────── */
 

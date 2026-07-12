@@ -12,14 +12,30 @@ use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 use Stancl\Tenancy\Contracts\TenantCouldNotBeIdentifiedException;
+use Stancl\Tenancy\Middleware\InitializeTenancyByDomain;
+use Stancl\Tenancy\Middleware\PreventAccessFromCentralDomains;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+    )
+    // Broadcasting auth runs INSIDE the tenancy middleware (CHR-155): the tenant
+    // is resolved from the request Host first, so channel authorization and the
+    // Sanctum user both resolve against the tenant's own database — never the
+    // central one. (Registered here, not via `withRouting(channels:)`, so we can
+    // attach that middleware instead of the framework default `web`.)
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        attributes: [
+            'middleware' => [
+                InitializeTenancyByDomain::class,
+                PreventAccessFromCentralDomains::class,
+                'auth:sanctum',
+            ],
+        ],
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // API-only app: never redirect unauthenticated requests to a web
