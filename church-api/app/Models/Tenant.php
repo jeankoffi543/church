@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\Feature;
+use App\Enums\ProvisioningStatus;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantStatus;
 use Database\Factories\TenantFactory;
@@ -57,6 +58,9 @@ class Tenant extends BaseTenant implements TenantWithDatabase
             'studio_enabled',
             'studio_seats',
             'status',
+            'provisioning_status',
+            'provisioning_error',
+            'provisioned_at',
         ];
     }
 
@@ -68,6 +72,8 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         return [
             'subscription_status' => SubscriptionStatus::class,
             'status' => TenantStatus::class,
+            'provisioning_status' => ProvisioningStatus::class,
+            'provisioned_at' => 'datetime',
             'trial_ends_at' => 'datetime',
             'features' => 'array',
             'studio_enabled' => 'boolean',
@@ -104,6 +110,42 @@ class Tenant extends BaseTenant implements TenantWithDatabase
     public function subscription(): HasOne
     {
         return $this->hasOne(Subscription::class)->latestOfMany();
+    }
+
+    /**
+     * Provisioning state machine (CHR-173) — driven by the ProvisionTenant job so
+     * the signup wizard can poll a church's readiness.
+     */
+    public function markProvisioning(): void
+    {
+        $this->forceFill([
+            'provisioning_status' => ProvisioningStatus::Provisioning,
+            'provisioning_error' => null,
+        ])->save();
+    }
+
+    public function markReady(): void
+    {
+        $this->forceFill([
+            'provisioning_status' => ProvisioningStatus::Ready,
+            'provisioning_error' => null,
+            'provisioned_at' => now(),
+            'status' => TenantStatus::Active,
+        ])->save();
+    }
+
+    public function markFailed(string $error): void
+    {
+        $this->forceFill([
+            'provisioning_status' => ProvisioningStatus::Failed,
+            'provisioning_error' => mb_substr($error, 0, 2000),
+        ])->save();
+    }
+
+    /** Whether the tenant's database is built and ready to serve. */
+    public function isProvisioned(): bool
+    {
+        return $this->provisioning_status === ProvisioningStatus::Ready;
     }
 
     /**

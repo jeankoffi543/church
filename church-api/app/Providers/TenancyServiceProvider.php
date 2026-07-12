@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Listeners\AssignTenantToShard;
+use App\Listeners\StartTenantProvisioning;
 use Illuminate\Cache\TaggableStore;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\Cache;
@@ -34,17 +35,10 @@ class TenancyServiceProvider extends ServiceProvider
                 AssignTenantToShard::class,
             ],
             Events\TenantCreated::class => [
-                JobPipeline::make([
-                    Jobs\CreateDatabase::class,
-                    Jobs\MigrateDatabase::class,
-                    Jobs\SeedDatabase::class, // seeds the tenant baseline (CHR-135)
-
-                    // Your own jobs to prepare the tenant.
-                    // Provision API keys, create S3 buckets, anything you want!
-
-                ])->send(function (Events\TenantCreated $event) {
-                    return $event->tenant;
-                })->shouldBeQueued(false), // `false` by default, but you probably want to make this `true` for production.
+                // Provision the tenant's database off the request via a tracked,
+                // queued state machine (CHR-173) — create → migrate → seed baseline
+                // (CHR-135) → first admin — instead of a synchronous job pipeline.
+                StartTenantProvisioning::class,
             ],
             Events\SavingTenant::class => [],
             Events\TenantSaved::class => [],
