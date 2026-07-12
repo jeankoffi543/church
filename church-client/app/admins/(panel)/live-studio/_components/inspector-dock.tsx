@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 
 import { importStudioMediaFromUrl } from "@/lib/admin-api";
+import { assetUrl } from "@/lib/asset-url";
 import { uploadStudioMediaWithProgress } from "@/lib/studio-upload";
 
 import { type ScriptureVerse, type StudioSettings } from "@/lib/studio";
@@ -3086,11 +3087,7 @@ function EntrySoundBlock({ layer, patch }: { layer: StudioLayer; patch: Patch })
               <button
                 type="button"
                 onClick={() => {
-                  const a = new Audio(
-                    url.startsWith("http") || url.startsWith("blob:")
-                      ? url
-                      : `${process.env.NEXT_PUBLIC_API_URL?.replace("/api/v1", "") || "http://127.0.0.1:8000"}${url}`,
-                  );
+                  const a = new Audio(assetUrl(url) ?? "");
                   a.volume = Math.max(0, Math.min(1, volume / 100));
                   void a.play().catch(() => {});
                 }}

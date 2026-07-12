@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, Flame, Users, MapPin, Phone, HelpCircle, BookOpen, Video, Image as ImageIcon, Calendar, Quote, ShoppingBag } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 import { Logo } from "./logo";
 import { BrandButton } from "@/components/ui/brand-button";
 import { LiveDot } from "@/components/ui/live-dot";
@@ -67,8 +68,7 @@ export function Navbar() {
   useEffect(() => {
     const checkLive = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+        const res = await fetch(`${await tenantApiBase()}/public/settings?group=live`, {
           headers: { Accept: "application/json" },
         });
         if (res.ok) {

@@ -1,4 +1,5 @@
 import { getAdminSession } from "@/lib/auth/session";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 
 /**
  * Streaming upload proxy for Live Studio media (video / image). The browser XHRs
@@ -19,9 +20,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ message: "Session expirée." }, { status: 401 });
   }
 
-  const base = process.env.NEXT_PUBLIC_API_URL || "";
-
-  const upstream = await fetch(`${base}/admin/studio/media`, {
+  const upstream = await fetch(`${await tenantApiBase()}/admin/studio/media`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${session.token}`,

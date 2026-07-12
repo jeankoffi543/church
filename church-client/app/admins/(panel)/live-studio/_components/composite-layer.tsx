@@ -4,6 +4,7 @@ import type React from "react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { motion, useAnimationControls, type TargetAndTransition } from "framer-motion";
 
+import { assetUrl } from "@/lib/asset-url";
 import type { ScriptureVerse } from "@/lib/studio";
 import {
   TypewriterText,
@@ -57,15 +58,10 @@ const MEDIA_RESET = {
   clipPath: "none",
 } as const;
 
-const getImageUrl = (url: string | undefined | null): string => {
-  if (!url) return "";
-  if (url.startsWith("blob:") || url.startsWith("data:") || url.startsWith("http:") || url.startsWith("https:")) {
-    return url;
-  }
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-  const backendUrl = apiUrl ? apiUrl.replace("/api/v1", "") : "http://127.0.0.1:8000";
-  return url.startsWith("/") ? `${backendUrl}${url}` : url;
-};
+// Resolve a stored media path for THIS tenant: a same-origin `/tenancy/assets/…`
+// URL (CHR-154), which also avoids tainting the compositor canvas. blob/data/http
+// pass through untouched.
+const getImageUrl = (url: string | undefined | null): string => assetUrl(url) ?? "";
 
 export type ResizeCorner = "nw" | "ne" | "sw" | "se";
 

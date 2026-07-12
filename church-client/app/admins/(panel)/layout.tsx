@@ -6,6 +6,7 @@ import { LogOut } from "lucide-react";
 import { getAdminSession } from "@/lib/auth/session";
 import { getAdminMe } from "@/lib/admin-api";
 import { getRealtimeChannelPrefix } from "@/lib/api";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 import { ADMIN_LOGIN_PATH } from "@/lib/auth/config";
 import { logoutAdmin } from "../login/actions";
 import { AdminNav } from "./_components/admin-nav";
@@ -15,7 +16,7 @@ import { LiveStatusControl } from "./_components/live-status-control";
 /** Read the current live status server-side so the top bar renders without a flash. */
 async function getInitialLiveStatus(): Promise<boolean> {
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/public/settings?group=live`, {
+    const res = await fetch(`${await tenantApiBase()}/public/settings?group=live`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
     });

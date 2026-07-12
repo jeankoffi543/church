@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveDot } from "@/components/ui/live-dot";
 import { useLiveChannel } from "@/lib/echo";
 import type { LiveConfig } from "@/lib/api";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 import {
   getClientId,
   getLiveMessages,
@@ -195,9 +196,8 @@ export function LiveStage({ config: initialConfig }: { config: LiveConfig }) {
   // means a fresh broadcast (or one that just ended) → drop the previous live's
   // chat and reflect the "just ended" state.
   const refreshConfig = useCallback(async () => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
     try {
-      const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+      const res = await fetch(`${await tenantApiBase()}/public/settings?group=live`, {
         headers: { Accept: "application/json" },
         cache: "no-store",
       });

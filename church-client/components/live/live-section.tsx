@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 
 import type { LiveConfig, SermonPoint } from "@/lib/api";
+import { tenantApiBase } from "@/lib/tenant/api-base";
 import { LivePlayer } from "./live-player";
 import { LivePanel, type LiveTab } from "./live-panel";
 import { LiveDot } from "@/components/ui/live-dot";
@@ -14,8 +15,7 @@ export function LiveSection({ config: initialConfig }: { config: LiveConfig }) {
   useEffect(() => {
     const fetchLiveConfig = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-        const res = await fetch(`${apiUrl}/public/settings?group=live`, {
+        const res = await fetch(`${await tenantApiBase()}/public/settings?group=live`, {
           headers: { Accept: "application/json" },
           cache: "no-store",
         });
