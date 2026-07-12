@@ -29,6 +29,11 @@ export function getEcho(): ReverbEcho | null {
     wssPort: Number(process.env.NEXT_PUBLIC_REVERB_PORT ?? 8080),
     forceTLS: (process.env.NEXT_PUBLIC_REVERB_SCHEME ?? "http") === "https",
     enabledTransports: ["ws", "wss"],
+    // Private/presence channels authenticate through a SAME-ORIGIN Next route
+    // (CHR-157): the admin's Sanctum token is in an httpOnly cookie the browser
+    // can't read, so the route injects it server-side and forwards to the tenant
+    // backend's /broadcasting/auth. The current host makes it tenant-correct.
+    authEndpoint: "/api/broadcasting/auth",
   });
 
   return echoInstance;
@@ -78,6 +83,45 @@ export function useLiveChannel(channelPrefix: string, handlers: LiveHandlers): v
 
     return () => {
       echo.leaveChannel(channelName);
+    };
+  }, [channelPrefix]);
+}
+
+/** A prayer request pushed live to the back office (CHR-156 `prayer.received`). */
+export type PrayerReceived = {
+  id: number;
+  name: string;
+  category: string;
+  created_at: string;
+};
+
+export type AdminHandlers = {
+  onPrayer?: (prayer: PrayerReceived) => void;
+};
+
+/**
+ * Subscribe to this church's PRIVATE back-office channel — `private-tenant.{key}.admin`
+ * (CHR-156/157). Authentication flows through the same-origin `/api/broadcasting/auth`
+ * proxy, which resolves the Sanctum admin on the tenant DB, so one church's admins
+ * never receive another's notifications. No-op until the tenant prefix is known.
+ */
+export function useAdminChannel(channelPrefix: string, handlers: AdminHandlers): void {
+  const ref = useRef(handlers);
+
+  useEffect(() => {
+    ref.current = handlers;
+  });
+
+  useEffect(() => {
+    const echo = getEcho();
+    if (!echo || !channelPrefix) return;
+
+    const name = `${channelPrefix}admin`; // echo.private() prepends `private-`
+    const channel = echo.private(name);
+    channel.listen(".prayer.received", (d: PrayerReceived) => ref.current.onPrayer?.(d));
+
+    return () => {
+      echo.leave(name); // leaves the public/private/presence variants of `name`
     };
   }, [channelPrefix]);
 }

@@ -5,9 +5,11 @@ import { LogOut } from "lucide-react";
 
 import { getAdminSession } from "@/lib/auth/session";
 import { getAdminMe } from "@/lib/admin-api";
+import { getRealtimeChannelPrefix } from "@/lib/api";
 import { ADMIN_LOGIN_PATH } from "@/lib/auth/config";
 import { logoutAdmin } from "../login/actions";
 import { AdminNav } from "./_components/admin-nav";
+import { AdminRealtimeNotifier } from "./_components/admin-realtime-notifier";
 import { LiveStatusControl } from "./_components/live-status-control";
 
 /** Read the current live status server-side so the top bar renders without a flash. */
@@ -46,6 +48,8 @@ export default async function AdminPanelLayout({
   }
 
   const initialIsLive = await getInitialLiveStatus();
+  // Tenant channel prefix for the live back-office notifications (CHR-157).
+  const channelPrefix = await getRealtimeChannelPrefix();
 
   return (
     <div className="flex min-h-screen">
@@ -93,6 +97,9 @@ export default async function AdminPanelLayout({
 
         <main className="flex-1 px-6 py-8 md:px-10 md:py-10">{children}</main>
       </div>
+
+      {/* Live back-office notifications over this church's private channel (CHR-157). */}
+      <AdminRealtimeNotifier channelPrefix={channelPrefix} />
     </div>
   );
 }
