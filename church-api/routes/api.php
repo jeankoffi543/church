@@ -511,5 +511,11 @@ Route::prefix('identity')->name('api.identity.')->group(function (): void {
         Route::get('churches/{tenant}/member', [Identity\TenantAccessController::class, 'member'])
             ->middleware(EnsureIdentityTenantScope::class)
             ->name('churches.member');
+
+        // Mobile Hub (CHR-168): church discovery + push device link.
+        Route::get('discover', [Identity\HubController::class, 'discover'])->name('discover');
+        Route::get('devices', [Identity\HubController::class, 'devices'])->name('devices.index');
+        Route::post('memberships/{tenant}/device', [Identity\HubController::class, 'registerDevice'])->name('devices.register');
+        Route::post('devices/forget', [Identity\HubController::class, 'forgetDevice'])->name('devices.forget');
     });
 });

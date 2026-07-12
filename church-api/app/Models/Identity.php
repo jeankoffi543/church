@@ -57,4 +57,14 @@ class Identity extends Authenticatable
     {
         return $this->hasMany(Membership::class);
     }
+
+    /**
+     * Push device registrations linked to this identity (CHR-168).
+     *
+     * @return HasMany<PushSubscription, $this>
+     */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
 }
