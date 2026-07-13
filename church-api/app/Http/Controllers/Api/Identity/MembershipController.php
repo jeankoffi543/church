@@ -22,7 +22,7 @@ class MembershipController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $memberships = $request->user()->memberships()->with('tenant')->latest()->get();
+        $memberships = $request->user()->memberships()->with('tenant.domains')->latest()->get();
 
         return response()->json(['data' => $memberships->map(fn (Membership $m) => $this->payload($m))]);
     }
@@ -39,7 +39,7 @@ class MembershipController extends Controller
         );
 
         return response()->json(
-            ['data' => $this->payload($membership->load('tenant'))],
+            ['data' => $this->payload($membership->load('tenant.domains'))],
             $membership->wasRecentlyCreated ? 201 : 200,
         );
     }
@@ -54,7 +54,7 @@ class MembershipController extends Controller
 
         $membership->update(['is_public' => $validated['is_public']]);
 
-        return response()->json(['data' => $this->payload($membership->load('tenant'))]);
+        return response()->json(['data' => $this->payload($membership->load('tenant.domains'))]);
     }
 
     public function destroy(Request $request, Tenant $tenant): JsonResponse
@@ -90,7 +90,7 @@ class MembershipController extends Controller
             ['status' => MembershipStatus::Member, 'local_member_id' => $localMemberId, 'claimed_at' => now()],
         );
 
-        return response()->json(['data' => $this->payload($membership->load('tenant'))]);
+        return response()->json(['data' => $this->payload($membership->load('tenant.domains'))]);
     }
 
     private function membershipFor(Identity $identity, Tenant $tenant): Membership
@@ -123,9 +123,18 @@ class MembershipController extends Controller
      */
     private function payload(Membership $membership): array
     {
+        $tenant = $membership->tenant;
+        // The church's primary hostname (falls back to its platform subdomain) so
+        // the mobile Hub can reach that church's public API (CHR-186).
+        $domain = $tenant?->relationLoaded('domains')
+            ? $tenant->domains->firstWhere('is_primary', true)?->domain
+            : $tenant?->domains()->where('is_primary', true)->value('domain');
+
         return [
             'tenant_id' => $membership->tenant_id,
-            'church' => $membership->tenant?->name,
+            'church' => $tenant?->name,
+            'slug' => $tenant?->slug,
+            'domain' => $domain ?? ($tenant?->slug ? $tenant->slug.'.'.config('tenancy.central_root_domain') : null),
             'status' => $membership->status->value,
             'is_claimed' => $membership->isClaimed(),
             'is_public' => $membership->is_public,

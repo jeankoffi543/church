@@ -24,11 +24,16 @@ it('follows a church and lists it', function () {
     $this->postJson("/api/identity/memberships/{$tenant->id}/follow")
         ->assertCreated()
         ->assertJsonPath('data.status', 'follower')
-        ->assertJsonPath('data.is_claimed', false);
+        ->assertJsonPath('data.is_claimed', false)
+        // CHR-186: the church's hostname rides along so the mobile Hub can reach
+        // that church's public API.
+        ->assertJsonPath('data.domain', 'localhost')
+        ->assertJsonStructure(['data' => ['tenant_id', 'church', 'slug', 'domain', 'status']]);
 
     $this->getJson('/api/identity/memberships')
         ->assertOk()
-        ->assertJsonPath('data.0.tenant_id', $tenant->id);
+        ->assertJsonPath('data.0.tenant_id', $tenant->id)
+        ->assertJsonPath('data.0.domain', 'localhost');
 });
 
 it('toggles the privacy of a follow', function () {

@@ -6,6 +6,7 @@ export type AuthStackParamList = {
 };
 
 export type AppTabParamList = {
+  Home: undefined;
   Discover: undefined;
   MyChurches: undefined;
 };

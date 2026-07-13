@@ -1,68 +1,38 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 
-import { getMemberships } from '../api/identity';
-import { useAuth } from '../auth/AuthContext';
-import { Banner } from '../components/ui';
+import { useActiveChurch } from '../church/ActiveChurchContext';
 import { colors, radius } from '../theme';
-import type { Membership } from '../types';
+import type { AppTabParamList } from '../navigation/types';
 
 const STATUS_LABEL: Record<string, string> = {
   follower: 'Abonné',
   member: 'Membre',
 };
 
-export default function MyChurchesScreen() {
-  const { token } = useAuth();
-  const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [loading, setLoading] = useState(true);
+type Props = BottomTabScreenProps<AppTabParamList, 'MyChurches'>;
+
+export default function MyChurchesScreen({ navigation }: Props) {
+  const { churches, active, setActive, refresh } = useActiveChurch();
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-    try {
-      setMemberships(await getMemberships(token));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [token]);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await load();
-      setLoading(false);
-    })();
-  }, [load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await refresh().catch(() => {});
     setRefreshing(false);
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.center}>
-        <ActivityIndicator color={colors.indigo} />
-      </SafeAreaView>
-    );
-  }
+  const open = (tenantId: string) => {
+    setActive(tenantId);
+    navigation.navigate('Home');
+  };
 
   return (
     <SafeAreaView edges={['bottom']} style={styles.safe}>
-      {error && (
-        <View style={styles.pad}>
-          <Banner>{error}</Banner>
-        </View>
-      )}
       <FlatList
-        data={memberships}
+        data={churches}
         keyExtractor={m => m.tenant_id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.indigo} />}
@@ -73,7 +43,9 @@ export default function MyChurchesScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.card}>
+          <Pressable
+            onPress={() => open(item.tenant_id)}
+            style={[styles.card, item.tenant_id === active?.tenant_id && styles.cardActive]}>
             <View style={styles.info}>
               <Text style={styles.name}>{item.church ?? 'Église'}</Text>
               {item.is_claimed && <Text style={styles.claimed}>Profil relié</Text>}
@@ -81,7 +53,7 @@ export default function MyChurchesScreen() {
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{STATUS_LABEL[item.status] ?? item.status}</Text>
             </View>
-          </View>
+          </Pressable>
         )}
       />
     </SafeAreaView>
@@ -90,8 +62,6 @@ export default function MyChurchesScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.cream },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cream },
-  pad: { paddingHorizontal: 16, paddingTop: 12 },
   list: { padding: 16, gap: 10, flexGrow: 1 },
   emptyWrap: { alignItems: 'center', marginTop: 60, paddingHorizontal: 24 },
   emptyTitle: { color: colors.indigo, fontSize: 18, fontWeight: '700' },
@@ -105,6 +75,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: 16,
   },
+  cardActive: { borderColor: colors.gold, borderWidth: 2 },
   info: { flex: 1 },
   name: { color: colors.indigo, fontSize: 16, fontWeight: '700' },
   claimed: { color: colors.online, fontSize: 12, marginTop: 2, fontWeight: '600' },

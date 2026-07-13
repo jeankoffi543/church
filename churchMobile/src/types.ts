@@ -20,8 +20,22 @@ export type Church = {
 export type Membership = {
   tenant_id: string;
   church: string | null;
+  slug: string | null;
+  domain: string | null;
   status: string;
   is_claimed: boolean;
   is_public: boolean;
   claimed_at: string | null;
+};
+
+/** A church's public content, fetched from its own host (CHR-186). */
+export type LiveState = { isLive: boolean; title: string | null };
+
+export type ChurchEvent = {
+  id: number;
+  slug: string;
+  title: string;
+  location: string | null;
+  starts_at: string | null;
+  image: string | null;
 };
