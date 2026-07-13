@@ -11,3 +11,9 @@ export type AppTabParamList = {
   Discover: undefined;
   MyChurches: undefined;
 };
+
+/** The authed area: the tab navigator + screens pushed over it (CHR-189). */
+export type AppStackParamList = {
+  Tabs: undefined;
+  Donate: undefined;
+};

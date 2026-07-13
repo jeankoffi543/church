@@ -49,3 +49,21 @@ export type ChatMessage = {
 };
 
 export type Reaction = { type: string; total: number };
+
+/** Paystack donation flow (CHR-189). */
+export type DonationInit = {
+  reference: string;
+  public_key: string;
+  email: string;
+  amount: number;
+  currency: string;
+  purpose_key: string;
+};
+
+export type DonationStatusResult = {
+  reference: string;
+  status: string;
+  amount: number;
+  currency: string;
+  purpose_key: string;
+};

@@ -4,7 +4,7 @@ import { Alert, Platform } from 'react-native';
 import { markPushOpened, registerDevice } from '../api/identity';
 import { useAuth } from '../auth/AuthContext';
 import { useActiveChurch } from '../church/ActiveChurchContext';
-import { navigateTo } from '../navigation/navigationRef';
+import { navigateToTab } from '../navigation/navigationRef';
 import {
   getDeviceToken,
   getInitialNotification,
@@ -38,7 +38,7 @@ export function PushManager(): null {
         return;
       }
       setActive(tenantId);
-      navigateTo('Home');
+      navigateToTab('Home');
 
       const campaignId = typeof data?.campaign_id === 'string' ? Number(data.campaign_id) : NaN;
       if (token && deviceToken && Number.isFinite(campaignId)) {
