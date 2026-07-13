@@ -11,6 +11,7 @@ import { navigationRef } from './navigationRef';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ChurchHomeScreen from '../screens/ChurchHomeScreen';
+import LiveScreen from '../screens/LiveScreen';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import MyChurchesScreen from '../screens/MyChurchesScreen';
 import { colors } from '../theme';
@@ -44,6 +45,7 @@ function AppNavigator() {
           tabBarInactiveTintColor: colors.faint,
         }}>
         <AppTabs.Screen name="Home" component={ChurchHomeScreen} options={{ title: 'Accueil' }} />
+        <AppTabs.Screen name="Live" component={LiveScreen} options={{ title: 'Live' }} />
         <AppTabs.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Découvrir' }} />
         <AppTabs.Screen name="MyChurches" component={MyChurchesScreen} options={{ title: 'Mes églises' }} />
       </AppTabs.Navigator>

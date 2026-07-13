@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { ChurchEvent, LiveState } from '../types';
+import type { ChatMessage, ChurchEvent, LiveState, Reaction } from '../types';
 
 /**
  * A church's public API is served on its own hostname (CHR-186). React Native's
@@ -27,4 +27,38 @@ export async function getLiveState(domain: string): Promise<LiveState> {
 export async function getUpcomingEvents(domain: string): Promise<ChurchEvent[]> {
   const res = await apiFetch<{ data: ChurchEvent[] }>('/api/v1/public/events', { origin: churchOrigin(domain) });
   return Array.isArray(res?.data) ? res.data : [];
+}
+
+/** CHR-155/188 — the tenant-scoped channel prefix for this church's Reverb channel. */
+export async function getRealtimePrefix(domain: string): Promise<string> {
+  const res = await apiFetch<{ data: { channel_prefix: string } }>('/api/v1/public/realtime', {
+    origin: churchOrigin(domain),
+  });
+  return res?.data?.channel_prefix ?? '';
+}
+
+/** Recent live chat history for a church. */
+export async function getLiveMessages(domain: string): Promise<ChatMessage[]> {
+  const res = await apiFetch<{ data: ChatMessage[] }>('/api/v1/public/live/chat', { origin: churchOrigin(domain) });
+  return Array.isArray(res?.data) ? res.data : [];
+}
+
+/** Post a chat message to a church's live (it comes back over the channel). */
+export async function sendChatMessage(domain: string, authorName: string, message: string): Promise<ChatMessage> {
+  const res = await apiFetch<{ data: ChatMessage }>('/api/v1/public/live/chat', {
+    origin: churchOrigin(domain),
+    method: 'POST',
+    body: { author_name: authorName, message },
+  });
+  return res.data;
+}
+
+/** Send a live reaction (heart | flame | hands | dove | crown). */
+export async function sendReaction(domain: string, type: string): Promise<Reaction> {
+  const res = await apiFetch<{ data: Reaction }>('/api/v1/public/live/react', {
+    origin: churchOrigin(domain),
+    method: 'POST',
+    body: { type },
+  });
+  return res.data;
 }
