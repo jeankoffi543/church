@@ -25,7 +25,7 @@ const SLUG_MESSAGES: Record<string, string> = {
 
 type Errors = Record<string, string[]>;
 type SlugStatus = "idle" | "checking" | "available" | "unavailable";
-type Phase = "form" | "provisioning";
+type Phase = "form" | "verifying" | "provisioning";
 
 const FIELDS = {
   church_name: "",
@@ -36,8 +36,9 @@ const FIELDS = {
   password_confirmation: "",
 };
 
-export function SignupForm({ initialPlan }: { initialPlan?: string }) {
-  const [phase, setPhase] = useState<Phase>("form");
+export function SignupForm({ initialPlan, returnTenant, returnReference }: { initialPlan?: string; returnTenant?: string; returnReference?: string }) {
+  const returning = Boolean(returnTenant && returnReference);
+  const [phase, setPhase] = useState<Phase>(returning ? "verifying" : "form");
   const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState({ ...FIELDS });
   const [slugEdited, setSlugEdited] = useState(false);
@@ -47,6 +48,7 @@ export function SignupForm({ initialPlan }: { initialPlan?: string }) {
   const [busy, setBusy] = useState(false);
 
   const statusUrl = useRef<string | null>(null);
+  const verified = useRef(false);
 
   const set = (key: keyof typeof FIELDS, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -136,6 +138,41 @@ export function SignupForm({ initialPlan }: { initialPlan?: string }) {
     };
   }, [phase]);
 
+  // Returning from Paystack after a paid signup (CHR-175): confirm the charge
+  // server-side, then fall through to the provisioning poll. Runs once (the ref
+  // guard also absorbs React's dev double-invoke); it ends in a redirect or a
+  // phase change, so there is nothing to cancel on unmount.
+  useEffect(() => {
+    if (!returnTenant || !returnReference || verified.current) return;
+    verified.current = true;
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_ORIGIN}/api/platform/signup/verify/${returnTenant}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ reference: returnReference }),
+        });
+        const data = (await res.json()) as { provisioning_status?: string; ready?: boolean; admin_url?: string | null };
+        if (data.ready && data.admin_url) {
+          window.location.href = data.admin_url;
+          return;
+        }
+        if (!res.ok || data.provisioning_status === "awaiting_payment") {
+          setGeneral("Le paiement n'a pas pu être confirmé. Réessayez ou contactez-nous.");
+          setPhase("form");
+          setStep(2);
+          return;
+        }
+        statusUrl.current = `${API_ORIGIN}/api/platform/signup/status/${returnTenant}`;
+        setPhase("provisioning");
+      } catch {
+        setGeneral("Connexion impossible au serveur.");
+        setPhase("form");
+      }
+    })();
+  }, [returnTenant, returnReference]);
+
   const canProceed = form.church_name.trim().length > 0 && slugStatus === "available";
 
   const submit = async (e: FormEvent) => {
@@ -156,11 +193,20 @@ export function SignupForm({ initialPlan }: { initialPlan?: string }) {
       const res = await fetch(`${API_ORIGIN}/api/platform/signup`, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ ...form, plan_code: initialPlan || "free" }),
+        body: JSON.stringify({
+          ...form,
+          plan_code: initialPlan || "free",
+          callback_url: `${window.location.origin}/central/signup`,
+        }),
       });
 
       if (res.status === 202) {
-        const data = (await res.json()) as { tenant_id: string };
+        const data = (await res.json()) as { tenant_id: string; payment_required?: boolean; checkout_url?: string | null };
+        // Paid plan → hand off to Paystack; we resume on the return visit.
+        if (data.payment_required && data.checkout_url) {
+          window.location.href = data.checkout_url;
+          return;
+        }
         statusUrl.current = `${API_ORIGIN}/api/platform/signup/status/${data.tenant_id}`;
         setPhase("provisioning");
         return;
@@ -184,6 +230,9 @@ export function SignupForm({ initialPlan }: { initialPlan?: string }) {
 
   const err = (k: string) => errors[k]?.[0];
 
+  if (phase === "verifying") {
+    return <Provisioning domain={checkedDomain} verifying />;
+  }
   if (phase === "provisioning") {
     return <Provisioning domain={checkedDomain} />;
   }
@@ -256,11 +305,13 @@ export function SignupForm({ initialPlan }: { initialPlan?: string }) {
 }
 
 /** The "we're setting up your church" screen shown while ProvisionTenant runs. */
-function Provisioning({ domain }: { domain: string | null }) {
+function Provisioning({ domain, verifying = false }: { domain: string | null; verifying?: boolean }) {
   return (
     <div className="mt-10 flex flex-col items-center text-center">
       <div className="size-12 animate-spin rounded-full border-[3px] border-indigo/15 border-t-gold" />
-      <h2 className="mt-6 font-display text-2xl font-bold text-indigo">Nous préparons votre église…</h2>
+      <h2 className="mt-6 font-display text-2xl font-bold text-indigo">
+        {verifying ? "Confirmation de votre paiement…" : "Nous préparons votre église…"}
+      </h2>
       <p className="mt-2 text-sm text-body">
         {domain ? (
           <>
