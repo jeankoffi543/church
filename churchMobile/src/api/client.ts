@@ -11,7 +11,13 @@ export class ApiError extends Error {
   }
 }
 
-type Options = { method?: string; body?: unknown; token?: string | null };
+type Options = {
+  method?: string;
+  body?: unknown;
+  token?: string | null;
+  /** Override the base origin — e.g. a church's own host for its public API (CHR-186). */
+  origin?: string;
+};
 
 /** First message out of a Laravel `{errors: {field: [msg]}}` validation bag. */
 function firstValidationError(errors: unknown): string | null {
@@ -39,7 +45,7 @@ export async function apiFetch<T>(path: string, options: Options = {}): Promise<
 
   let response: Response;
   try {
-    response = await fetch(`${API_ORIGIN}${path}`, {
+    response = await fetch(`${options.origin ?? API_ORIGIN}${path}`, {
       method: options.method ?? 'GET',
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

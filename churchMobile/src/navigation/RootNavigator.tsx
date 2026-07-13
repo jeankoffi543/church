@@ -5,8 +5,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import { useAuth } from '../auth/AuthContext';
+import { ActiveChurchProvider } from '../church/ActiveChurchContext';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ChurchHomeScreen from '../screens/ChurchHomeScreen';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import MyChurchesScreen from '../screens/MyChurchesScreen';
 import { colors } from '../theme';
@@ -28,18 +30,21 @@ const renderSignOut = () => <SignOutButton />;
 
 function AppNavigator() {
   return (
-    <AppTabs.Navigator
-      screenOptions={{
-        headerStyle: styles.header,
-        headerTintColor: colors.white,
-        headerTitleStyle: styles.headerTitle,
-        headerRight: renderSignOut,
-        tabBarActiveTintColor: colors.goldDark,
-        tabBarInactiveTintColor: colors.faint,
-      }}>
-      <AppTabs.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Découvrir' }} />
-      <AppTabs.Screen name="MyChurches" component={MyChurchesScreen} options={{ title: 'Mes églises' }} />
-    </AppTabs.Navigator>
+    <ActiveChurchProvider>
+      <AppTabs.Navigator
+        screenOptions={{
+          headerStyle: styles.header,
+          headerTintColor: colors.white,
+          headerTitleStyle: styles.headerTitle,
+          headerRight: renderSignOut,
+          tabBarActiveTintColor: colors.goldDark,
+          tabBarInactiveTintColor: colors.faint,
+        }}>
+        <AppTabs.Screen name="Home" component={ChurchHomeScreen} options={{ title: 'Accueil' }} />
+        <AppTabs.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Découvrir' }} />
+        <AppTabs.Screen name="MyChurches" component={MyChurchesScreen} options={{ title: 'Mes églises' }} />
+      </AppTabs.Navigator>
+    </ActiveChurchProvider>
   );
 }
 

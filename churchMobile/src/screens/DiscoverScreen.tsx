@@ -4,12 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { discoverChurches, followChurch, unfollowChurch } from '../api/identity';
 import { useAuth } from '../auth/AuthContext';
+import { useActiveChurch } from '../church/ActiveChurchContext';
 import { Banner } from '../components/ui';
 import { colors, radius } from '../theme';
 import type { Church } from '../types';
 
 export default function DiscoverScreen() {
   const { token } = useAuth();
+  const { refresh } = useActiveChurch();
   const [query, setQuery] = useState('');
   const [churches, setChurches] = useState<Church[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,7 @@ export default function DiscoverScreen() {
         await followChurch(token, church.id);
       }
       setChurches(prev => prev.map(c => (c.id === church.id ? { ...c, following: !c.following } : c)));
+      refresh().catch(() => {});
     } catch (e) {
       setError((e as Error).message);
     } finally {
