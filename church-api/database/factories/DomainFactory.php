@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
+use App\Enums\SslStatus;
 use App\Models\Domain;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -27,6 +29,7 @@ class DomainFactory extends Factory
             'domain' => fake()->unique()->domainName(),
             'type' => DomainType::Custom,
             'is_primary' => false,
+            'status' => DomainStatus::Pending,
         ];
     }
 
@@ -36,6 +39,20 @@ class DomainFactory extends Factory
             'domain' => $slug.'.churchapp.io',
             'type' => DomainType::Subdomain,
             'is_primary' => true,
+            'status' => DomainStatus::Active,
+            'verified_at' => now(),
+            'ssl_status' => SslStatus::Issued,
+        ]);
+    }
+
+    /** A custom domain whose ownership has been verified but not yet activated. */
+    public function verified(): static
+    {
+        return $this->state(fn (): array => [
+            'status' => DomainStatus::Verified,
+            'verified_at' => now(),
+            'ssl_status' => SslStatus::Issued,
+            'verification_token' => 'chr_'.fake()->lexify('????????'),
         ]);
     }
 }

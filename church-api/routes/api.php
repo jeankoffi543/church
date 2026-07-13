@@ -171,6 +171,7 @@ Route::prefix('v1')
                     Route::get('domains', [Admin\DomainController::class, 'index'])->name('domains.index');
                     Route::post('domains', [Admin\DomainController::class, 'store'])->middleware('feature:custom_domain')->name('domains.store');
                     Route::post('domains/{domain}/verify', [Admin\DomainController::class, 'verify'])->name('domains.verify');
+                    Route::post('domains/{domain}/activate', [Admin\DomainController::class, 'activate'])->name('domains.activate');
                     Route::delete('domains/{domain}', [Admin\DomainController::class, 'destroy'])->name('domains.destroy');
                 });
 

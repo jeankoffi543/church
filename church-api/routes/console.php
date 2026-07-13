@@ -15,3 +15,10 @@ Artisan::command('inspire', function () {
 Schedule::command('tenants:run currency:sync-rates')
     ->dailyAt('03:00')
     ->withoutOverlapping();
+
+// DNS-verify poller for custom domains (CHR-176): re-check pending domains so
+// they auto-activate once DNS propagates. Domains are central, so this runs
+// centrally (not per-tenant).
+Schedule::command('domains:verify-pending')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

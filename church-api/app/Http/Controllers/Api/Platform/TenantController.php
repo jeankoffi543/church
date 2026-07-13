@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Platform;
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
 use App\Enums\SslStatus;
 use App\Enums\TenantStatus;
@@ -64,6 +65,7 @@ class TenantController extends Controller
             'domain' => strtolower($validated['domain']),
             'type' => $type,
             'is_primary' => true,
+            'status' => $type === DomainType::Subdomain ? DomainStatus::Active : DomainStatus::Pending,
             'verified_at' => $type === DomainType::Subdomain ? now() : null,
             'ssl_status' => $type === DomainType::Subdomain ? SslStatus::Issued : SslStatus::Pending,
         ]);
