@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Listeners\AssignTenantToShard;
 use App\Listeners\StartTenantProvisioning;
+use App\Listeners\TagObservabilityContext;
 use Illuminate\Cache\TaggableStore;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\Cache;
@@ -74,6 +75,8 @@ class TenancyServiceProvider extends ServiceProvider
             Events\InitializingTenancy::class => [],
             Events\TenancyInitialized::class => [
                 Listeners\BootstrapTenancy::class,
+                // Tag logs + error tracker with the active church (CHR-191).
+                TagObservabilityContext::class,
             ],
 
             Events\EndingTenancy::class => [],

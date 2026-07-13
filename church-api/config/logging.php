@@ -1,5 +1,6 @@
 <?php
 
+use App\Logging\TenantProcessor;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -63,6 +64,8 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+            // Tag every line with the active church in tenant context (CHR-191).
+            'processors' => [TenantProcessor::class],
         ],
 
         'daily' => [
@@ -71,6 +74,7 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+            'processors' => [TenantProcessor::class],
         ],
 
         'slack' => [
@@ -102,7 +106,7 @@ return [
                 'stream' => 'php://stderr',
             ],
             'formatter' => env('LOG_STDERR_FORMATTER'),
-            'processors' => [PsrLogMessageProcessor::class],
+            'processors' => [PsrLogMessageProcessor::class, TenantProcessor::class],
         ],
 
         'syslog' => [
