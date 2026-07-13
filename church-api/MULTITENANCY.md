@@ -88,7 +88,9 @@ Suspend/restore a tenant from the back-office: `POST /api/platform/tenants/{id}/
 - **Central vs tenant auth:** a tenant user's token is rejected on the `central` guard
   (Sanctum provider check) — `tests/Feature/PlatformAuthTest.php`.
 - **Host, not header:** tenancy is resolved from the request Host; a forged `x-tenant-*`
-  header cannot switch the backend tenant.
+  header cannot switch the backend tenant — `tests/Feature/SecurityTest.php`.
+- **Security headers:** every response carries `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` (+ HSTS over HTTPS) via `SecurityHeaders` middleware (CHR-192).
 
 ## Incident response
 
