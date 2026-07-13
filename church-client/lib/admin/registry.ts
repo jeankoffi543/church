@@ -30,6 +30,7 @@ import {
   Boxes,
   Layers,
   Globe,
+  Rocket,
   type LucideIcon,
 } from "lucide-react";
 
@@ -70,6 +71,7 @@ export const ADMIN_NAV_GROUPS: { id: AdminNavGroupId; label: string; short: stri
 
 export const ADMIN_PAGES: AdminPage[] = [
   { key: "dashboard", path: "/admins/dashboard", label: "Tableau de bord", icon: LayoutDashboard, permission: [], group: "overview" },
+  { key: "onboarding", path: "/admins/onboarding", label: "Démarrage", icon: Rocket, permission: [PERMISSIONS.manageSettings], group: "overview" },
 
   // Contenu & Diffusion
   { key: "live-studio", path: "/admins/live-studio", label: "Régie Live (Studio)", icon: RadioTower, permission: [PERMISSIONS.manageLive], group: "content" },

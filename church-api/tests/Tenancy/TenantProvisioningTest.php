@@ -2,6 +2,7 @@
 
 use App\Enums\ProvisioningStatus;
 use App\Enums\TenantStatus;
+use App\Mail\ChurchWelcomeMail;
 use App\Models\BibleVerse;
 use App\Models\Currency;
 use App\Models\Domain;
@@ -11,6 +12,7 @@ use App\Support\AccessControl;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -77,6 +79,23 @@ it('seeds the deferred first admin from the stashed signup credentials (CHR-173)
             ->and($admin->hasRole(AccessControl::SUPER_ADMIN))->toBeTrue()
             ->and(Hash::check('secret123', $admin->password))->toBeTrue();
     });
+});
+
+it('emails the new church admin once the site is ready (CHR-178)', function () {
+    Mail::fake();
+
+    Tenant::factory()->create([
+        'pending_admin' => [
+            'name' => 'Pasteur Paul',
+            'email' => 'paul@grace.test',
+            'password' => Hash::make('secret123'),
+        ],
+    ]);
+
+    Mail::assertQueued(
+        ChurchWelcomeMail::class,
+        fn (ChurchWelcomeMail $mail): bool => $mail->hasTo('paul@grace.test') && $mail->adminName === 'Pasteur Paul',
+    );
 });
 
 it('provisions a tenant database with the full church schema and baseline seed', function () {

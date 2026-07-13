@@ -173,6 +173,10 @@ Route::prefix('v1')
                     Route::post('domains/{domain}/verify', [Admin\DomainController::class, 'verify'])->name('domains.verify');
                     Route::post('domains/{domain}/activate', [Admin\DomainController::class, 'activate'])->name('domains.activate');
                     Route::delete('domains/{domain}', [Admin\DomainController::class, 'destroy'])->name('domains.destroy');
+
+                    // First-run onboarding checklist (CHR-178).
+                    Route::get('onboarding', [Admin\OnboardingController::class, 'show'])->name('onboarding.show');
+                    Route::post('onboarding/dismiss', [Admin\OnboardingController::class, 'dismiss'])->name('onboarding.dismiss');
                 });
 
                 // Live Studio régie — push scripture overlays + prepared-verses deck.
