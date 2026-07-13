@@ -42,6 +42,24 @@ it('lists tenants', function () {
         ->assertJsonStructure(['data' => [['id', 'name', 'slug', 'status', 'domains']]]);
 });
 
+it('filters tenants by search and status for the console (CHR-183)', function () {
+    Event::fake([TenantCreated::class]);
+    Tenant::factory()->create(['name' => 'Grace Chapel', 'slug' => 'grace-chapel', 'status' => TenantStatus::Active]);
+    Tenant::factory()->create(['name' => 'Hope Center', 'slug' => 'hope-center', 'status' => TenantStatus::Suspended]);
+
+    $token = platformToken();
+
+    $this->withToken($token)->getJson('/api/platform/tenants?search=grace')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.slug', 'grace-chapel');
+
+    $this->withToken($token)->getJson('/api/platform/tenants?status=suspended')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.slug', 'hope-center');
+});
+
 it('provisions a tenant on create and audits it', function () {
     Event::fake([TenantCreated::class]); // skip real DB provisioning in this feature test
 

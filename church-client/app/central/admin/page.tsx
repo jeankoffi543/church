@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Church, CreditCard, Server } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -7,9 +8,9 @@ export const metadata: Metadata = {
 };
 
 const AREAS = [
-  { icon: Church, title: "Églises", body: "Rechercher, suspendre, restaurer et se connecter en tant qu'une église.", soon: true },
-  { icon: CreditCard, title: "Abonnements", body: "Suivre les abonnements, les paiements et les revenus de la plateforme.", soon: true },
-  { icon: Server, title: "Infrastructure", body: "Santé des serveurs de bases (shards), audits et notifications push.", soon: true },
+  { icon: Church, title: "Églises", body: "Rechercher, suspendre, restaurer et se connecter en tant qu'une église.", href: "/central/admin/tenants" as string | undefined, soon: false },
+  { icon: CreditCard, title: "Abonnements", body: "Suivre les abonnements, les paiements et les revenus de la plateforme.", href: undefined, soon: true },
+  { icon: Server, title: "Infrastructure", body: "Santé des serveurs de bases (shards), audits et notifications push.", href: undefined, soon: true },
 ];
 
 export default function PlatformConsoleHome() {
@@ -24,8 +25,8 @@ export default function PlatformConsoleHome() {
       <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {AREAS.map((area) => {
           const Icon = area.icon;
-          return (
-            <div key={area.title} className="rounded-2xl border border-indigo/10 bg-white p-6">
+          const inner = (
+            <>
               <div className="flex items-center justify-between">
                 <div className="grid size-11 place-items-center rounded-xl bg-indigo/5">
                   <Icon className="size-5 text-indigo" />
@@ -38,7 +39,15 @@ export default function PlatformConsoleHome() {
               </div>
               <h2 className="mt-4 font-display text-lg font-bold text-indigo">{area.title}</h2>
               <p className="mt-1.5 text-sm text-body">{area.body}</p>
-            </div>
+            </>
+          );
+          const cardClass = "rounded-2xl border border-indigo/10 bg-white p-6";
+          return area.href ? (
+            <Link key={area.title} href={area.href} className={`${cardClass} transition hover:border-gold hover:shadow-md`}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={area.title} className={cardClass}>{inner}</div>
           );
         })}
       </div>
