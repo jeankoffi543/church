@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureTenantHasFeature;
+use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetCurrencyMiddleware;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -38,6 +39,9 @@ return Application::configure(basePath: dirname(__DIR__))
         ],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Baseline security headers on every response (CHR-192).
+        $middleware->append(SecurityHeaders::class);
+
         // API-only app: never redirect unauthenticated requests to a web
         // "login" page — let the AuthenticationException surface as JSON 401.
         $middleware->redirectGuestsTo(fn (Request $request) => null);
