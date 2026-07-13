@@ -2374,3 +2374,71 @@ export async function dismissAdminOnboarding(): Promise<void> {
   await adminFetch("/onboarding/dismiss", { method: "POST" });
   updateTag("settings");
 }
+
+/* ── Abonnement / facturation (CHR-180) ──────────────────────────── */
+
+export type BillingPlan = {
+  code: string;
+  name: string;
+  price_month: number;
+  price_year: number;
+  currency: string;
+  features: string[];
+  studio_included: boolean;
+};
+
+export type BillingStatus = {
+  plan: BillingPlan | null;
+  subscription_status: string | null;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+  features: string[];
+  studio: { enabled: boolean; seats: number; used: number };
+  plans: BillingPlan[];
+};
+
+export async function getAdminBilling(): Promise<BillingStatus> {
+  const response = await adminFetch<{ data: BillingStatus }>("/billing");
+  return response.data;
+}
+
+export async function subscribeAdminBilling(
+  planCode: string,
+  email: string,
+  callbackUrl?: string
+): Promise<{ authorization_url: string | null; plan_code: string; status: string }> {
+  return adminFetch("/billing/subscribe", {
+    method: "POST",
+    body: JSON.stringify({ plan_code: planCode, email, callback_url: callbackUrl }),
+  });
+}
+
+/* ── Licences Studio Live (CHR-180) ──────────────────────────────── */
+
+export type StudioKey = {
+  id: number;
+  label: string;
+  key_prefix: string;
+  bound_device: boolean;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+};
+
+export async function getAdminStudioKeys(): Promise<{ keys: StudioKey[]; seats: number; used: number }> {
+  const response = await adminFetch<{ data: StudioKey[]; seats: number; used: number }>("/studio/keys");
+  return { keys: response.data, seats: response.seats, used: response.used };
+}
+
+export async function createAdminStudioKey(label: string): Promise<{ key: string; activation: StudioKey }> {
+  const result = await adminFetch<{ key: string; activation: StudioKey }>("/studio/keys", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+  updateTag("settings");
+  return result;
+}
+
+export async function revokeAdminStudioKey(id: number): Promise<void> {
+  await adminFetch(`/studio/keys/${id}/revoke`, { method: "POST" });
+  updateTag("settings");
+}

@@ -177,6 +177,17 @@ Route::prefix('v1')
                     // First-run onboarding checklist (CHR-178).
                     Route::get('onboarding', [Admin\OnboardingController::class, 'show'])->name('onboarding.show');
                     Route::post('onboarding/dismiss', [Admin\OnboardingController::class, 'dismiss'])->name('onboarding.dismiss');
+
+                    // Self-service billing / subscription (CHR-180).
+                    Route::get('billing', [Admin\BillingController::class, 'show'])->name('billing.show');
+                    Route::post('billing/subscribe', [Admin\BillingController::class, 'subscribe'])->name('billing.subscribe');
+
+                    // Self-service Studio Live licences (CHR-180) — needs the studio feature.
+                    Route::middleware('feature:studio')->group(function (): void {
+                        Route::get('studio/keys', [Admin\StudioKeyController::class, 'index'])->name('studio.keys.index');
+                        Route::post('studio/keys', [Admin\StudioKeyController::class, 'store'])->name('studio.keys.store');
+                        Route::post('studio/keys/{activation}/revoke', [Admin\StudioKeyController::class, 'revoke'])->name('studio.keys.revoke');
+                    });
                 });
 
                 // Live Studio régie — push scripture overlays + prepared-verses deck.
