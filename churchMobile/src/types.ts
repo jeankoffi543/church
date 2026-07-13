@@ -39,3 +39,13 @@ export type ChurchEvent = {
   starts_at: string | null;
   image: string | null;
 };
+
+/** Live chat + reactions over the church's tenant-scoped channel (CHR-188). */
+export type ChatMessage = {
+  id: number;
+  author_name: string;
+  message: string;
+  created_at: string | null;
+};
+
+export type Reaction = { type: string; total: number };

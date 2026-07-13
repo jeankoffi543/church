@@ -10,6 +10,16 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+// Reverb/Echo websockets — stub so imports don't reach browser globals (CHR-188).
+jest.mock('laravel-echo', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    channel: () => ({ listen: () => ({ listen: () => ({}) }) }),
+    leave: jest.fn(),
+  })),
+}));
+jest.mock('pusher-js', () => ({ __esModule: true, default: jest.fn() }));
+
 // Firebase messaging is a native module — stub it (CHR-187).
 jest.mock('@react-native-firebase/messaging', () => {
   const noop = () => () => {};
