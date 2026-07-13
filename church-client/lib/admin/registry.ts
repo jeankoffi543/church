@@ -31,6 +31,8 @@ import {
   Layers,
   Globe,
   Rocket,
+  CreditCard,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -111,6 +113,8 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },
   { key: "church-vision", path: "/admins/settings/church-vision", label: "Vision & Équipe", icon: Compass, permission: [PERMISSIONS.manageChurchVision], group: "church" },
   { key: "settings", path: "/admins/settings", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings], group: "church" },
+  { key: "billing", path: "/admins/settings/billing", label: "Abonnement", icon: CreditCard, permission: [PERMISSIONS.manageSettings], group: "church" },
+  { key: "studio-keys", path: "/admins/settings/studio-keys", label: "Licences Studio", icon: KeyRound, permission: [PERMISSIONS.manageSettings], feature: FEATURES.studio, group: "church" },
   { key: "domains", path: "/admins/settings/domains", label: "Nom de domaine", icon: Globe, permission: [PERMISSIONS.manageSettings], feature: FEATURES.customDomain, group: "church" },
   { key: "branches", path: "/admins/branches", label: "Campus & Extensions", icon: Landmark, permission: [PERMISSIONS.viewBranches, PERMISSIONS.manageBranches], feature: FEATURES.multiCampus, group: "church" },
 
