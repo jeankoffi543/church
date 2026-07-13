@@ -522,6 +522,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::get('tenants/{tenant}/studio/keys', [Platform\StudioController::class, 'keys'])->name('tenants.studio.keys');
             Route::post('tenants/{tenant}/studio/keys', [Platform\StudioController::class, 'createKey'])->name('tenants.studio.keys.create');
             Route::post('studio/keys/{activation}/revoke', [Platform\StudioController::class, 'revokeKey'])->name('studio.keys.revoke');
+
+            // Platform health & business metrics for the console (CHR-184).
+            Route::get('stats/overview', [Platform\PlatformStatsController::class, 'overview'])->name('stats.overview');
+            Route::get('stats/shards', [Platform\PlatformStatsController::class, 'shards'])->name('stats.shards');
+            Route::get('stats/audits', [Platform\PlatformStatsController::class, 'audits'])->name('stats.audits');
         });
     });
 });
