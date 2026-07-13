@@ -13,3 +13,11 @@ it('schedules the currency sync to run for every tenant', function () {
 
     expect($commands)->toContain('tenants:run currency:sync-rates');
 });
+
+it('schedules nightly per-tenant backups (CHR-190)', function () {
+    $commands = collect(app(Schedule::class)->events())
+        ->map(fn ($event) => $event->command ?? '')
+        ->implode("\n");
+
+    expect($commands)->toContain('tenants:backup');
+});

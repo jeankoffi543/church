@@ -547,6 +547,10 @@ Route::prefix('identity')->name('api.identity.')->group(function (): void {
         Route::get('me', [Identity\AuthController::class, 'me'])->name('me');
         Route::post('logout', [Identity\AuthController::class, 'logout'])->name('logout');
 
+        // RGPD self-service (CHR-190): export or erase the whole account.
+        Route::get('account/export', [Identity\AccountController::class, 'export'])->name('account.export');
+        Route::delete('account', [Identity\AccountController::class, 'destroy'])->name('account.destroy');
+
         // The identity's churches (CHR-166): follow / leave, privacy, claim a
         // local member record.
         Route::get('memberships', [Identity\MembershipController::class, 'index'])->name('memberships.index');

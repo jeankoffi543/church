@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PushSubscription;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
 use Illuminate\Console\Attributes\Description;
@@ -35,6 +37,12 @@ class PurgeTenant extends Command
             'action' => 'purged',
             'meta' => ['slug' => $tenant->slug, 'name' => $tenant->name],
         ]);
+
+        // RGPD: erase the church's personal data held in central tables that carry
+        // only a plain tenant_id (no FK cascade). Memberships cascade via their FK;
+        // the tenant database itself is dropped by TenantDeleted (CHR-135).
+        PushSubscription::query()->where('tenant_id', $tenant->id)->delete();
+        Subscription::query()->where('tenant_id', $tenant->id)->delete();
 
         // Firing TenantDeleted drops the tenant database (CHR-135 pipeline).
         $tenant->delete();
