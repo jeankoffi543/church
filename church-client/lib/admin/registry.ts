@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 
 import { PERMISSIONS } from "@/lib/auth/permissions";
+import { FEATURES } from "@/lib/auth/features";
 
 /**
  * Single source of truth for the admin backoffice screens. Drives the sidebar
@@ -51,6 +52,8 @@ export type AdminPage = {
   icon: LucideIcon;
   /** Any of these permissions grants access (empty = always visible). */
   permission: readonly string[];
+  /** Plan feature required for this module; omitted = available on every plan. */
+  feature?: string;
   group: AdminNavGroupId;
 };
 
@@ -74,7 +77,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   { key: "onboarding", path: "/admins/onboarding", label: "Démarrage", icon: Rocket, permission: [PERMISSIONS.manageSettings], group: "overview" },
 
   // Contenu & Diffusion
-  { key: "live-studio", path: "/admins/live-studio", label: "Régie Live (Studio)", icon: RadioTower, permission: [PERMISSIONS.manageLive], group: "content" },
+  { key: "live-studio", path: "/admins/live-studio", label: "Régie Live (Studio)", icon: RadioTower, permission: [PERMISSIONS.manageLive], feature: FEATURES.studio, group: "content" },
   { key: "sermons", path: "/admins/sermons", label: "Prédications (Sermons)", icon: Video, permission: [PERMISSIONS.manageSermons], group: "content" },
   { key: "past-lives", path: "/admins/past-lives", label: "Archives des lives", icon: Clapperboard, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
   { key: "gallery", path: "/admins/gallery", label: "Galerie (Albums)", icon: Images, permission: [PERMISSIONS.viewGallery, PERMISSIONS.manageGallery], group: "content" },
@@ -89,27 +92,27 @@ export const ADMIN_PAGES: AdminPage[] = [
   // Vie de l'Église
   { key: "services", path: "/admins/services", label: "Cultes", icon: CalendarClock, permission: [PERMISSIONS.viewServices, PERMISSIONS.manageServices], group: "church-life" },
   { key: "members", path: "/admins/members", label: "Fidèles", icon: UserRound, permission: [PERMISSIONS.viewMembers, PERMISSIONS.manageMembers], group: "church-life" },
-  { key: "evangelism", path: "/admins/evangelism", label: "Évangélisation", icon: Flame, permission: [PERMISSIONS.viewEvangelism, PERMISSIONS.manageEvangelism], group: "church-life" },
-  { key: "follow-ups", path: "/admins/follow-ups", label: "Suivi des âmes", icon: HeartHandshake, permission: [PERMISSIONS.viewFollowups, PERMISSIONS.manageFollowups], group: "church-life" },
-  { key: "resources", path: "/admins/resources", label: "Logistique", icon: Boxes, permission: [PERMISSIONS.viewResources, PERMISSIONS.manageResources], group: "church-life" },
-  { key: "teams", path: "/admins/teams", label: "Équipes de service", icon: Layers, permission: [PERMISSIONS.viewTeams, PERMISSIONS.manageTeams], group: "church-life" },
+  { key: "evangelism", path: "/admins/evangelism", label: "Évangélisation", icon: Flame, permission: [PERMISSIONS.viewEvangelism, PERMISSIONS.manageEvangelism], feature: FEATURES.evangelism, group: "church-life" },
+  { key: "follow-ups", path: "/admins/follow-ups", label: "Suivi des âmes", icon: HeartHandshake, permission: [PERMISSIONS.viewFollowups, PERMISSIONS.manageFollowups], feature: FEATURES.followups, group: "church-life" },
+  { key: "resources", path: "/admins/resources", label: "Logistique", icon: Boxes, permission: [PERMISSIONS.viewResources, PERMISSIONS.manageResources], feature: FEATURES.resources, group: "church-life" },
+  { key: "teams", path: "/admins/teams", label: "Équipes de service", icon: Layers, permission: [PERMISSIONS.viewTeams, PERMISSIONS.manageTeams], feature: FEATURES.teams, group: "church-life" },
 
   // Finances
-  { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], group: "finance" },
+  { key: "finances", path: "/admins/finances", label: "Finances (Dons)", icon: Wallet, permission: [PERMISSIONS.viewFinances], feature: FEATURES.finances, group: "finance" },
 
   // Boutique
-  { key: "store", path: "/admins/store", label: "Produits", icon: Package, permission: [PERMISSIONS.manageStore], group: "boutique" },
-  { key: "store-orders", path: "/admins/store/orders", label: "Commandes", icon: ClipboardList, permission: [PERMISSIONS.manageStore], group: "boutique" },
-  { key: "store-clients", path: "/admins/store/clients", label: "Clients", icon: UsersRound, permission: [PERMISSIONS.manageStore], group: "boutique" },
-  { key: "store-finance", path: "/admins/store/finance", label: "Finance", icon: TrendingUp, permission: [PERMISSIONS.manageStore], group: "boutique" },
-  { key: "store-currencies", path: "/admins/store/currencies", label: "Devises", icon: Coins, permission: [PERMISSIONS.manageStore], group: "boutique" },
+  { key: "store", path: "/admins/store", label: "Produits", icon: Package, permission: [PERMISSIONS.manageStore], feature: FEATURES.store, group: "boutique" },
+  { key: "store-orders", path: "/admins/store/orders", label: "Commandes", icon: ClipboardList, permission: [PERMISSIONS.manageStore], feature: FEATURES.store, group: "boutique" },
+  { key: "store-clients", path: "/admins/store/clients", label: "Clients", icon: UsersRound, permission: [PERMISSIONS.manageStore], feature: FEATURES.store, group: "boutique" },
+  { key: "store-finance", path: "/admins/store/finance", label: "Finance", icon: TrendingUp, permission: [PERMISSIONS.manageStore], feature: FEATURES.store, group: "boutique" },
+  { key: "store-currencies", path: "/admins/store/currencies", label: "Devises", icon: Coins, permission: [PERMISSIONS.manageStore], feature: FEATURES.store, group: "boutique" },
 
   // Église & Présentation
   { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },
   { key: "church-vision", path: "/admins/settings/church-vision", label: "Vision & Équipe", icon: Compass, permission: [PERMISSIONS.manageChurchVision], group: "church" },
   { key: "settings", path: "/admins/settings", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings], group: "church" },
-  { key: "domains", path: "/admins/settings/domains", label: "Nom de domaine", icon: Globe, permission: [PERMISSIONS.manageSettings], group: "church" },
-  { key: "branches", path: "/admins/branches", label: "Campus & Extensions", icon: Landmark, permission: [PERMISSIONS.viewBranches, PERMISSIONS.manageBranches], group: "church" },
+  { key: "domains", path: "/admins/settings/domains", label: "Nom de domaine", icon: Globe, permission: [PERMISSIONS.manageSettings], feature: FEATURES.customDomain, group: "church" },
+  { key: "branches", path: "/admins/branches", label: "Campus & Extensions", icon: Landmark, permission: [PERMISSIONS.viewBranches, PERMISSIONS.manageBranches], feature: FEATURES.multiCampus, group: "church" },
 
   // Administration
   { key: "users", path: "/admins/users", label: "Serviteurs", icon: UserCog, permission: [PERMISSIONS.manageAccess], group: "admin" },
