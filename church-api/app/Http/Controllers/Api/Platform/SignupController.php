@@ -11,6 +11,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
+use App\Services\PaystackBillingService;
 use App\Services\Signup\SubdomainAvailability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,7 +51,7 @@ class SignupController extends Controller
         ]);
     }
 
-    public function signup(Request $request): JsonResponse
+    public function signup(Request $request, PaystackBillingService $billing): JsonResponse
     {
         $validated = $request->validate([
             'church_name' => ['required', 'string', 'max:255'],
@@ -59,6 +60,7 @@ class SignupController extends Controller
             'admin_email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'plan_code' => ['nullable', 'string', Rule::exists(Plan::class, 'code')],
+            'callback_url' => ['nullable', 'url', 'max:2048'],
         ]);
 
         // Reserve the subdomain through the shared service so uniqueness hits the
@@ -80,14 +82,20 @@ class SignupController extends Controller
             ->first()
             ?? Plan::query()->where('code', 'free')->first();
 
-        // Record the tenant as Provisioning; creating it fires the ProvisionTenant
-        // job (CHR-173) which builds the database off the request and seeds the
-        // first admin from the credentials stashed here (cleared once used).
+        // A paid plan holds provisioning until Paystack confirms the charge
+        // (CHR-175); a free plan builds immediately.
+        $paid = (int) ($plan?->price_month ?? 0) > 0;
+
+        // Record the tenant; creating a free tenant fires the ProvisionTenant job
+        // (CHR-173) which builds the database off the request and seeds the first
+        // admin from the credentials stashed here (cleared once used). A paid
+        // tenant starts AwaitingPayment, so that listener stands down until billing
+        // releases it.
         $tenant = Tenant::create([
             'name' => $validated['church_name'],
             'slug' => $validated['slug'],
             'status' => TenantStatus::Provisioning,
-            'provisioning_status' => ProvisioningStatus::Pending,
+            'provisioning_status' => $paid ? ProvisioningStatus::AwaitingPayment : ProvisioningStatus::Pending,
             'plan_id' => $plan?->id,
             'subscription_status' => SubscriptionStatus::Trialing,
             'trial_ends_at' => now()->addDays(14),
@@ -114,14 +122,46 @@ class SignupController extends Controller
             'meta' => ['slug' => $tenant->slug, 'plan' => $plan?->code],
         ]);
 
+        // For a paid plan, open a Paystack checkout the wizard redirects to; the
+        // payer returns to $callbackUrl (tenant id appended) where verifyPayment()
+        // confirms the charge and releases provisioning.
+        $checkoutUrl = null;
+
+        if ($paid && $plan !== null) {
+            $base = $validated['callback_url'] ?? null;
+            $callbackUrl = $base !== null
+                ? $base.(str_contains($base, '?') ? '&' : '?').'tenant='.$tenant->id
+                : null;
+
+            $checkoutUrl = $billing->initialize($tenant, $plan, $validated['admin_email'], $callbackUrl)->authorization_url;
+        }
+
         return response()->json([
             'tenant_id' => $tenant->id,
             'slug' => $tenant->slug,
             'domain' => $domain,
             'provisioning_status' => $tenant->provisioning_status->value,
+            'payment_required' => $paid,
+            'checkout_url' => $checkoutUrl,
             'status_url' => route('api.platform.signup.status', ['tenant' => $tenant->id]),
             'admin_url' => Str::of("https://{$domain}/admins/login")->toString(),
         ], JsonResponse::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Confirm a paid signup's checkout on the Paystack return (CHR-175). Verifying
+     * the reference server-side releases provisioning without waiting on the
+     * webhook; the wizard then polls {@see status()} until the church is ready.
+     */
+    public function verifyPayment(Request $request, Tenant $tenant, PaystackBillingService $billing): JsonResponse
+    {
+        $request->validate([
+            'reference' => ['required', 'string', 'max:255'],
+        ]);
+
+        $billing->verify((string) $request->input('reference'));
+
+        return $this->status($tenant->fresh());
     }
 
     /**

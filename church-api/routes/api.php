@@ -467,6 +467,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
         ->middleware('throttle:120,1')
         ->name('signup.status');
 
+    // Paid-signup checkout confirmation on the Paystack return (CHR-175).
+    Route::post('signup/verify/{tenant}', [Platform\SignupController::class, 'verifyPayment'])
+        ->middleware('throttle:60,1')
+        ->name('signup.verify');
+
     // Mobile Hub foundations (CHR-149): church discovery + per-tenant push registry.
     Route::get('tenants/search', [Platform\DiscoveryController::class, 'search'])->name('tenants.search');
     Route::prefix('push')->name('push.')->middleware('throttle:30,1')->group(function (): void {

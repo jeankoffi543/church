@@ -6,10 +6,12 @@ use App\Enums\TenantStatus;
 use App\Jobs\ProvisionTenant;
 use App\Models\Domain;
 use App\Models\Plan;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 
 /*
 | CHR-147 / CHR-173 — self-service church signup: records the tenant as
@@ -34,13 +36,23 @@ function signupPayload(array $overrides = []): array
     ], $overrides);
 }
 
+function paidPlan(): Plan
+{
+    return Plan::query()->create([
+        'code' => 'growth', 'name' => 'Diocèse', 'features' => [], 'limits' => [],
+        'price_month' => 4900, 'currency' => 'USD', 'is_active' => true,
+    ]);
+}
+
 it('signs up a church and queues its provisioning', function () {
     $this->postJson('/api/platform/signup', signupPayload())
         ->assertAccepted()
         ->assertJsonPath('slug', 'grace-chapel')
         ->assertJsonPath('domain', 'grace-chapel.churchapp.io')
         ->assertJsonPath('provisioning_status', 'pending')
-        ->assertJsonStructure(['tenant_id', 'slug', 'domain', 'provisioning_status', 'status_url', 'admin_url']);
+        ->assertJsonPath('payment_required', false)
+        ->assertJsonPath('checkout_url', null)
+        ->assertJsonStructure(['tenant_id', 'slug', 'domain', 'provisioning_status', 'payment_required', 'checkout_url', 'status_url', 'admin_url']);
 
     $tenant = Tenant::query()->where('slug', 'grace-chapel')->firstOrFail();
 
@@ -186,4 +198,85 @@ it('marks the tenant failed when the provisioning job fails', function () {
 
     expect($tenant->fresh()->provisioning_status)->toBe(ProvisioningStatus::Failed)
         ->and($tenant->fresh()->provisioning_error)->toBe('shard offline');
+});
+
+/*
+| CHR-175 — a paid plan holds provisioning behind a Paystack checkout, then
+| releases it once the charge is verified on return (or via the webhook).
+*/
+
+it('holds provisioning for a paid plan and opens a Paystack checkout', function () {
+    config(['services.paystack.platform_secret_key' => 'test-secret']);
+    paidPlan();
+    Http::fake(['api.paystack.co/transaction/initialize' => Http::response([
+        'status' => true,
+        'data' => ['authorization_url' => 'https://checkout.paystack.co/xyz', 'customer' => ['customer_code' => 'CUS_9']],
+    ])]);
+
+    $this->postJson('/api/platform/signup', signupPayload([
+        'slug' => 'paid-church', 'plan_code' => 'growth', 'callback_url' => 'https://churchapp.io/central/signup',
+    ]))
+        ->assertAccepted()
+        ->assertJsonPath('payment_required', true)
+        ->assertJsonPath('provisioning_status', 'awaiting_payment')
+        ->assertJsonPath('checkout_url', 'https://checkout.paystack.co/xyz');
+
+    $tenant = Tenant::query()->where('slug', 'paid-church')->firstOrFail();
+
+    expect($tenant->provisioning_status)->toBe(ProvisioningStatus::AwaitingPayment)
+        ->and(Subscription::query()->where('tenant_id', $tenant->id)->exists())->toBeTrue();
+
+    // The database build waits for payment — nothing dispatched yet.
+    Bus::assertNotDispatched(ProvisionTenant::class);
+
+    // Paystack was told where to return the payer, with the tenant id appended.
+    Http::assertSent(fn ($request) => str_contains((string) ($request['callback_url'] ?? ''), 'tenant='.$tenant->id));
+});
+
+it('releases provisioning when the paid checkout is verified on return', function () {
+    config(['services.paystack.platform_secret_key' => 'test-secret']);
+    paidPlan();
+    Http::fake([
+        'api.paystack.co/transaction/initialize' => Http::response(['status' => true, 'data' => [
+            'authorization_url' => 'https://checkout.paystack.co/xyz', 'customer' => ['customer_code' => 'CUS_9'],
+        ]]),
+        'api.paystack.co/transaction/verify/*' => Http::response(['status' => true, 'data' => [
+            'status' => 'success', 'customer' => ['customer_code' => 'CUS_9'],
+        ]]),
+    ]);
+
+    $this->postJson('/api/platform/signup', signupPayload(['slug' => 'paid-church', 'plan_code' => 'growth']))->assertAccepted();
+    $tenant = Tenant::query()->where('slug', 'paid-church')->firstOrFail();
+
+    $this->postJson("/api/platform/signup/verify/{$tenant->id}", ['reference' => 'ref_123'])
+        ->assertOk()
+        ->assertJsonPath('tenant_id', $tenant->id);
+
+    expect($tenant->fresh()->provisioning_status)->toBe(ProvisioningStatus::Pending)
+        ->and($tenant->fresh()->subscription_status)->toBe(SubscriptionStatus::Active);
+
+    // Verified payment kicks off the deferred database build.
+    Bus::assertDispatched(ProvisionTenant::class, fn (ProvisionTenant $job) => $job->tenant->is($tenant));
+});
+
+it('leaves a paid signup awaiting payment when the checkout is not successful', function () {
+    config(['services.paystack.platform_secret_key' => 'test-secret']);
+    paidPlan();
+    Http::fake([
+        'api.paystack.co/transaction/initialize' => Http::response(['status' => true, 'data' => [
+            'authorization_url' => 'https://checkout.paystack.co/xyz', 'customer' => ['customer_code' => 'CUS_9'],
+        ]]),
+        'api.paystack.co/transaction/verify/*' => Http::response(['status' => true, 'data' => ['status' => 'abandoned']]),
+    ]);
+
+    $this->postJson('/api/platform/signup', signupPayload(['slug' => 'paid-church', 'plan_code' => 'growth']))->assertAccepted();
+    $tenant = Tenant::query()->where('slug', 'paid-church')->firstOrFail();
+
+    $this->postJson("/api/platform/signup/verify/{$tenant->id}", ['reference' => 'ref_bad'])
+        ->assertOk()
+        ->assertJsonPath('provisioning_status', 'awaiting_payment')
+        ->assertJsonPath('ready', false);
+
+    expect($tenant->fresh()->provisioning_status)->toBe(ProvisioningStatus::AwaitingPayment);
+    Bus::assertNotDispatched(ProvisionTenant::class);
 });

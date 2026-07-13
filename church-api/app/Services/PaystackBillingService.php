@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\ProvisioningStatus;
 use App\Enums\SubscriptionStatus;
+use App\Jobs\ProvisionTenant;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -39,9 +41,11 @@ class PaystackBillingService
 
     /**
      * Start (or restart) a tenant's subscription and return the mirror record,
-     * carrying the Paystack checkout URL the church pays through.
+     * carrying the Paystack checkout URL the church pays through. The optional
+     * $callbackUrl is where Paystack redirects the payer once done (the signup
+     * wizard's return page, CHR-175).
      */
-    public function initialize(Tenant $tenant, Plan $plan, string $email): Subscription
+    public function initialize(Tenant $tenant, Plan $plan, string $email, ?string $callbackUrl = null): Subscription
     {
         $subscription = Subscription::query()->updateOrCreate(
             ['tenant_id' => $tenant->id],
@@ -55,6 +59,7 @@ class PaystackBillingService
                 'amount' => $plan->price_month,
                 'currency' => $plan->currency,
                 'plan' => $plan->paystack_plan_code,
+                'callback_url' => $callbackUrl,
                 'metadata' => ['tenant_id' => $tenant->id, 'plan_code' => $plan->code],
             ]));
 
@@ -66,6 +71,27 @@ class PaystackBillingService
         ]);
 
         return $subscription->refresh();
+    }
+
+    /**
+     * Verify a checkout transaction on the signup callback (CHR-175). Paystack
+     * appends the reference to the return URL; a successful verify runs through
+     * the same activation path as the webhook (so provisioning starts even if
+     * the webhook is delayed). Returns the applied outcome, or 'pending'.
+     */
+    public function verify(string $reference): string
+    {
+        $response = Http::withToken((string) $this->secret())
+            ->acceptJson()
+            ->get('https://api.paystack.co/transaction/verify/'.urlencode($reference));
+
+        $data = (array) $response->json('data', []);
+
+        if (($data['status'] ?? null) !== 'success') {
+            return 'pending';
+        }
+
+        return $this->applyEvent('charge.success', $data);
     }
 
     /**
@@ -126,7 +152,28 @@ class PaystackBillingService
             'subscription_status' => SubscriptionStatus::Active,
         ]);
 
+        // A paid signup held its database build until now (CHR-175) — release it.
+        $this->releaseProvisioning($subscription->tenant);
+
         return 'active';
+    }
+
+    /**
+     * Once a paid signup's first charge lands, move the tenant off AwaitingPayment
+     * and dispatch its database build. Guarded so renewal charges (already Ready)
+     * and the idempotent webhook/callback double-fire don't re-provision.
+     */
+    private function releaseProvisioning(?Tenant $tenant): void
+    {
+        $tenant = $tenant?->fresh();
+
+        if ($tenant?->provisioning_status !== ProvisioningStatus::AwaitingPayment) {
+            return;
+        }
+
+        $tenant->forceFill(['provisioning_status' => ProvisioningStatus::Pending])->save();
+
+        ProvisionTenant::dispatch($tenant);
     }
 
     private function transition(Subscription $subscription, SubscriptionStatus $status): string

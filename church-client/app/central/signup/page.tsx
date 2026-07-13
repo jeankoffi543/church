@@ -9,9 +9,9 @@ export const metadata: Metadata = {
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string }>;
+  searchParams: Promise<{ plan?: string; tenant?: string; reference?: string; trxref?: string }>;
 }) {
-  const { plan } = await searchParams;
+  const { plan, tenant, reference, trxref } = await searchParams;
 
   return (
     <section className="mx-auto max-w-lg px-6 py-16">
@@ -25,7 +25,8 @@ export default async function SignupPage({
         </p>
       </div>
 
-      <SignupForm initialPlan={plan} />
+      {/* On a paid signup, Paystack redirects back here with ?tenant=…&reference=… */}
+      <SignupForm initialPlan={plan} returnTenant={tenant} returnReference={reference ?? trxref} />
     </section>
   );
 }

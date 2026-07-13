@@ -10,9 +10,14 @@ namespace App\Enums;
  * ProvisionTenant job builds its database (Provisioning) and either finishes
  * (Ready) or errors out (Failed) — the signup wizard polls this to know when the
  * church can log in.
+ *
+ * A paid signup instead starts at AwaitingPayment (CHR-175): provisioning is
+ * held until Paystack confirms the charge, at which point billing moves it to
+ * Pending and dispatches the build.
  */
 enum ProvisioningStatus: string
 {
+    case AwaitingPayment = 'awaiting_payment';
     case Pending = 'pending';
     case Provisioning = 'provisioning';
     case Ready = 'ready';
