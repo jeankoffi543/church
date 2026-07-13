@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Jobs;
 
 use App\Enums\ProvisioningStatus;
+use App\Mail\ChurchWelcomeMail;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\AccessControl;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Mail;
 use Spatie\Permission\Models\Role;
 use Stancl\Tenancy\Events\TenantCreated;
 use Stancl\Tenancy\Jobs\CreateDatabase;
@@ -65,9 +67,11 @@ class ProvisionTenant implements ShouldQueue
         dispatch_sync(new MigrateDatabase($tenant));
         dispatch_sync(new SeedDatabase($tenant));
 
-        $this->seedFirstAdmin($tenant);
+        $admin = $this->seedFirstAdmin($tenant);
 
         $tenant->markReady();
+
+        $this->sendWelcome($tenant, $admin);
     }
 
     public function failed(Throwable $exception): void
@@ -82,13 +86,17 @@ class ProvisionTenant implements ShouldQueue
     /**
      * Create the church's first Super Admin inside its freshly built database
      * from the credentials the signup stashed on the tenant, then wipe them.
+     * Returns the admin's public details (for the welcome email), or null when
+     * there was no deferred admin (e.g. back-office / adopted tenants).
+     *
+     * @return array{name: string, email: string}|null
      */
-    private function seedFirstAdmin(Tenant $tenant): void
+    private function seedFirstAdmin(Tenant $tenant): ?array
     {
         $admin = $tenant->pending_admin;
 
         if (! is_array($admin) || empty($admin['email'])) {
-            return;
+            return null;
         }
 
         $tenant->run(function () use ($admin): void {
@@ -103,5 +111,28 @@ class ProvisionTenant implements ShouldQueue
         });
 
         $tenant->forceFill(['pending_admin' => null])->save();
+
+        return ['name' => (string) $admin['name'], 'email' => (string) $admin['email']];
+    }
+
+    /**
+     * Welcome the new church's admin once the site is live (CHR-178), with a
+     * link straight to their back-office. No-op for tenants without a deferred
+     * admin (back-office / adopted churches).
+     *
+     * @param  array{name: string, email: string}|null  $admin
+     */
+    private function sendWelcome(Tenant $tenant, ?array $admin): void
+    {
+        if ($admin === null) {
+            return;
+        }
+
+        $domain = $tenant->domains()->where('is_primary', true)->value('domain')
+            ?? $tenant->slug.'.'.config('tenancy.central_root_domain');
+
+        Mail::to($admin['email'])->queue(
+            new ChurchWelcomeMail($tenant->name ?? $tenant->slug, $admin['name'], "https://{$domain}/admins/login"),
+        );
     }
 }

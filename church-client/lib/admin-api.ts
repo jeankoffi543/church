@@ -2350,3 +2350,24 @@ export async function deleteAdminDomain(id: number): Promise<void> {
   await adminFetch(`/domains/${id}`, { method: "DELETE" });
   updateTag("settings");
 }
+
+/* ── Onboarding (première prise en main) — CHR-178 ───────────────── */
+
+export type OnboardingStep = { key: string; label: string; done: boolean; href: string };
+
+export type OnboardingStatus = {
+  steps: OnboardingStep[];
+  completed: number;
+  total: number;
+  dismissed: boolean;
+};
+
+export async function getAdminOnboarding(): Promise<OnboardingStatus> {
+  const response = await adminFetch<{ data: OnboardingStatus }>("/onboarding");
+  return response.data;
+}
+
+export async function dismissAdminOnboarding(): Promise<void> {
+  await adminFetch("/onboarding/dismiss", { method: "POST" });
+  updateTag("settings");
+}
