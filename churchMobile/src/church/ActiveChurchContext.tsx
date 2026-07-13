@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import type { Membership } from '../types';
 
 const ACTIVE_KEY = 'churchapp.activeChurch';
+const MEMBERSHIPS_CACHE = 'churchapp.memberships.cache';
 
 type ActiveChurchState = {
   loading: boolean;
@@ -34,20 +35,32 @@ export function ActiveChurchProvider({ children }: { children: ReactNode }) {
     }
     const list = await getMemberships(token);
     setChurches(list);
+    AsyncStorage.setItem(MEMBERSHIPS_CACHE, JSON.stringify(list)).catch(() => {});
     setActiveId(prev => (prev && list.some(c => c.tenant_id === prev) ? prev : list[0]?.tenant_id ?? null));
   }, [token]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const stored = await AsyncStorage.getItem(ACTIVE_KEY);
+      // Hydrate from the last cache first so the app opens with churches offline.
+      const [stored, cached] = await Promise.all([
+        AsyncStorage.getItem(ACTIVE_KEY),
+        AsyncStorage.getItem(MEMBERSHIPS_CACHE),
+      ]);
+      if (mounted && cached) {
+        try {
+          setChurches(JSON.parse(cached) as Membership[]);
+        } catch {
+          // ignore a corrupt cache
+        }
+      }
       if (mounted && stored) {
         setActiveId(stored);
       }
       try {
         await refresh();
       } catch {
-        // leave the list empty on failure; screens surface their own errors
+        // offline / server down — keep the cached list
       }
       if (mounted) {
         setLoading(false);

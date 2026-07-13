@@ -14,10 +14,12 @@ import ChurchHomeScreen from '../screens/ChurchHomeScreen';
 import LiveScreen from '../screens/LiveScreen';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import MyChurchesScreen from '../screens/MyChurchesScreen';
+import DonateScreen from '../screens/DonateScreen';
 import { colors } from '../theme';
-import type { AppTabParamList, AuthStackParamList } from './types';
+import type { AppStackParamList, AppTabParamList, AuthStackParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
+const AppStack = createNativeStackNavigator<AppStackParamList>();
 const AppTabs = createBottomTabNavigator<AppTabParamList>();
 
 function SignOutButton() {
@@ -31,24 +33,34 @@ function SignOutButton() {
 
 const renderSignOut = () => <SignOutButton />;
 
+function AppTabsNavigator() {
+  return (
+    <AppTabs.Navigator
+      screenOptions={{
+        headerStyle: styles.header,
+        headerTintColor: colors.white,
+        headerTitleStyle: styles.headerTitle,
+        headerRight: renderSignOut,
+        tabBarActiveTintColor: colors.goldDark,
+        tabBarInactiveTintColor: colors.faint,
+      }}>
+      <AppTabs.Screen name="Home" component={ChurchHomeScreen} options={{ title: 'Accueil' }} />
+      <AppTabs.Screen name="Live" component={LiveScreen} options={{ title: 'Live' }} />
+      <AppTabs.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Découvrir' }} />
+      <AppTabs.Screen name="MyChurches" component={MyChurchesScreen} options={{ title: 'Mes églises' }} />
+    </AppTabs.Navigator>
+  );
+}
+
 function AppNavigator() {
   return (
     <ActiveChurchProvider>
       <PushManager />
-      <AppTabs.Navigator
-        screenOptions={{
-          headerStyle: styles.header,
-          headerTintColor: colors.white,
-          headerTitleStyle: styles.headerTitle,
-          headerRight: renderSignOut,
-          tabBarActiveTintColor: colors.goldDark,
-          tabBarInactiveTintColor: colors.faint,
-        }}>
-        <AppTabs.Screen name="Home" component={ChurchHomeScreen} options={{ title: 'Accueil' }} />
-        <AppTabs.Screen name="Live" component={LiveScreen} options={{ title: 'Live' }} />
-        <AppTabs.Screen name="Discover" component={DiscoverScreen} options={{ title: 'Découvrir' }} />
-        <AppTabs.Screen name="MyChurches" component={MyChurchesScreen} options={{ title: 'Mes églises' }} />
-      </AppTabs.Navigator>
+      <AppStack.Navigator
+        screenOptions={{ headerStyle: styles.header, headerTintColor: colors.white, headerTitleStyle: styles.headerTitle }}>
+        <AppStack.Screen name="Tabs" component={AppTabsNavigator} options={{ headerShown: false }} />
+        <AppStack.Screen name="Donate" component={DonateScreen} options={{ title: 'Faire un don' }} />
+      </AppStack.Navigator>
     </ActiveChurchProvider>
   );
 }

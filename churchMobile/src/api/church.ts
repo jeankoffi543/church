@@ -1,5 +1,5 @@
 import { apiFetch } from './client';
-import type { ChatMessage, ChurchEvent, LiveState, Reaction } from '../types';
+import type { ChatMessage, ChurchEvent, DonationInit, DonationStatusResult, LiveState, Reaction } from '../types';
 
 /**
  * A church's public API is served on its own hostname (CHR-186). React Native's
@@ -59,6 +59,35 @@ export async function sendReaction(domain: string, type: string): Promise<Reacti
     origin: churchOrigin(domain),
     method: 'POST',
     body: { type },
+  });
+  return res.data;
+}
+
+/** CHR-189 — open a Paystack donation for a church; returns the inline params. */
+export async function initializeDonation(
+  domain: string,
+  payload: {
+    donor_name: string;
+    donor_email: string;
+    donor_phone?: string;
+    purpose_key: string;
+    amount: number;
+    frequency: 'unique' | 'mensuel';
+    currency?: string;
+  },
+): Promise<DonationInit> {
+  const res = await apiFetch<{ data: DonationInit }>('/api/v1/public/donations/initialize', {
+    origin: churchOrigin(domain),
+    method: 'POST',
+    body: payload,
+  });
+  return res.data;
+}
+
+/** CHR-189 — poll a donation's accounting status after checkout. */
+export async function getDonationStatus(domain: string, reference: string): Promise<DonationStatusResult> {
+  const res = await apiFetch<{ data: DonationStatusResult }>(`/api/v1/public/donations/${reference}/status`, {
+    origin: churchOrigin(domain),
   });
   return res.data;
 }

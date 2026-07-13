@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { getLiveState, getUpcomingEvents } from '../api/church';
 import { useActiveChurch } from '../church/ActiveChurchContext';
 import { Banner } from '../components/ui';
 import { colors, radius } from '../theme';
+import type { AppStackParamList } from '../navigation/types';
 import type { ChurchEvent, LiveState } from '../types';
 
 function formatDate(iso: string | null): string {
@@ -16,6 +19,7 @@ function formatDate(iso: string | null): string {
 }
 
 export default function ChurchHomeScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { loading, active, churches, setActive } = useActiveChurch();
   const [live, setLive] = useState<LiveState | null>(null);
   const [events, setEvents] = useState<ChurchEvent[]>([]);
@@ -88,6 +92,10 @@ export default function ChurchHomeScreen() {
             <Text style={styles.offlineText}>Pas de diffusion en cours.</Text>
           </View>
         )}
+
+        <Pressable onPress={() => navigation.navigate('Donate')} style={styles.donateBtn}>
+          <Text style={styles.donateText}>♡  Faire un don</Text>
+        </Pressable>
 
         <Text style={styles.sectionTitle}>À venir</Text>
         {contentLoading ? (
@@ -165,6 +173,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   offlineText: { color: colors.body, fontSize: 14 },
+  donateBtn: { backgroundColor: colors.gold, borderRadius: radius.pill, paddingVertical: 14, alignItems: 'center', marginBottom: 8 },
+  donateText: { color: colors.ink, fontSize: 15, fontWeight: '700' },
   sectionTitle: { color: colors.indigo, fontSize: 16, fontWeight: '700', marginTop: 12, marginBottom: 4 },
   loader: { marginTop: 16 },
   empty: { color: colors.faint, fontSize: 14, marginTop: 8 },

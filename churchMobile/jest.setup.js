@@ -20,6 +20,9 @@ jest.mock('laravel-echo', () => ({
 }));
 jest.mock('pusher-js', () => ({ __esModule: true, default: jest.fn() }));
 
+// WebView is a native module — stub it (CHR-189 Paystack checkout).
+jest.mock('react-native-webview', () => ({ WebView: () => null }));
+
 // Firebase messaging is a native module — stub it (CHR-187).
 jest.mock('@react-native-firebase/messaging', () => {
   const noop = () => () => {};
