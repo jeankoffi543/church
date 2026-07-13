@@ -33,6 +33,7 @@ import {
   Rocket,
   CreditCard,
   KeyRound,
+  Palette,
   type LucideIcon,
 } from "lucide-react";
 
@@ -112,6 +113,7 @@ export const ADMIN_PAGES: AdminPage[] = [
   // Église & Présentation
   { key: "pastor-word", path: "/admins/settings/pastor-word", label: "Mot du Pasteur", icon: MessageSquare, permission: [PERMISSIONS.managePastorWord], group: "church" },
   { key: "church-vision", path: "/admins/settings/church-vision", label: "Vision & Équipe", icon: Compass, permission: [PERMISSIONS.manageChurchVision], group: "church" },
+  { key: "appearance", path: "/admins/settings/appearance", label: "Apparence", icon: Palette, permission: [PERMISSIONS.manageSettings], group: "church" },
   { key: "settings", path: "/admins/settings", label: "Paramètres", icon: Settings, permission: [PERMISSIONS.manageSettings, PERMISSIONS.manageLive, PERMISSIONS.managePrayerSettings], group: "church" },
   { key: "billing", path: "/admins/settings/billing", label: "Abonnement", icon: CreditCard, permission: [PERMISSIONS.manageSettings], group: "church" },
   { key: "studio-keys", path: "/admins/settings/studio-keys", label: "Licences Studio", icon: KeyRound, permission: [PERMISSIONS.manageSettings], feature: FEATURES.studio, group: "church" },
