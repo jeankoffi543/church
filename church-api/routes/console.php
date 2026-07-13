@@ -22,3 +22,9 @@ Schedule::command('tenants:run currency:sync-rates')
 Schedule::command('domains:verify-pending')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+// Nightly per-tenant database backups (CHR-190) — a safety net before any
+// lifecycle op (move-shard, purge). withoutOverlapping guards a long run.
+Schedule::command('tenants:backup')
+    ->dailyAt('02:00')
+    ->withoutOverlapping();

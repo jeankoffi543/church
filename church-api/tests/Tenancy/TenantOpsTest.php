@@ -1,5 +1,9 @@
 <?php
 
+use App\Enums\SubscriptionStatus;
+use App\Models\Plan;
+use App\Models\PushSubscription;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
 use Illuminate\Support\Facades\Artisan;
@@ -65,6 +69,18 @@ it('purges a tenant and keeps an audit record', function () {
 
     expect(Tenant::query()->whereKey($tenant->id)->exists())->toBeFalse()
         ->and(TenantAudit::query()->where('action', 'purged')->where('tenant_id', $tenant->id)->exists())->toBeTrue();
+});
+
+it('erases the tenant personal data in central tables on purge (RGPD, CHR-190)', function () {
+    $plan = Plan::create(['code' => 'p'.uniqid(), 'name' => 'P', 'features' => [], 'limits' => []]);
+    $tenant = Tenant::factory()->create();
+    PushSubscription::create(['tenant_id' => $tenant->id, 'device_token' => 'd1', 'platform' => 'android', 'topics' => []]);
+    Subscription::create(['tenant_id' => $tenant->id, 'plan_id' => $plan->id, 'status' => SubscriptionStatus::Active]);
+
+    $this->artisan('tenants:purge', ['tenant' => $tenant->id, '--force' => true])->assertSuccessful();
+
+    expect(PushSubscription::query()->where('tenant_id', $tenant->id)->exists())->toBeFalse()
+        ->and(Subscription::query()->where('tenant_id', $tenant->id)->exists())->toBeFalse();
 });
 
 it('aborts a purge on an unknown tenant', function () {
