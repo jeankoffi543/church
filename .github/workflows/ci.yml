@@ -1,0 +1,104 @@
+name: CI
+
+# Lint + tests for the SaaS apps (backend, web, mobile) on every push/PR.
+# studio-native has its own workflow.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  church-api:
+    name: church-api (Pint + Pest)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: church-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, sqlite3, redis, mbstring, bcmath, intl
+          coverage: none
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: church-api/vendor
+          key: composer-${{ hashFiles('church-api/composer.lock') }}
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Style is informational for now (pre-existing formatting debt in seeders,
+      # legacy controllers and the vendored keky/query-master package).
+      - name: Pint (style check)
+        run: vendor/bin/pint --test
+        continue-on-error: true
+
+      - name: Pest
+        run: php artisan test --compact
+
+  church-client:
+    name: church-client (tsc + lint)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: church-client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: church-client/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      # Informational: pre-existing `no-explicit-any` debt in a few legacy files.
+      - name: Lint
+        run: pnpm lint
+        continue-on-error: true
+
+  church-mobile:
+    name: churchMobile (tsc + eslint + jest)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: churchMobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: churchMobile/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Jest
+        run: npx jest --ci
