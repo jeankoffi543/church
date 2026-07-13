@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Platform;
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
 use App\Enums\ProvisioningStatus;
 use App\Enums\SslStatus;
@@ -112,6 +113,7 @@ class SignupController extends Controller
             'domain' => $domain,
             'type' => DomainType::Subdomain,
             'is_primary' => true,
+            'status' => DomainStatus::Active,
             'verified_at' => now(),
             'ssl_status' => SslStatus::Issued,
         ]);

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
 use App\Enums\SslStatus;
 use App\Http\Controllers\Controller;
@@ -19,14 +20,14 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class DomainController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(DomainVerificationService $verifier): JsonResponse
     {
         $domains = Domain::query()
             ->where('tenant_id', tenant('id'))
             ->orderByDesc('is_primary')
             ->orderBy('id')
             ->get()
-            ->map(fn (Domain $domain): array => $this->payload($domain));
+            ->map(fn (Domain $domain): array => $this->payload($domain, $verifier));
 
         return response()->json(['data' => $domains]);
     }
@@ -50,6 +51,7 @@ class DomainController extends Controller
             'domain' => $host,
             'type' => DomainType::Custom,
             'is_primary' => false,
+            'status' => DomainStatus::Pending,
             'verified_at' => null,
             'ssl_status' => SslStatus::Pending,
             'verification_token' => 'chr_'.Str::lower(Str::random(32)),
@@ -66,6 +68,8 @@ class DomainController extends Controller
         $this->authorizeDomain($domain);
 
         if (! $verifier->verify($domain)) {
+            $domain->touchVerificationCheck();
+
             return response()->json([
                 'data' => $this->payload($domain),
                 'verified' => false,
@@ -73,9 +77,28 @@ class DomainController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $domain->update(['verified_at' => now(), 'ssl_status' => SslStatus::Issued]);
+        $domain->markVerified();
 
         return response()->json(['data' => $this->payload($domain), 'verified' => true]);
+    }
+
+    /**
+     * Promote a verified custom domain to the church's live primary hostname
+     * (CHR-176), demoting whatever held the primary slot.
+     */
+    public function activate(Domain $domain): JsonResponse
+    {
+        $this->authorizeDomain($domain);
+
+        abort_unless(
+            $domain->status?->isVerified() === true,
+            Response::HTTP_UNPROCESSABLE_ENTITY,
+            "Ce domaine doit d'abord être vérifié avant d'être activé.",
+        );
+
+        $domain->activate();
+
+        return response()->json(['data' => $this->payload($domain->refresh())]);
     }
 
     public function destroy(Domain $domain): JsonResponse
@@ -97,16 +120,25 @@ class DomainController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function payload(Domain $domain): array
+    private function payload(Domain $domain, ?DomainVerificationService $verifier = null): array
     {
+        // Surface the DNS records for a custom domain that still needs setting up,
+        // so the back-office can show them even after a reload (CHR-176).
+        $dns = $verifier !== null && $domain->type === DomainType::Custom && $domain->status?->isLive() !== true
+            ? $verifier->instructions($domain)
+            : null;
+
         return [
             'id' => $domain->id,
             'domain' => $domain->domain,
             'type' => $domain->type?->value,
             'is_primary' => (bool) $domain->is_primary,
+            'status' => $domain->status?->value,
             'verified' => $domain->verified_at !== null,
             'verified_at' => $domain->verified_at?->toIso8601String(),
+            'last_checked_at' => $domain->last_checked_at?->toIso8601String(),
             'ssl_status' => $domain->ssl_status?->value,
+            'dns' => $dns,
         ];
     }
 }

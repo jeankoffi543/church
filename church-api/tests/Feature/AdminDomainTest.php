@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
 use App\Enums\SslStatus;
 use App\Models\Domain;
@@ -61,9 +62,11 @@ it('verifies a domain once its TXT record is live', function () {
     $this->postJson("http://localhost/api/v1/admin/domains/{$domain->id}/verify")
         ->assertOk()
         ->assertJsonPath('verified', true)
+        ->assertJsonPath('data.status', 'verified')
         ->assertJsonPath('data.ssl_status', 'issued');
 
-    expect($domain->refresh()->verified_at)->not->toBeNull();
+    expect($domain->refresh()->verified_at)->not->toBeNull()
+        ->and($domain->status)->toBe(DomainStatus::Verified);
 });
 
 it('reports a domain still not verified', function () {
@@ -96,4 +99,37 @@ it('gates adding a custom domain behind the custom_domain feature', function () 
 
     $this->postJson('http://localhost/api/v1/admin/domains', ['domain' => 'www.grace.org'])
         ->assertForbidden();
+});
+
+/*
+| CHR-176 — activation state machine: a verified custom domain can be promoted to
+| the church's live primary hostname, demoting whatever held the slot.
+*/
+
+it('activates a verified custom domain as the new primary', function () {
+    actingAsSuperAdmin();
+    $tenantId = Tenant::query()->value('id');
+    $previousPrimary = Domain::query()->where('is_primary', true)->firstOrFail();
+    $domain = customDomain();
+    $domain->update(['status' => DomainStatus::Verified, 'verified_at' => now()]);
+
+    $this->postJson("http://localhost/api/v1/admin/domains/{$domain->id}/activate")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.is_primary', true);
+
+    expect($domain->refresh()->is_primary)->toBeTrue()
+        ->and($domain->status)->toBe(DomainStatus::Active)
+        ->and($previousPrimary->refresh()->is_primary)->toBeFalse()
+        ->and(Domain::query()->where('tenant_id', $tenantId)->where('is_primary', true)->count())->toBe(1);
+});
+
+it('refuses to activate a domain that is not yet verified', function () {
+    actingAsSuperAdmin();
+    $domain = customDomain();
+
+    $this->postJson("http://localhost/api/v1/admin/domains/{$domain->id}/activate")
+        ->assertStatus(422);
+
+    expect($domain->refresh()->is_primary)->toBeFalse();
 });

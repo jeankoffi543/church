@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\DomainStatus;
 use App\Enums\DomainType;
 use App\Enums\SslStatus;
 use App\Enums\TenantStatus;
@@ -65,6 +66,7 @@ class AdoptTenant extends Command
             'domain' => $domain,
             'type' => $type,
             'is_primary' => true,
+            'status' => DomainStatus::Active,
             'verified_at' => now(),
             'ssl_status' => $type === DomainType::Subdomain ? SslStatus::Issued : null,
         ]);

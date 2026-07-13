@@ -2297,3 +2297,56 @@ export async function getAdminDashboardSummary(from: string, to: string): Promis
   return response.data;
 }
 
+
+/* ── Domaines personnalisés (CHR-176) ────────────────────────────── */
+
+export type DomainDnsRecord = { type: string; host: string; target?: string; value?: string };
+
+export type DomainDnsInstructions = { cname: DomainDnsRecord; txt: DomainDnsRecord };
+
+export type AdminDomain = {
+  id: number;
+  domain: string;
+  type: "subdomain" | "custom" | null;
+  is_primary: boolean;
+  status: "pending" | "verified" | "active" | "failed" | null;
+  verified: boolean;
+  verified_at: string | null;
+  last_checked_at: string | null;
+  ssl_status: "pending" | "issued" | "failed" | null;
+  dns: DomainDnsInstructions | null;
+};
+
+export async function getAdminDomains(): Promise<AdminDomain[]> {
+  const response = await adminFetch<{ data: AdminDomain[] }>("/domains");
+  return response.data;
+}
+
+export async function addAdminDomain(
+  domain: string
+): Promise<{ data: AdminDomain; instructions: DomainDnsInstructions }> {
+  const result = await adminFetch<{ data: AdminDomain; instructions: DomainDnsInstructions }>("/domains", {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+  updateTag("settings");
+  return result;
+}
+
+/** Manual "verify now"; throws (with the friendly message) while still pending. */
+export async function verifyAdminDomain(id: number): Promise<AdminDomain> {
+  const result = await adminFetch<{ data: AdminDomain }>(`/domains/${id}/verify`, { method: "POST" });
+  updateTag("settings");
+  return result.data;
+}
+
+export async function activateAdminDomain(id: number): Promise<AdminDomain> {
+  const result = await adminFetch<{ data: AdminDomain }>(`/domains/${id}/activate`, { method: "POST" });
+  updateTag("settings");
+  return result.data;
+}
+
+export async function deleteAdminDomain(id: number): Promise<void> {
+  await adminFetch(`/domains/${id}`, { method: "DELETE" });
+  updateTag("settings");
+}
