@@ -7,6 +7,7 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { hasAnyPermission } from "@/lib/auth/permissions";
+import { hasFeature } from "@/lib/auth/features";
 import { ADMIN_NAV_GROUPS, ADMIN_PAGES, resolveActivePath } from "@/lib/admin/registry";
 import type { AdminMe } from "@/lib/admin-api";
 
@@ -19,7 +20,9 @@ export function AdminNav({ me }: { me: AdminMe | null }) {
   const pathname = usePathname();
   const activePath = resolveActivePath(pathname);
 
-  const visiblePages = ADMIN_PAGES.filter((page) => hasAnyPermission(me, page.permission));
+  const visiblePages = ADMIN_PAGES.filter(
+    (page) => hasAnyPermission(me, page.permission) && hasFeature(me, page.feature),
+  );
   const activeGroup = visiblePages.find((page) => page.path === activePath)?.group;
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(

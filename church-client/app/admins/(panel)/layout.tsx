@@ -11,6 +11,7 @@ import { ADMIN_LOGIN_PATH } from "@/lib/auth/config";
 import { logoutAdmin } from "../login/actions";
 import { AdminNav } from "./_components/admin-nav";
 import { AdminRealtimeNotifier } from "./_components/admin-realtime-notifier";
+import { FeatureGuard } from "./_components/feature-guard";
 import { LiveStatusControl } from "./_components/live-status-control";
 
 /** Read the current live status server-side so the top bar renders without a flash. */
@@ -96,7 +97,9 @@ export default async function AdminPanelLayout({
           <LiveStatusControl initialIsLive={initialIsLive} />
         </header>
 
-        <main className="flex-1 px-6 py-8 md:px-10 md:py-10">{children}</main>
+        <main className="flex-1 px-6 py-8 md:px-10 md:py-10">
+          <FeatureGuard me={me}>{children}</FeatureGuard>
+        </main>
       </div>
 
       {/* Live back-office notifications over this church's private channel (CHR-157). */}

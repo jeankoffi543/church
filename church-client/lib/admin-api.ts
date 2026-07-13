@@ -704,6 +704,8 @@ export type AdminMe = {
   is_super_admin: boolean;
   roles: string[];
   permissions: string[];
+  /** The tenant's active plan features, used to gate paid modules (CHR-179). */
+  features: string[];
 };
 
 /** A Group / Department with its permission set and member count. */
@@ -737,8 +739,9 @@ export type AdminPermissionCategory = {
  */
 export async function getAdminMe(): Promise<AdminMe | null> {
   try {
-    const response = await adminFetch<{ data: AdminMe }>("/me");
-    return response.data;
+    // The tenant's active features ride alongside `data` on the /me payload.
+    const response = await adminFetch<{ data: AdminMe; features?: string[] }>("/me");
+    return { ...response.data, features: response.features ?? [] };
   } catch (err) {
     if (err instanceof Error && err.message === "UNAUTHORIZED") {
       return null;
