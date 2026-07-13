@@ -17,9 +17,11 @@ export const ADMIN_LOGIN_PATH = "/admins/login";
 export const USER_LOGIN_PATH = "/login";
 /** Default landing page once an admin is authenticated. */
 export const ADMIN_HOME_PATH = "/admins/dashboard";
+/** Platform impersonation handshake — sets the admin cookie from a token (CHR-183). */
+export const ADMIN_IMPERSONATE_PATH = "/admins/impersonate";
 
-/** Admin routes reachable WITHOUT an admin session (auth screens). */
-export const PUBLIC_ADMIN_PATHS = [ADMIN_LOGIN_PATH];
+/** Admin routes reachable WITHOUT an admin session (auth screens + handshake). */
+export const PUBLIC_ADMIN_PATHS = [ADMIN_LOGIN_PATH, ADMIN_IMPERSONATE_PATH];
 
 /** Standard user routes that require a user session. */
 export const PROTECTED_USER_PREFIXES = ["/dashboard", "/profile"];

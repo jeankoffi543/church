@@ -26,9 +26,18 @@ use Illuminate\Validation\Rule;
  */
 class TenantController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        $tenants = Tenant::query()->with('domains')->latest()->paginate(20);
+        $tenants = Tenant::query()
+            ->with('domains')
+            ->when($request->filled('search'), function ($query) use ($request): void {
+                $term = trim((string) $request->string('search'));
+                $query->where(fn ($q) => $q->where('name', 'like', "%{$term}%")->orWhere('slug', 'like', "%{$term}%"));
+            })
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->string('status')))
+            ->latest()
+            ->paginate(20)
+            ->withQueryString();
 
         return TenantResource::collection($tenants);
     }

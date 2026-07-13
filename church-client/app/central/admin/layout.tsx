@@ -24,10 +24,15 @@ export default async function PlatformConsoleLayout({ children }: { children: Re
     <div className="min-h-screen bg-cream text-indigo">
       <header className="sticky top-0 z-40 border-b border-indigo/10 bg-ink text-cream">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
-          <Link href="/central/admin" className="flex items-center gap-2 font-display text-lg font-bold">
-            <span className="grid size-7 place-items-center rounded-lg bg-gold text-ink">✦</span>
-            ChurchApp <span className="font-normal text-cream/50">· Console</span>
-          </Link>
+          <div className="flex items-center gap-6">
+            <Link href="/central/admin" className="flex items-center gap-2 font-display text-lg font-bold">
+              <span className="grid size-7 place-items-center rounded-lg bg-gold text-ink">✦</span>
+              ChurchApp <span className="font-normal text-cream/50">· Console</span>
+            </Link>
+            <Link href="/central/admin/tenants" className="hidden text-sm font-semibold text-cream/70 transition hover:text-cream sm:inline">
+              Églises
+            </Link>
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="hidden text-cream/70 sm:inline">
               {me.name} · <span className="text-gold">{me.role}</span>
