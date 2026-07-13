@@ -54,8 +54,15 @@ class SendPushCampaign implements ShouldQueue
                 ->values();
         }
 
+        // Carry the church + campaign ids in the silent data payload so the mobile
+        // Hub can deep-link to that church and record the open (CHR-187).
+        $data = array_merge($campaign->data ?? [], [
+            'tenant_id' => $this->tenantId,
+            'campaign_id' => (string) $campaign->id,
+        ]);
+
         $result = $push->send(
-            new PushMessage($campaign->title, $campaign->body, $campaign->data ?? []),
+            new PushMessage($campaign->title, $campaign->body, $data),
             $subscriptions,
         );
 

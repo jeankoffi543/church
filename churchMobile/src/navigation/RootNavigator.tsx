@@ -6,6 +6,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
 import { useAuth } from '../auth/AuthContext';
 import { ActiveChurchProvider } from '../church/ActiveChurchContext';
+import { PushManager } from '../push/PushManager';
+import { navigationRef } from './navigationRef';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ChurchHomeScreen from '../screens/ChurchHomeScreen';
@@ -31,6 +33,7 @@ const renderSignOut = () => <SignOutButton />;
 function AppNavigator() {
   return (
     <ActiveChurchProvider>
+      <PushManager />
       <AppTabs.Navigator
         screenOptions={{
           headerStyle: styles.header,
@@ -60,7 +63,7 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {token ? (
         <AppNavigator />
       ) : (

@@ -50,3 +50,37 @@ export async function getMemberships(token: string): Promise<Membership[]> {
   const res = await apiFetch<{ data: Membership[] }>('/api/identity/memberships', { token });
   return res.data;
 }
+
+/** CHR-168/187 — register this device's push token for a followed church. */
+export function registerDevice(
+  token: string,
+  tenantId: string,
+  deviceToken: string,
+  platform: 'ios' | 'android',
+  topics?: string[],
+): Promise<unknown> {
+  return apiFetch(`/api/identity/memberships/${tenantId}/device`, {
+    method: 'POST',
+    token,
+    body: { device_token: deviceToken, platform, topics },
+  });
+}
+
+/** CHR-168/187 — drop every subscription for a device token (on sign-out). */
+export function forgetDevice(token: string, deviceToken: string): Promise<{ removed: number }> {
+  return apiFetch('/api/identity/devices/forget', { method: 'POST', token, body: { device_token: deviceToken } });
+}
+
+/** CHR-171/187 — mark a campaign opened when the notification is tapped. */
+export function markPushOpened(
+  token: string,
+  tenantId: string,
+  campaignId: number,
+  deviceToken: string,
+): Promise<{ opened: boolean }> {
+  return apiFetch(`/api/identity/churches/${tenantId}/push/opened`, {
+    method: 'POST',
+    token,
+    body: { campaign_id: campaignId, device_token: deviceToken },
+  });
+}

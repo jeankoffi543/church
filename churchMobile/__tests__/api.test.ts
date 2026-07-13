@@ -82,4 +82,20 @@ describe('identity api', () => {
     expect(url).toContain('/api/identity/memberships/abc');
     expect(opts.method).toBe('DELETE');
   });
+
+  it('registers a device token for a church (CHR-187)', async () => {
+    mockFetch(201, { data: {} });
+    await identity.registerDevice('tok', 'abc', 'fcm-1', 'android', ['news']);
+    const [url, opts] = lastCall();
+    expect(url).toContain('/api/identity/memberships/abc/device');
+    expect(JSON.parse(opts.body as string)).toMatchObject({ device_token: 'fcm-1', platform: 'android', topics: ['news'] });
+  });
+
+  it('marks a campaign opened (CHR-187)', async () => {
+    mockFetch(200, { opened: true });
+    await identity.markPushOpened('tok', 'abc', 42, 'fcm-1');
+    const [url, opts] = lastCall();
+    expect(url).toContain('/api/identity/churches/abc/push/opened');
+    expect(JSON.parse(opts.body as string)).toMatchObject({ campaign_id: 42, device_token: 'fcm-1' });
+  });
 });
