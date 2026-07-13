@@ -3,12 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   ADMIN_COOKIE,
   USER_COOKIE,
+  PLATFORM_COOKIE,
   ADMIN_LOGIN_PATH,
   ADMIN_HOME_PATH,
   USER_LOGIN_PATH,
+  CENTRAL_LOGIN_PATH,
   isAdminPath,
   isPublicAdminPath,
   isProtectedUserPath,
+  isPlatformConsolePath,
 } from "@/lib/auth/config";
 import {
   normalizeHost,
@@ -45,6 +48,13 @@ export async function proxy(request: NextRequest) {
   // SaaS domains; the `x-app-zone: central` header tells the root layout to drop
   // the church chrome. Other central hosts (dev localhost) keep the church app.
   if (isCentralHost(host)) {
+    // Platform super-admin console requires a platform session (CHR-182).
+    if (isPlatformConsolePath(pathname) && !request.cookies.get(PLATFORM_COOKIE)?.value) {
+      const url = request.nextUrl.clone();
+      url.pathname = CENTRAL_LOGIN_PATH;
+      return NextResponse.redirect(url);
+    }
+
     const serveMarketing = isMarketingHost(host) && shouldServeMarketing(pathname);
     const inCentralTree = pathname.startsWith(CENTRAL_TREE);
 
