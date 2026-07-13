@@ -80,6 +80,32 @@ it('prunes tokens the provider rejects', function () {
         ->and($campaign->fresh()->failed_count)->toBe(1);
 });
 
+it('injects the church + campaign ids into the push data for deep-linking (CHR-187)', function () {
+    actingAsAdminWith(['manage_members']);
+    subscribe('dev1');
+    $campaign = PushCampaign::create(['title' => 'T', 'body' => 'B', 'status' => PushCampaignStatus::Draft, 'data' => ['url' => '/x']]);
+
+    $fake = new class extends PushManager
+    {
+        /** @var array<string, string> */
+        public array $lastData = [];
+
+        public function send($message, $subscriptions): PushResult
+        {
+            $this->lastData = $message->data;
+
+            return new PushResult($subscriptions->pluck('device_token')->all(), []);
+        }
+    };
+    $this->app->instance(PushManager::class, $fake);
+
+    $this->postJson("/api/v1/admin/push/campaigns/{$campaign->id}/send")->assertOk();
+
+    expect($fake->lastData)->toHaveKey('tenant_id')
+        ->and($fake->lastData['campaign_id'])->toBe((string) $campaign->id)
+        ->and($fake->lastData['url'])->toBe('/x'); // the campaign's own data is preserved
+});
+
 it('does not re-send an already sent campaign', function () {
     actingAsAdminWith(['manage_members']);
     $campaign = PushCampaign::create(['title' => 'T', 'body' => 'B', 'status' => PushCampaignStatus::Sent]);
