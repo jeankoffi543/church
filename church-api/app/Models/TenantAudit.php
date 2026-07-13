@@ -46,4 +46,9 @@ class TenantAudit extends Model
     {
         return $this->belongsTo(CentralUser::class, 'central_user_id');
     }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
 }

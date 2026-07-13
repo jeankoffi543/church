@@ -178,3 +178,46 @@ export async function createPlatformStudioKey(id: string, label: string): Promis
 export async function revokePlatformStudioKey(activationId: number): Promise<void> {
   await platformFetch(`/studio/keys/${activationId}/revoke`, { method: "POST" });
 }
+
+/* ── Super-admin console: health & metrics (CHR-184) ─────────────── */
+
+export type PlatformOverview = {
+  tenants: { total: number; active: number; suspended: number; provisioning: number };
+  revenue: { mrr: number; currency: string; active_subscriptions: number };
+  plans: { code: string; name: string; price_month: number; tenants: number }[];
+  push: { subscriptions: number };
+};
+
+export async function getPlatformOverview(): Promise<PlatformOverview> {
+  const res = await platformFetch<{ data: PlatformOverview }>("/stats/overview");
+  return res.data;
+}
+
+export type PlatformShard = {
+  id: number;
+  name: string;
+  host: string | null;
+  is_active: boolean;
+  max_tenants: number | null;
+  tenants_count: number;
+  weight: number;
+  has_read_replica: boolean;
+};
+
+export async function getPlatformShards(): Promise<{ servers: PlatformShard[]; unassigned: number }> {
+  const res = await platformFetch<{ data: { servers: PlatformShard[]; unassigned: number } }>("/stats/shards");
+  return res.data;
+}
+
+export type PlatformAudit = {
+  id: number;
+  action: string;
+  actor: { name: string; email: string } | null;
+  tenant: { id: string; name: string; slug: string } | null;
+  meta: Record<string, unknown> | null;
+  created_at: string | null;
+};
+
+export async function getPlatformAudits(page = 1): Promise<PlatformPage<PlatformAudit>> {
+  return platformFetch(`/stats/audits?page=${page}`);
+}
