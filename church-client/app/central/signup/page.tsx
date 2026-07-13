@@ -21,7 +21,7 @@ export default async function SignupPage({
           Créez le site de votre église
         </h1>
         <p className="mt-3 text-sm text-body">
-          14 jours d&apos;essai · votre site est en ligne immédiatement sur votre sous-domaine.
+          14 jours d&apos;essai · votre site est prêt en quelques instants sur votre sous-domaine.
         </p>
       </div>
 
