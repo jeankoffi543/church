@@ -450,6 +450,12 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
     // Public domain → tenant resolver for the Next.js proxy (CHR-144).
     Route::get('resolve', [Platform\ResolveController::class, 'resolve'])->name('resolve');
 
+    // Caddy on-demand TLS authorization gate (CHR-177): only issue certs for a
+    // verified custom domain or a known platform subdomain.
+    Route::get('tls/authorize', [Platform\TlsController::class, 'authorize'])
+        ->middleware('throttle:120,1')
+        ->name('tls.authorize');
+
     // Public plan catalogue for the SaaS marketing pricing page (CHR-146).
     Route::get('plans', [Platform\PlanController::class, 'index'])->name('plans');
 

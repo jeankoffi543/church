@@ -41,9 +41,18 @@ Three paths, all running the pipeline `CreateDatabase → MigrateDatabase → Se
 ## Custom domains
 
 The church adds its own domain from its back-office (`/api/v1/admin/domains`, feature
-`custom_domain`): it publishes a `TXT _churchapp-verify.<domain>` record, then `verify`
-marks it `verified` + `ssl_status=issued`. On-demand TLS (Caddy ACME) issues the cert at
-the edge on first request.
+`custom_domain`): it publishes a `TXT _churchapp-verify.<domain>` record, then either the
+`domains:verify-pending` poller (every 5 min) or a manual `verify` walks it through the
+state machine `pending → verified → active` (CHR-176); a domain that never verifies within
+72h is marked `failed`. Activating a verified domain promotes it to the church's primary
+hostname.
+
+On-demand TLS (Caddy ACME) issues the cert at the edge on first request, gated by
+`GET /api/platform/tls/authorize?domain=<host>` (CHR-177): Caddy's `on_demand_tls { ask }`
+hits it and only issues a certificate when it returns 2xx — i.e. for a verified custom
+domain or a known platform subdomain — so nobody can force issuance for an arbitrary host.
+Platform subdomains are covered by a single `*.{root}` wildcard cert (DNS-01). See
+`deploy/caddy/Caddyfile.example`.
 
 ## Studio Live activation
 
