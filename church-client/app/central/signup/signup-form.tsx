@@ -23,8 +23,13 @@ const SLUG_MESSAGES: Record<string, string> = {
   invalid: "3 à 40 caractères : lettres, chiffres et tirets.",
 };
 
+// Mirror of the backend DomainAvailabilityService format rule (CHR-198): any TLD.
+const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
 type Errors = Record<string, string[]>;
 type SlugStatus = "idle" | "checking" | "available" | "unavailable";
+type DomainStatus = "idle" | "checking" | "available" | "unavailable" | "unknown" | "invalid";
+type DomainCheck = { name: string; available: boolean | null; registered: boolean | null; reason: string | null };
 type Phase = "form" | "verifying" | "provisioning";
 
 const FIELDS = {
@@ -46,6 +51,12 @@ export function SignupForm({ initialPlan, returnTenant, returnReference }: { ini
   const [errors, setErrors] = useState<Errors>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Optional "I already have / want my own domain" check (CHR-199) — purely
+  // informational at signup; the church connects the domain after creation.
+  const [showDomain, setShowDomain] = useState(false);
+  const [customDomain, setCustomDomain] = useState("");
+  const [domainCheck, setDomainCheck] = useState<DomainCheck | null>(null);
 
   const statusUrl = useRef<string | null>(null);
   const verified = useRef(false);
@@ -101,6 +112,46 @@ export function SignupForm({ initialPlan, returnTenant, returnReference }: { ini
           : "checking";
   const slugReason = slugStatus === "unavailable" ? (result?.reason ?? "invalid") : null;
   const checkedDomain = result?.domain ?? null;
+
+  // Debounced any-TLD availability — GET /api/platform/signup/domain (CHR-199).
+  useEffect(() => {
+    const name = customDomain.trim().toLowerCase();
+    if (!DOMAIN_RE.test(name)) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${API_ORIGIN}/api/platform/signup/domain?name=${encodeURIComponent(name)}`,
+          { headers: { accept: "application/json" }, signal: controller.signal },
+        );
+        if (!res.ok) throw new Error();
+        setDomainCheck((await res.json()) as DomainCheck);
+      } catch {
+        // Aborted (input changed) or transient — keep the last known result.
+      }
+    }, 500);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [customDomain]);
+
+  const domainName = customDomain.trim().toLowerCase();
+  const domainResult = domainCheck && domainCheck.name === domainName ? domainCheck : null;
+  const domainStatus: DomainStatus =
+    domainName.length === 0
+      ? "idle"
+      : !DOMAIN_RE.test(domainName)
+        ? "invalid"
+        : domainResult
+          ? domainResult.available === true
+            ? "available"
+            : domainResult.available === false
+              ? "unavailable"
+              : "unknown"
+          : "checking";
 
   // Poll the provisioning state machine until the church is ready (CHR-173).
   useEffect(() => {
@@ -261,6 +312,29 @@ export function SignupForm({ initialPlan, returnTenant, returnReference }: { ini
               />
             </Field>
 
+            {!showDomain ? (
+              <button
+                type="button"
+                onClick={() => setShowDomain(true)}
+                className="-mt-1 self-start text-sm font-semibold text-gold-dark transition hover:underline"
+              >
+                J&apos;ai déjà (ou je veux) mon propre nom de domaine →
+              </button>
+            ) : (
+              <Field
+                label="Votre nom de domaine (optionnel)"
+                status={<DomainStatusLine status={domainStatus} name={domainName} registered={domainResult?.registered ?? null} />}
+              >
+                <input
+                  className={input}
+                  value={customDomain}
+                  onChange={(e) => setCustomDomain(e.target.value)}
+                  spellCheck={false}
+                  placeholder="mon-eglise.org"
+                />
+              </Field>
+            )}
+
             {general && <Banner>{general}</Banner>}
 
             <button type="submit" disabled={!canProceed} className={primaryBtn}>
@@ -368,6 +442,29 @@ function SlugStatusLine({ status, reason, domain, slug }: { status: SlugStatus; 
     return <span className="text-xs text-live-dark">{SLUG_MESSAGES[reason ?? "invalid"] ?? SLUG_MESSAGES.invalid}</span>;
   }
   return <span className="font-mono text-xs text-faint">{slug || "votre-eglise"}.churchapp.io</span>;
+}
+
+function DomainStatusLine({ status, name, registered }: { status: DomainStatus; name: string; registered: boolean | null }) {
+  if (status === "idle") {
+    return <span className="text-xs text-faint">Vous le connecterez après la création — nous vous guiderons.</span>;
+  }
+  if (status === "invalid") {
+    return <span className="text-xs text-faint">Saisissez un domaine complet, ex. mon-eglise.org</span>;
+  }
+  if (status === "checking") {
+    return <span className="font-mono text-xs text-faint">Vérification du registre…</span>;
+  }
+  if (status === "available") {
+    return <span className="font-mono text-xs text-gold-dark">✓ {name} semble libre à l&apos;enregistrement</span>;
+  }
+  if (status === "unavailable") {
+    return (
+      <span className="text-xs text-live-dark">
+        {registered ? `${name} est déjà déposé` : `${name} n'est pas disponible`}
+      </span>
+    );
+  }
+  return <span className="text-xs text-faint">Impossible de vérifier ce domaine pour l&apos;instant.</span>;
 }
 
 const input = "w-full rounded-lg border border-indigo/15 bg-white px-3 py-2.5 text-indigo outline-none focus:border-gold";
