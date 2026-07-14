@@ -7,6 +7,7 @@ use App\Models\Convert;
 use App\Models\Member;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
+use App\Services\Registrar\GandiRegistrar;
 use App\Services\Registrar\NullRegistrar;
 use App\Services\Registrar\StubRegistrar;
 use App\Support\AccessControl;
@@ -25,8 +26,16 @@ class AppServiceProvider extends ServiceProvider
         // Domain reseller driver (CHR-203) — null (default) prices nothing; a
         // real driver (Gandi/OpenSRS/…) plugs in via config('domains.registrar').
         $this->app->singleton(DomainRegistrar::class, function (): DomainRegistrar {
+            $currency = (string) config('domains.registrar.currency', 'USD');
+
             return match (config('domains.registrar.driver')) {
-                'stub' => new StubRegistrar((string) config('domains.registrar.currency', 'USD')),
+                'gandi' => new GandiRegistrar(
+                    config('domains.registrar.gandi.api_key'),
+                    (string) config('domains.registrar.gandi.scheme', 'Apikey'),
+                    (string) config('domains.registrar.gandi.endpoint', 'https://api.gandi.net/v5'),
+                    $currency,
+                ),
+                'stub' => new StubRegistrar($currency),
                 default => new NullRegistrar,
             };
         });
