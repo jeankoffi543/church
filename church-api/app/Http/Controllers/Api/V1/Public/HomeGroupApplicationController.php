@@ -25,12 +25,12 @@ class HomeGroupApplicationController extends Controller
         // Check if user is already applied or enrolled
         $existing = HomeGroupApplication::where(function ($query) use ($validated) {
             $query->where('email', $validated['email'])
-                  ->orWhere('phone', $validated['phone']);
+                ->orWhere('phone', $validated['phone']);
         })
-        ->when(auth('sanctum')->check(), function ($query) {
-            $query->orWhere('user_id', auth('sanctum')->id());
-        })
-        ->first();
+            ->when(auth('sanctum')->check(), function ($query) {
+                $query->orWhere('user_id', auth('sanctum')->id());
+            })
+            ->first();
 
         if ($existing) {
             if ($existing->status === 'approved') {
@@ -80,7 +80,7 @@ class HomeGroupApplicationController extends Controller
             ->orderBy('created_at', 'desc')
             ->first();
 
-        if (!$application) {
+        if (! $application) {
             return response()->json([
                 'status' => 'not_found',
                 'message' => 'Aucune demande trouvée avec ces coordonnées.',

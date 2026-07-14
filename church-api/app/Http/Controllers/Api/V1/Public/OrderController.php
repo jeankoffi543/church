@@ -64,7 +64,7 @@ class OrderController extends Controller
         // Generate unique sequential reference: MFM-XXXX
         // We look at the highest ID and add 1
         $nextId = (Order::max('id') ?? 0) + 1;
-        $reference = 'MFM-' . (2041 + $nextId);
+        $reference = 'MFM-'.(2041 + $nextId);
 
         // Compute subtotal on server for safety
         $subtotal = 0;
@@ -85,16 +85,16 @@ class OrderController extends Controller
         foreach ($validated['items'] as $item) {
             if (is_numeric($item['product_id'])) {
                 $product = Product::find($item['product_id']);
-                if (!$product) {
+                if (! $product) {
                     return response()->json(['message' => "Le produit \"{$item['product_title']}\" n'existe pas."], 422);
                 }
                 if ($product->status !== 'active') {
                     return response()->json(['message' => "Le produit \"{$product->title}\" n'est plus actif."], 422);
                 }
 
-                $isProductUnlimited = (bool)($product->unlimited_stock ?? false);
+                $isProductUnlimited = (bool) ($product->unlimited_stock ?? false);
                 $variants = $product->variants ?? [];
-                if (!$isProductUnlimited && !empty($variants)) {
+                if (! $isProductUnlimited && ! empty($variants)) {
                     $matchedVar = null;
                     $targetVariantId = $item['variant_id'] ?? null;
 
@@ -107,7 +107,7 @@ class OrderController extends Controller
                             }
                         }
                     }
-                    if (!$matchedVar && !empty($item['selected_attributes'])) {
+                    if (! $matchedVar && ! empty($item['selected_attributes'])) {
                         foreach ($variants as $var) {
                             $varAttrs = $var['attributes'] ?? [];
                             $allMatch = true;
@@ -123,7 +123,7 @@ class OrderController extends Controller
                             }
                         }
                     }
-                    if (!$matchedVar) {
+                    if (! $matchedVar) {
                         foreach ($variants as $var) {
                             if (isset($var['id']) && $var['id'] === 'default') {
                                 $matchedVar = $var;
@@ -133,13 +133,13 @@ class OrderController extends Controller
                     }
 
                     if ($matchedVar) {
-                        $isVarUnlimited = isset($matchedVar['unlimited_stock']) && (bool)$matchedVar['unlimited_stock'];
-                        if (!$isVarUnlimited) {
-                            $varStock = (int)($matchedVar['stock_count'] ?? 0);
-                            $requestedQty = (int)$item['quantity'];
+                        $isVarUnlimited = isset($matchedVar['unlimited_stock']) && (bool) $matchedVar['unlimited_stock'];
+                        if (! $isVarUnlimited) {
+                            $varStock = (int) ($matchedVar['stock_count'] ?? 0);
+                            $requestedQty = (int) $item['quantity'];
                             if ($varStock < $requestedQty) {
                                 return response()->json([
-                                    'message' => "Le stock pour le produit \"{$product->title}\" est insuffisant (restant: {$varStock})."
+                                    'message' => "Le stock pour le produit \"{$product->title}\" est insuffisant (restant: {$varStock}).",
                                 ], 422);
                             }
                         }
@@ -181,9 +181,9 @@ class OrderController extends Controller
                 // Decrement stock in DB
                 if (is_numeric($item['product_id'])) {
                     $product = Product::find($item['product_id']);
-                    if ($product && !(bool)($product->unlimited_stock ?? false)) {
+                    if ($product && ! (bool) ($product->unlimited_stock ?? false)) {
                         $variants = $product->variants ?? [];
-                        if (!empty($variants)) {
+                        if (! empty($variants)) {
                             $matchedVarKey = null;
                             $targetVariantId = $item['variant_id'] ?? null;
 
@@ -195,7 +195,7 @@ class OrderController extends Controller
                                     }
                                 }
                             }
-                            if ($matchedVarKey === null && !empty($item['selected_attributes'])) {
+                            if ($matchedVarKey === null && ! empty($item['selected_attributes'])) {
                                 foreach ($variants as $k => $var) {
                                     $varAttrs = $var['attributes'] ?? [];
                                     $allMatch = true;
@@ -221,9 +221,9 @@ class OrderController extends Controller
                             }
 
                             if ($matchedVarKey !== null) {
-                                $isVarUnlimited = isset($variants[$matchedVarKey]['unlimited_stock']) && (bool)$variants[$matchedVarKey]['unlimited_stock'];
-                                if (!$isVarUnlimited) {
-                                    $variants[$matchedVarKey]['stock_count'] = max(0, (int)($variants[$matchedVarKey]['stock_count'] ?? 0) - (int)$item['quantity']);
+                                $isVarUnlimited = isset($variants[$matchedVarKey]['unlimited_stock']) && (bool) $variants[$matchedVarKey]['unlimited_stock'];
+                                if (! $isVarUnlimited) {
+                                    $variants[$matchedVarKey]['stock_count'] = max(0, (int) ($variants[$matchedVarKey]['stock_count'] ?? 0) - (int) $item['quantity']);
                                     $product->variants = $variants;
                                     $product->save();
                                 }
@@ -241,9 +241,10 @@ class OrderController extends Controller
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Une erreur est survenue lors de l\'enregistrement de votre commande.',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

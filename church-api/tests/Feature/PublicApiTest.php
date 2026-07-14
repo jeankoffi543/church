@@ -3,8 +3,12 @@
 use App\Models\Event;
 use App\Models\HomeGroup;
 use App\Models\Ministry;
+use App\Models\PrayerRequest;
 use App\Models\Sermon;
 use App\Models\Setting;
+use App\Models\User;
+use App\Services\PrayerNotificationService;
+use Illuminate\Support\Facades\Log;
 
 it('returns settings grouped by group', function () {
     Setting::set('hero_title', 'Bienvenue à la Maison', 'general');
@@ -67,7 +71,7 @@ it('submits a prayer request and sends automated notification', function () {
     Setting::set('prayer_success_ui_message', 'Success custom message', 'prayers');
     Setting::set('prayer_automated_notification_message', 'Hello [Nom], we pray for you.', 'prayers');
 
-    \Illuminate\Support\Facades\Log::shouldReceive('info')
+    Log::shouldReceive('info')
         ->once()
         ->with('Prayer notification sent', Mockery::on(function ($data) {
             return $data['to_email'] === 'jean@example.com' && str_contains($data['message'], 'Hello Jean');
@@ -97,9 +101,9 @@ it('submits a prayer request and parses accolade placeholders', function () {
     Setting::set('prayer_success_ui_message', 'Success custom message', 'prayers');
     Setting::set('prayer_automated_notification_message', 'Hello {{name}} (email: {{email}}, phone: {{phone}}), your prayer request for "{{category}}" containing message "{{message}}" is assigned to Pastor {{pastor_name}}.', 'prayers');
 
-    $pastor = \App\Models\User::factory()->create(['name' => 'Pasteur Marc']);
+    $pastor = User::factory()->create(['name' => 'Pasteur Marc']);
 
-    \Illuminate\Support\Facades\Log::shouldReceive('info')
+    Log::shouldReceive('info')
         ->twice() // once for the API post, once for manual invocation
         ->with('Prayer notification sent', Mockery::on(function ($data) {
             return $data['to_email'] === 'jean@example.com';
@@ -114,13 +118,13 @@ it('submits a prayer request and parses accolade placeholders', function () {
     ]);
 
     $response->assertStatus(201);
-    
+
     // Assign the pastor to the request to test the template parsing with pastor
-    $prayer = \App\Models\PrayerRequest::latest()->first();
+    $prayer = PrayerRequest::latest()->first();
     $prayer->assigned_to = $pastor->id;
     $prayer->save();
     $prayer->load('assignee');
-    
+
     // Trigger sendConfirmation manually to verify the pastor_name works
-    (new \App\Services\PrayerNotificationService())->sendConfirmation($prayer);
+    (new PrayerNotificationService)->sendConfirmation($prayer);
 });

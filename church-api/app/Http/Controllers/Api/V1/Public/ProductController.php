@@ -24,7 +24,7 @@ class ProductController extends Controller
             ->sortOnRequest();
 
         // Default sort by featured first, then newest
-        if (!$request->has('sort')) {
+        if (! $request->has('sort')) {
             $query->orderByDesc('is_featured')
                 ->orderByDesc('id');
         }

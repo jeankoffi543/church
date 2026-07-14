@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\PrayerRequest;
-use App\Models\ContactMessage;
-use App\Models\User;
 use App\Enums\ContactMessageStatus;
+use App\Models\ContactMessage;
+use App\Models\PrayerRequest;
+use App\Models\User;
+use Illuminate\Database\Seeder;
 
 class PrayerAndContactSeeder extends Seeder
 {
@@ -15,10 +15,10 @@ class PrayerAndContactSeeder extends Seeder
         // 1. Seed Prayer Requests
         $categories = ['spiritual', 'health', 'family', 'financial', 'work', 'other'];
         $statuses = ['new', 'praying', 'answered', 'archived'];
-        
+
         $firstNames = ['Marc', 'Jean', 'Sophie', 'Marie', 'Pierre', 'Julie', 'Christian', 'Emmanuel', 'David', 'Sarah', 'Paul', 'Rachael', 'Mathieu', 'Awa', 'Koffi', 'Yao', 'Adama', 'Mariam', 'Alain', 'Grace'];
         $lastNames = ['Kouadio', 'Koné', 'Diallo', 'Diarrassouba', 'Gervais', 'Bamba', 'Traoré', 'Sidibé', 'Cissé', 'N\'guessan', 'Yao', 'Ouattara', 'Coulibaly', 'Touré', 'Soro', 'Meité', 'Gbagbo', 'Drogba', 'Zaha', 'Kessié'];
-        
+
         $subjects = [
             'Prière pour la santé de ma mère qui souffre d\'hypertension',
             'Demande de prière pour la recherche d\'emploi après 6 mois de chômage',
@@ -29,7 +29,7 @@ class PrayerAndContactSeeder extends Seeder
             'Besoin de force et de paix spirituelle face à une épreuve personnelle',
             'Prière de protection pour un voyage à l\'étranger la semaine prochaine',
             'Demande d\'intercession pour mon mariage qui traverse des turbulences',
-            'Soutien dans la prière pour vaincre une addiction tenace'
+            'Soutien dans la prière pour vaincre une addiction tenace',
         ];
 
         $pastors = User::query()->limit(5)->get();
@@ -37,9 +37,9 @@ class PrayerAndContactSeeder extends Seeder
         for ($i = 0; $i < 60; $i++) {
             $firstName = $firstNames[array_rand($firstNames)];
             $lastName = $lastNames[array_rand($lastNames)];
-            $name = $firstName . ' ' . $lastName;
-            $email = strtolower($firstName . '.' . $lastName . $i . '@example.com');
-            
+            $name = $firstName.' '.$lastName;
+            $email = strtolower($firstName.'.'.$lastName.$i.'@example.com');
+
             $status = $statuses[array_rand($statuses)];
             $assignedTo = null;
             $pastoralNotes = null;
@@ -51,16 +51,16 @@ class PrayerAndContactSeeder extends Seeder
             }
 
             if ($status === 'answered') {
-                $pastoralNotes = 'Prière effectuée le ' . date('d/m/Y') . '. Suivi régulier en cours.';
+                $pastoralNotes = 'Prière effectuée le '.date('d/m/Y').'. Suivi régulier en cours.';
             }
 
             PrayerRequest::updateOrCreate(
                 ['email' => $email],
                 [
                     'name' => $name,
-                    'phone' => '+225 07 ' . rand(10, 99) . ' ' . rand(10, 99) . ' ' . rand(10, 99) . ' ' . rand(10, 99),
+                    'phone' => '+225 07 '.rand(10, 99).' '.rand(10, 99).' '.rand(10, 99).' '.rand(10, 99),
                     'category' => $categories[array_rand($categories)],
-                    'message' => $subjects[array_rand($subjects)] . '. Merci pour votre dévouement et vos prières de feu.',
+                    'message' => $subjects[array_rand($subjects)].'. Merci pour votre dévouement et vos prières de feu.',
                     'status' => $status,
                     'assigned_to' => $assignedTo,
                     'pastoral_notes' => $pastoralNotes,
@@ -77,7 +77,7 @@ class PrayerAndContactSeeder extends Seeder
             'Partenariat ou invitation pour une conférence spirituelle',
             'Demande de rendez-vous pastoral avec le Pasteur Principal',
             'Rejoindre le ministère de la louange',
-            'Signaler un lien mort sur le site web'
+            'Signaler un lien mort sur le site web',
         ];
 
         $contactMessages = [
@@ -88,7 +88,7 @@ class PrayerAndContactSeeder extends Seeder
             'Nous organisons un séminaire de jeunesse le mois prochain et aimerions inviter la chorale de votre église à y participer.',
             'Je traverse des moments d\'incertitude et je voudrais solliciter un entretien physique ou téléphonique avec un pasteur.',
             'Je chante et joue du piano depuis 5 ans et j\'aimerais savoir comment intégrer le groupe de louange de l\'église.',
-            'Le lien vers les archives vidéo sur la page principale affiche une erreur 404. Merci de vérifier.'
+            'Le lien vers les archives vidéo sur la page principale affiche une erreur 404. Merci de vérifier.',
         ];
 
         $contactStatuses = [ContactMessageStatus::Pending, ContactMessageStatus::Read, ContactMessageStatus::Archived];
@@ -96,16 +96,16 @@ class PrayerAndContactSeeder extends Seeder
         for ($i = 0; $i < 40; $i++) {
             $firstName = $firstNames[array_rand($firstNames)];
             $lastName = $lastNames[array_rand($lastNames)];
-            $name = $firstName . ' ' . $lastName;
-            $email = strtolower($firstName . '.' . $lastName . $i . '@example.com');
-            
+            $name = $firstName.' '.$lastName;
+            $email = strtolower($firstName.'.'.$lastName.$i.'@example.com');
+
             $msgIdx = array_rand($contactSubjects);
 
             ContactMessage::updateOrCreate(
                 ['email' => $email],
                 [
                     'name' => $name,
-                    'phone' => '+225 05 ' . rand(10, 99) . ' ' . rand(10, 99) . ' ' . rand(10, 99) . ' ' . rand(10, 99),
+                    'phone' => '+225 05 '.rand(10, 99).' '.rand(10, 99).' '.rand(10, 99).' '.rand(10, 99),
                     'subject' => $contactSubjects[$msgIdx],
                     'message' => $contactMessages[$msgIdx],
                     'status' => $contactStatuses[array_rand($contactStatuses)],

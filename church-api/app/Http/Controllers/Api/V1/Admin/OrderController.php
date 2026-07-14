@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\V1\OrderResource;
 use App\Models\Order;
-use App\Models\OrderItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -25,7 +24,7 @@ class OrderController extends Controller
             ->filterOnRequest()
             ->sortOnRequest();
 
-        if (!$request->has('sort')) {
+        if (! $request->has('sort')) {
             $query->orderByDesc('id');
         }
 
@@ -67,16 +66,16 @@ class OrderController extends Controller
                 DB::raw("MIN(customer_first_name || ' ' || customer_last_name) as name"),
                 DB::raw('COUNT(id) as orders_count'),
                 DB::raw('SUM(total_amount) as total_spent'),
-                DB::raw("MIN(strftime('%Y', created_at)) as since")
+                DB::raw("MIN(strftime('%Y', created_at)) as since"),
             ])
             ->groupBy('customer_email', 'customer_phone');
 
         if ($search) {
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('customer_first_name', 'like', "%{$search}%")
-                  ->orWhere('customer_last_name', 'like', "%{$search}%")
-                  ->orWhere('customer_email', 'like', "%{$search}%")
-                  ->orWhere('customer_phone', 'like', "%{$search}%");
+                    ->orWhere('customer_last_name', 'like', "%{$search}%")
+                    ->orWhere('customer_email', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%");
             });
         }
 
@@ -108,11 +107,11 @@ class OrderController extends Controller
 
         // Filter by segment if requested
         if ($segmentFilter = $request->query('segment')) {
-            $clients = $clients->filter(fn($c) => $c['segment'] === $segmentFilter)->values();
+            $clients = $clients->filter(fn ($c) => $c['segment'] === $segmentFilter)->values();
         }
 
         return response()->json([
-            'data' => $clients
+            'data' => $clients,
         ]);
     }
 
@@ -125,22 +124,22 @@ class OrderController extends Controller
         $totalRevenue = (int) Order::where('payment_status', 'paid')->sum('total_amount');
         $ordersCount = Order::where('payment_status', 'paid')->count();
         $avgBasket = $ordersCount > 0 ? (int) ($totalRevenue / $ordersCount) : 0;
-        
+
         // Conversions rate (mocked based on actual orders vs total requests/baskets, say 4.8%)
         $totalOrdersCount = Order::count();
-        $conversionRate = $totalOrdersCount > 0 
-            ? number_format(($ordersCount / $totalOrdersCount) * 100, 1) . '%'
+        $conversionRate = $totalOrdersCount > 0
+            ? number_format(($ordersCount / $totalOrdersCount) * 100, 1).'%'
             : '4.8%';
 
         $kpis = [
             [
                 'label' => 'Revenu total',
-                'value' => number_format($totalRevenue, 0, ',', ' ') . ' FCFA',
+                'value' => number_format($totalRevenue, 0, ',', ' ').' FCFA',
                 'trend' => '+22%',
                 'card' => 'linear-gradient(150deg,#3a2a6e,#160f33)',
                 'fg' => '#fff',
                 'trendColor' => '#e2b85f',
-                'trendBg' => 'rgba(226,184,95,.18)'
+                'trendBg' => 'rgba(226,184,95,.18)',
             ],
             [
                 'label' => 'Commandes payées',
@@ -149,16 +148,16 @@ class OrderController extends Controller
                 'card' => '#fff',
                 'fg' => '#211648',
                 'trendColor' => '#1f8a5b',
-                'trendBg' => 'rgba(31,138,91,.12)'
+                'trendBg' => 'rgba(31,138,91,.12)',
             ],
             [
                 'label' => 'Panier moyen',
-                'value' => number_format($avgBasket, 0, ',', ' ') . ' FCFA',
+                'value' => number_format($avgBasket, 0, ',', ' ').' FCFA',
                 'trend' => '+6%',
                 'card' => '#fff',
                 'fg' => '#211648',
                 'trendColor' => '#1f8a5b',
-                'trendBg' => 'rgba(31,138,91,.12)'
+                'trendBg' => 'rgba(31,138,91,.12)',
             ],
             [
                 'label' => 'Taux de conversion',
@@ -167,8 +166,8 @@ class OrderController extends Controller
                 'card' => '#fff',
                 'fg' => '#211648',
                 'trendColor' => '#1f8a5b',
-                'trendBg' => 'rgba(31,138,91,.12)'
-            ]
+                'trendBg' => 'rgba(31,138,91,.12)',
+            ],
         ];
 
         // 2. Revenue monthly chart (last 6 months)
@@ -177,7 +176,7 @@ class OrderController extends Controller
             $date = Carbon::now()->subMonths($i);
             $months[$date->format('Y-m')] = [
                 'month' => $date->translatedFormat('M'),
-                'value' => 0
+                'value' => 0,
             ];
         }
 
@@ -185,7 +184,7 @@ class OrderController extends Controller
             ->where('created_at', '>=', Carbon::now()->subMonths(6))
             ->select([
                 DB::raw("strftime('%Y-%m', created_at) as month_key"),
-                DB::raw('SUM(total_amount) as total')
+                DB::raw('SUM(total_amount) as total'),
             ])
             ->groupBy('month_key')
             ->get();
@@ -206,7 +205,7 @@ class OrderController extends Controller
             ->where('orders.payment_status', 'paid')
             ->select([
                 DB::raw('COALESCE(products.category, \'Autres\') as category_name'),
-                DB::raw('SUM(order_items.price * order_items.quantity) as revenue')
+                DB::raw('SUM(order_items.price * order_items.quantity) as revenue'),
             ])
             ->groupBy('category_name')
             ->get();
@@ -218,7 +217,7 @@ class OrderController extends Controller
             'linear-gradient(90deg,#5a4a92,#3a2a6e)',
             'linear-gradient(90deg,#7a4fd6,#5a2fb0)',
             'linear-gradient(90deg,#2a9d8f,#1f8a5b)',
-            'linear-gradient(90deg,#d98a5b,#c86a3e)'
+            'linear-gradient(90deg,#d98a5b,#c86a3e)',
         ];
 
         $idx = 0;
@@ -230,7 +229,7 @@ class OrderController extends Controller
             return [
                 'name' => $cat->category_name,
                 'pct' => $pct,
-                'fill' => $fill
+                'fill' => $fill,
             ];
         })->sortByDesc('pct')->values()->all();
 
@@ -239,7 +238,7 @@ class OrderController extends Controller
             $categoryBreakdown = [
                 ['name' => 'Livres', 'pct' => 60, 'fill' => $fills[0]],
                 ['name' => 'Vêtements', 'pct' => 25, 'fill' => $fills[1]],
-                ['name' => 'Accessoires', 'pct' => 15, 'fill' => $fills[2]]
+                ['name' => 'Accessoires', 'pct' => 15, 'fill' => $fills[2]],
             ];
         }
 
@@ -266,9 +265,9 @@ class OrderController extends Controller
                     'id' => $o->reference,
                     'method' => $o->payment_method,
                     'date' => $o->created_at->translatedFormat('d M Y'),
-                    'amount' => number_format($o->total_amount, 0, ',', ' ') . ' FCFA',
+                    'amount' => number_format($o->total_amount, 0, ',', ' ').' FCFA',
                     'short' => $short,
-                    'iconBg' => $iconBg
+                    'iconBg' => $iconBg,
                 ];
             });
 
@@ -281,7 +280,7 @@ class OrderController extends Controller
                 'order_items.product_title as name',
                 DB::raw('SUM(order_items.quantity) as sales_count'),
                 DB::raw('SUM(order_items.price * order_items.quantity) as total_revenue'),
-                DB::raw('MIN(products.images) as images_json')
+                DB::raw('MIN(products.images) as images_json'),
             ])
             ->groupBy('name')
             ->orderByDesc('sales_count')
@@ -289,14 +288,14 @@ class OrderController extends Controller
             ->get()
             ->map(function ($p, $index) {
                 $images = json_decode($p->images_json, true);
-                $image = !empty($images) ? $images[0] : 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=200&q=80';
+                $image = ! empty($images) ? $images[0] : 'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=200&q=80';
 
                 return [
                     'rank' => $index + 1,
                     'name' => $p->name,
                     'image' => $image,
                     'sales' => (int) $p->sales_count,
-                    'revenue' => number_format($p->total_revenue, 0, ',', ' ') . ' FCFA'
+                    'revenue' => number_format($p->total_revenue, 0, ',', ' ').' FCFA',
                 ];
             });
 
@@ -305,7 +304,7 @@ class OrderController extends Controller
             'revenue_by_month' => $revenueData,
             'category_breakdown' => $categoryBreakdown,
             'recent_transactions' => $recentTransactions,
-            'top_products' => $topProducts
+            'top_products' => $topProducts,
         ]);
     }
 
@@ -323,7 +322,7 @@ class OrderController extends Controller
             $csvData[] = [
                 $o->reference,
                 $o->created_at->format('Y-m-d H:i:s'),
-                $o->customer_first_name . ' ' . $o->customer_last_name,
+                $o->customer_first_name.' '.$o->customer_last_name,
                 $o->customer_email,
                 $o->customer_phone,
                 $o->subtotal,
@@ -331,18 +330,18 @@ class OrderController extends Controller
                 $o->total_amount,
                 $o->payment_method,
                 $o->payment_status,
-                $o->fulfillment_status
+                $o->fulfillment_status,
             ];
         }
 
         // Return CSV as inline file or download
         $output = '';
         foreach ($csvData as $row) {
-            $output .= implode(';', array_map(fn($val) => '"' . str_replace('"', '""', $val) . '"', $row)) . "\n";
+            $output .= implode(';', array_map(fn ($val) => '"'.str_replace('"', '""', $val).'"', $row))."\n";
         }
 
         return response()->json([
-            'csv' => $output
+            'csv' => $output,
         ]);
     }
 }

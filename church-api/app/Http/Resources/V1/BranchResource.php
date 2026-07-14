@@ -43,8 +43,9 @@ class BranchResource extends JsonResource
     {
         $words = array_filter(explode(' ', $name));
         if (count($words) >= 2) {
-            return mb_strtoupper(mb_substr(reset($words), 0, 1) . mb_substr(end($words), 0, 1));
+            return mb_strtoupper(mb_substr(reset($words), 0, 1).mb_substr(end($words), 0, 1));
         }
+
         return mb_strtoupper(mb_substr($name, 0, 2));
     }
 }

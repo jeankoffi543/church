@@ -16,7 +16,7 @@ class PrayerNotificationService
     /**
      * Send automated confirmation to the person who submitted a prayer request.
      */
-    public function sendConfirmation(PrayerRequest$prayer): void
+    public function sendConfirmation(PrayerRequest $prayer): void
     {
         $template = Setting::get('prayer_automated_notification_message',
             'Bonjour [Nom], l\'équipe d\'intercession de MFM Ficgayo a bien reçu votre demande de prière. Nous prions pour vous.'

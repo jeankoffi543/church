@@ -2,6 +2,7 @@
 // by interactive public forms such as the ministry recruitment dialog.
 
 import { clientTenantApiBase } from "./tenant/client-api-base";
+import type { Product } from "./store";
 
 export type ApplicationStatus = "pending" | "approved" | "rejected";
 
@@ -115,7 +116,7 @@ export async function submitContactMessage(
   return body;
 }
 
-export async function getStoreProducts(): Promise<any[]> {
+export async function getStoreProducts(): Promise<Product[]> {
   const res = await fetch(`${clientTenantApiBase()}/public/store/products`, {
     headers: { Accept: "application/json" },
   });
@@ -124,7 +125,7 @@ export async function getStoreProducts(): Promise<any[]> {
   return body.data || [];
 }
 
-export async function getStoreProduct(id: string): Promise<any | null> {
+export async function getStoreProduct(id: string): Promise<Product | null> {
   const res = await fetch(`${clientTenantApiBase()}/public/store/products/${id}`, {
     headers: { Accept: "application/json" },
   });
@@ -133,7 +134,14 @@ export async function getStoreProduct(id: string): Promise<any | null> {
   return body.data || null;
 }
 
-export async function placeStoreOrder(payload: any): Promise<any> {
+export type PlaceOrderResponse = {
+  data?: { reference?: string; id?: string | number; total_amount?: number };
+  message?: string;
+};
+
+export async function placeStoreOrder(
+  payload: Record<string, unknown>,
+): Promise<PlaceOrderResponse> {
   const res = await fetch(`${clientTenantApiBase()}/public/store/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

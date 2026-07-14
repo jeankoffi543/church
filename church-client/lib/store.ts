@@ -3,11 +3,15 @@ export interface Product {
   title: string;
   description: string;
   base_price: number;
+  old_price?: number;
   images: string[];
   is_digital: boolean;
   unlimited_stock?: boolean;
   low_stock_threshold?: number;
   status: 'active' | 'draft';
+  category?: string;
+  badge?: string;
+  is_featured?: boolean;
   attributes?: ProductAttribute[];
   variants?: ProductVariant[];
 }

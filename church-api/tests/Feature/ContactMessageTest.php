@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\ContactMessage;
-use App\Enums\ContactMessageStatus;
 
 it('submits a public contact message successfully', function () {
     $response = $this->postJson('/api/v1/public/contact', [
@@ -74,7 +73,7 @@ it('allows authorized admins to update status, reply, and archive', function () 
     $this->patchJson("/api/v1/admin/contacts/{$message->id}", [
         'status' => 'read',
     ])->assertOk()
-      ->assertJsonPath('data.status', 'read');
+        ->assertJsonPath('data.status', 'read');
 
     // Reply
     $this->postJson("/api/v1/admin/contacts/{$message->id}/reply")
