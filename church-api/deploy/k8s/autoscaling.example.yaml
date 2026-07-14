@@ -1,0 +1,51 @@
+# Autoscaling for the SaaS API (CHR-194).
+#
+# Two axes scale independently:
+#   * web pods      -> CPU-based HPA (request latency tracks CPU here).
+#   * queue workers -> KEDA on Redis list length (a push/transcode burst from one
+#     church shouldn't need more web pods, and vice-versa).
+#
+# Capacity planning: each tenant is a physically separate DB (E3 sharding), so the
+# web tier scales with concurrent *requests*, not tenant count; the DB tier scales
+# by adding shards (`shards:register`) + rebalancing (`tenants:move-shard`). Watch
+# GET /api/platform/health `capacity.active_tenants` vs a shard's `max_tenants`.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: church-api-web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: church-api-web
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300 # avoid flapping on brief dips
+---
+# Queue workers scale on Redis backlog (requires KEDA installed in the cluster).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: church-api-workers
+spec:
+  scaleTargetRef:
+    name: church-api-worker # the Horizon / queue:work Deployment
+  minReplicaCount: 1
+  maxReplicaCount: 15
+  cooldownPeriod: 120
+  triggers:
+    - type: redis
+      metadata:
+        address: redis:6379
+        listName: queues:default # + queues:media / queues:push for dedicated pools
+        listLength: "100" # target ~100 pending jobs per worker
