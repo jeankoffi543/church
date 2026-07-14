@@ -23,6 +23,29 @@ return [
         'driver' => env('DOMAIN_REGISTRAR'),
         'currency' => env('DOMAIN_REGISTRAR_CURRENCY', 'USD'),
 
+        // Registrant (owner) contact used to buy domains — the platform acts as
+        // reseller on the church's behalf, so this is one platform-wide contact,
+        // not per-church data. All fields required to enable purchasing (CHR-206).
+        'owner' => [
+            'given' => env('DOMAIN_OWNER_GIVEN'),
+            'family' => env('DOMAIN_OWNER_FAMILY'),
+            'email' => env('DOMAIN_OWNER_EMAIL'),
+            'streetaddr' => env('DOMAIN_OWNER_STREET'),
+            'city' => env('DOMAIN_OWNER_CITY'),
+            'zip' => env('DOMAIN_OWNER_ZIP'),
+            'country' => env('DOMAIN_OWNER_COUNTRY'),
+            'phone' => env('DOMAIN_OWNER_PHONE'),
+            'orgname' => env('DOMAIN_OWNER_ORG'),
+            'type' => (int) env('DOMAIN_OWNER_TYPE', 0),
+        ],
+
+        // Nameservers a bought domain is created with (point it at the platform
+        // edge so on-demand TLS can serve it). Comma-separated.
+        'nameservers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('DOMAIN_NAMESERVERS', '')),
+        ))),
+
         'gandi' => [
             // Gandi API key or Personal Access Token (see the `scheme`). Create at
             // https://account.gandi.net → Security. Without it the driver prices nothing.

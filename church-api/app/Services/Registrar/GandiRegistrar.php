@@ -6,6 +6,8 @@ namespace App\Services\Registrar;
 
 use App\Contracts\DomainRegistrar;
 use App\Support\Domains\DomainQuote;
+use App\Support\Domains\DomainRegistrationResult;
+use App\Support\Domains\RegistrantContact;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -21,11 +23,16 @@ use Throwable;
  */
 final class GandiRegistrar implements DomainRegistrar
 {
+    /**
+     * @param  list<string>  $nameservers
+     */
     public function __construct(
         private readonly ?string $apiKey,
         private readonly string $scheme = 'Apikey',
         private readonly string $endpoint = 'https://api.gandi.net/v5',
         private readonly string $currency = 'USD',
+        private readonly ?RegistrantContact $owner = null,
+        private readonly array $nameservers = [],
     ) {}
 
     public function quote(string $domain): ?DomainQuote
@@ -51,6 +58,50 @@ final class GandiRegistrar implements DomainRegistrar
             return $this->toQuote($response->json());
         } catch (Throwable) {
             return null;
+        }
+    }
+
+    public function register(string $domain, int $years = 1): DomainRegistrationResult
+    {
+        if (empty($this->apiKey)) {
+            return DomainRegistrationResult::failure('Gandi API key is not configured.');
+        }
+
+        if ($this->owner === null) {
+            return DomainRegistrationResult::failure('Registrant contact is not configured (domains.registrar.owner).');
+        }
+
+        try {
+            $payload = [
+                'fqdn' => $domain,
+                'duration' => max(1, $years),
+                'owner' => $this->owner->toGandi(),
+                'currency' => $this->currency,
+            ];
+            if ($this->nameservers !== []) {
+                $payload['nameservers'] = array_values($this->nameservers);
+            }
+
+            $response = Http::withHeaders(['Authorization' => trim($this->scheme).' '.$this->apiKey])
+                ->acceptJson()
+                ->timeout(20)
+                ->post(rtrim($this->endpoint, '/').'/domain/domains', $payload);
+
+            if (in_array($response->status(), [200, 201, 202], true)) {
+                $body = $response->json();
+                $reference = is_array($body) ? ($body['id'] ?? $body['href'] ?? null) : null;
+
+                return DomainRegistrationResult::success(is_string($reference) ? $reference : null);
+            }
+
+            $body = $response->json();
+            $message = is_array($body) && isset($body['message']) && is_string($body['message'])
+                ? $body['message']
+                : 'Gandi registration failed (HTTP '.$response->status().').';
+
+            return DomainRegistrationResult::failure($message);
+        } catch (Throwable) {
+            return DomainRegistrationResult::failure('Could not reach the Gandi API.');
         }
     }
 
