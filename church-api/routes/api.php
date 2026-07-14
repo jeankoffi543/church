@@ -530,6 +530,12 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::get('stats/overview', [Platform\PlatformStatsController::class, 'overview'])->name('stats.overview');
             Route::get('stats/shards', [Platform\PlatformStatsController::class, 'shards'])->name('stats.shards');
             Route::get('stats/audits', [Platform\PlatformStatsController::class, 'audits'])->name('stats.audits');
+
+            // Subscription plans — owner-customizable catalogue (CHR-196).
+            Route::get('plans/manage', [Platform\PlanController::class, 'manage'])->name('plans.manage');
+            Route::post('plans', [Platform\PlanController::class, 'store'])->name('plans.store');
+            Route::match(['put', 'patch'], 'plans/{plan}', [Platform\PlanController::class, 'update'])->name('plans.update');
+            Route::delete('plans/{plan}', [Platform\PlanController::class, 'destroy'])->name('plans.destroy');
         });
     });
 });
