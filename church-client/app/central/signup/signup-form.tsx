@@ -29,7 +29,8 @@ const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{
 type Errors = Record<string, string[]>;
 type SlugStatus = "idle" | "checking" | "available" | "unavailable";
 type DomainStatus = "idle" | "checking" | "available" | "unavailable" | "unknown" | "invalid";
-type DomainCheck = { name: string; available: boolean | null; registered: boolean | null; reason: string | null };
+type DomainPrice = { price: number; currency: string; period_years: number; premium: boolean };
+type DomainCheck = { name: string; available: boolean | null; registered: boolean | null; reason: string | null; price?: DomainPrice | null };
 type Phase = "form" | "verifying" | "provisioning";
 
 const FIELDS = {
@@ -323,7 +324,7 @@ export function SignupForm({ initialPlan, returnTenant, returnReference }: { ini
             ) : (
               <Field
                 label="Votre nom de domaine (optionnel)"
-                status={<DomainStatusLine status={domainStatus} name={domainName} registered={domainResult?.registered ?? null} />}
+                status={<DomainStatusLine status={domainStatus} name={domainName} registered={domainResult?.registered ?? null} price={domainResult?.price ?? null} />}
               >
                 <input
                   className={input}
@@ -444,7 +445,22 @@ function SlugStatusLine({ status, reason, domain, slug }: { status: SlugStatus; 
   return <span className="font-mono text-xs text-faint">{slug || "votre-eglise"}.churchapp.io</span>;
 }
 
-function DomainStatusLine({ status, name, registered }: { status: DomainStatus; name: string; registered: boolean | null }) {
+function formatPrice(price: DomainPrice): string {
+  const amount = (price.price / 100).toLocaleString("fr-FR", { style: "currency", currency: price.currency });
+  return `≈ ${amount}/an${price.premium ? " (premium)" : ""}`;
+}
+
+function DomainStatusLine({
+  status,
+  name,
+  registered,
+  price,
+}: {
+  status: DomainStatus;
+  name: string;
+  registered: boolean | null;
+  price: DomainPrice | null;
+}) {
   if (status === "idle") {
     return <span className="text-xs text-faint">Vous le connecterez après la création — nous vous guiderons.</span>;
   }
@@ -455,7 +471,12 @@ function DomainStatusLine({ status, name, registered }: { status: DomainStatus; 
     return <span className="font-mono text-xs text-faint">Vérification du registre…</span>;
   }
   if (status === "available") {
-    return <span className="font-mono text-xs text-gold-dark">✓ {name} semble libre à l&apos;enregistrement</span>;
+    return (
+      <span className="font-mono text-xs text-gold-dark">
+        ✓ {name} semble libre à l&apos;enregistrement
+        {price ? <span className="text-faint"> · {formatPrice(price)}</span> : null}
+      </span>
+    );
   }
   if (status === "unavailable") {
     return (
