@@ -1,6 +1,6 @@
 "use server";
 
-import { getPlatformSession } from "@/lib/auth/session";
+import { getPlatformToken } from "@/lib/auth/session";
 
 // CHR-182 — the platform ("landlord") API for the super-admin console. Unlike
 // the tenant API, platform routes are central and resolved by path (not Host),
@@ -21,8 +21,8 @@ export type PlatformUser = {
  * console can bounce to the central login.
  */
 export async function platformFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const session = await getPlatformSession();
-  if (!session?.token) {
+  const token = await getPlatformToken();
+  if (!token) {
     throw new Error("UNAUTHORIZED");
   }
 
@@ -31,7 +31,7 @@ export async function platformFetch<T>(path: string, options: RequestInit = {}):
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  headers.set("Authorization", `Bearer ${session.token}`);
+  headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(`${API_ORIGIN}/api/platform${path}`, { ...options, headers });
 

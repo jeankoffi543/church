@@ -1,6 +1,6 @@
 "use server";
 
-import { getAdminSession } from "@/lib/auth/session";
+import { getAdminToken } from "@/lib/auth/session";
 import { tenantApiBase } from "@/lib/tenant/api-base";
 import type { ScriptureVerse, StudioSettings } from "@/lib/studio";
 import { revalidatePath, updateTag } from "next/cache";
@@ -74,8 +74,7 @@ export type AdminHomeGroup = {
 };
 
 export async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const session = await getAdminSession();
-  const token = session?.token;
+  const token = await getAdminToken();
 
   if (!token) {
     throw new Error("UNAUTHORIZED");
@@ -1213,8 +1212,7 @@ export async function getAdminDonations(): Promise<AdminDonation[]> {
 
 /** Fetch the (optionally filtered) ledger as raw CSV text, authenticated. */
 export async function exportDonationsCsv(params: Record<string, string> = {}): Promise<string> {
-  const session = await getAdminSession();
-  const token = session?.token;
+  const token = await getAdminToken();
   if (!token) throw new Error("UNAUTHORIZED");
 
   const qs = new URLSearchParams(params).toString();
