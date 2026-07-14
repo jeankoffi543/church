@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LogOut } from "lucide-react";
 
-import { getAdminSession } from "@/lib/auth/session";
 import { getAdminMe } from "@/lib/admin-api";
 import { getRealtimeChannelPrefix } from "@/lib/api";
 import { tenantApiBase } from "@/lib/tenant/api-base";
@@ -37,13 +36,9 @@ async function getInitialLiveStatus(): Promise<boolean> {
 export default async function AdminPanelLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await getAdminSession();
-  if (!session) {
-    redirect(ADMIN_LOGIN_PATH);
-  }
-
-  // Resolve the administrator's identity + privileges so the sidebar only
-  // exposes the departments they are allowed to enter.
+  // Resolve the administrator's identity + privileges (this also VERIFIES the
+  // token against /admin/me — a revoked session returns null here). The sidebar
+  // then only exposes the departments they are allowed to enter.
   const me = await getAdminMe();
   if (!me) {
     redirect(ADMIN_LOGIN_PATH);
