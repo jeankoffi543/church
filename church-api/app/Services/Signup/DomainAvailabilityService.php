@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Signup;
 
+use App\Contracts\DomainRegistrar;
 use App\Models\Domain;
+use App\Support\Domains\DomainQuote;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -20,8 +22,10 @@ class DomainAvailabilityService
 {
     private const RDAP_ENDPOINT = 'https://rdap.org/domain/';
 
+    public function __construct(private readonly DomainRegistrar $registrar) {}
+
     /**
-     * @return array{name: string, available: bool|null, registered: bool|null, reason: string|null}
+     * @return array{name: string, available: bool|null, registered: bool|null, reason: string|null, price: array{price: int, currency: string, period_years: int, premium: bool}|null}
      */
     public function check(string $name): array
     {
@@ -41,7 +45,8 @@ class DomainAvailabilityService
 
         return match ($this->registryLookup($name)) {
             true => $this->result($name, available: false, registered: true, reason: 'registered'),
-            false => $this->result($name, available: true, registered: false, reason: null),
+            // Free to register: attach the reseller's price when one is configured.
+            false => $this->result($name, available: true, registered: false, reason: null, quote: $this->registrar->quote($name)),
             default => $this->result($name, available: null, registered: null, reason: 'unknown'),
         };
     }
@@ -91,10 +96,16 @@ class DomainAvailabilityService
     }
 
     /**
-     * @return array{name: string, available: bool|null, registered: bool|null, reason: string|null}
+     * @return array{name: string, available: bool|null, registered: bool|null, reason: string|null, price: array{price: int, currency: string, period_years: int, premium: bool}|null}
      */
-    private function result(string $name, ?bool $available, ?bool $registered, ?string $reason): array
+    private function result(string $name, ?bool $available, ?bool $registered, ?string $reason, ?DomainQuote $quote = null): array
     {
-        return compact('name', 'available', 'registered', 'reason');
+        return [
+            'name' => $name,
+            'available' => $available,
+            'registered' => $registered,
+            'reason' => $reason,
+            'price' => $quote?->toArray(),
+        ];
     }
 }
