@@ -52,4 +52,9 @@ final class StubRegistrar implements DomainRegistrar
         // Deterministic "purchase" for dev/tests — no money, no network.
         return DomainRegistrationResult::success('stub-order-'.$domain);
     }
+
+    public function renew(string $domain, int $years = 1): DomainRegistrationResult
+    {
+        return DomainRegistrationResult::success('stub-renew-'.$domain);
+    }
 }

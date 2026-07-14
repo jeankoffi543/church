@@ -23,4 +23,9 @@ final class NullRegistrar implements DomainRegistrar
     {
         return DomainRegistrationResult::failure('No domain registrar is configured.');
     }
+
+    public function renew(string $domain, int $years = 1): DomainRegistrationResult
+    {
+        return DomainRegistrationResult::failure('No domain registrar is configured.');
+    }
 }

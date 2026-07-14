@@ -137,3 +137,14 @@ it('refuses to register without an API key or without a registrant contact', fun
 
     Http::assertNothingSent();
 });
+
+it('renews a domain via Gandi', function () {
+    Http::fake(['*gandi.net*' => Http::response(['id' => 'renew-op-1'], 202)]);
+
+    $result = (new GandiRegistrar('secret-key', 'Apikey', 'https://api.gandi.net/v5', 'USD'))->renew('example.org', 1);
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->reference)->toBe('renew-op-1');
+
+    Http::assertSent(fn ($request) => $request->method() === 'POST' && str_contains($request->url(), '/domain/domains/example.org/renew'));
+});

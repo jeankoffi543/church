@@ -25,6 +25,11 @@ it('the stub registrar "registers" deterministically (no money, no network)', fu
         ->and($result->reference)->toBe('stub-order-grace-parish.org');
 });
 
+it('the stub registrar renews; the null registrar cannot', function () {
+    expect((new StubRegistrar('USD'))->renew('grace-parish.org')->successful)->toBeTrue()
+        ->and((new NullRegistrar)->renew('grace-parish.org')->successful)->toBeFalse();
+});
+
 it('the stub registrar prices by TLD', function () {
     $stub = new StubRegistrar('USD');
 
