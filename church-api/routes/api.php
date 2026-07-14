@@ -536,6 +536,9 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
             Route::get('stats/shards', [Platform\PlatformStatsController::class, 'shards'])->name('stats.shards');
             Route::get('stats/audits', [Platform\PlatformStatsController::class, 'audits'])->name('stats.audits');
 
+            // Buy a domain for a church through the configured registrar (CHR-207).
+            Route::post('tenants/{tenant}/domain/purchase', [Platform\DomainPurchaseController::class, 'purchase'])->name('tenants.domain.purchase');
+
             // Subscription plans — owner-customizable catalogue (CHR-196).
             Route::get('plans/manage', [Platform\PlanController::class, 'manage'])->name('plans.manage');
             Route::post('plans', [Platform\PlanController::class, 'store'])->name('plans.store');
