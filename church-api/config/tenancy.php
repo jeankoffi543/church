@@ -36,6 +36,15 @@ return [
     'central_root_domain' => env('CENTRAL_ROOT_DOMAIN', 'churchapp.io'),
 
     /**
+     * The CNAME target a church points its own custom domain at (CHR-200). No
+     * per-tenant vhost is ever provisioned: the edge routes by Host and issues
+     * the certificate on-demand (CHR-177). Defaults to the central root, but ops
+     * can point custom domains at a dedicated ingress (e.g. `edge.churchapp.io`)
+     * without touching the apex's own DNS.
+     */
+    'custom_domain_target' => env('CUSTOM_DOMAIN_TARGET', env('CENTRAL_ROOT_DOMAIN', 'churchapp.io')),
+
+    /**
      * Tenancy bootstrappers are executed when tenancy is initialized.
      * Their responsibility is making Laravel features tenant-aware.
      *

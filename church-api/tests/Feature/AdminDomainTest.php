@@ -46,6 +46,16 @@ it('adds a custom domain as pending with DNS instructions', function () {
     expect(Domain::query()->where('domain', 'www.grace.org')->exists())->toBeTrue();
 });
 
+it('points the CNAME at the configurable custom-domain target (CHR-200)', function () {
+    actingAsSuperAdmin();
+    config(['tenancy.custom_domain_target' => 'edge.churchapp.io']);
+
+    $this->postJson('http://localhost/api/v1/admin/domains', ['domain' => 'www.hope.org'])
+        ->assertCreated()
+        ->assertJsonPath('instructions.cname.host', 'www.hope.org')
+        ->assertJsonPath('instructions.cname.target', 'edge.churchapp.io');
+});
+
 it('refuses a platform subdomain', function () {
     actingAsSuperAdmin();
 

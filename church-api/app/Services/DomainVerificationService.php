@@ -22,13 +22,15 @@ class DomainVerificationService
      */
     public function instructions(Domain $domain): array
     {
-        $root = config('tenancy.central_root_domain');
+        // The edge routes by Host + issues the cert on-demand (CHR-177), so a
+        // church only points a CNAME at the platform — never a per-tenant vhost.
+        $target = config('tenancy.custom_domain_target', config('tenancy.central_root_domain'));
 
         return [
             'cname' => [
                 'type' => 'CNAME',
                 'host' => $domain->domain,
-                'target' => $root,
+                'target' => $target,
             ],
             'txt' => [
                 'type' => 'TXT',
