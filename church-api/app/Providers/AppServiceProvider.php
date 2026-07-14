@@ -2,10 +2,13 @@
 
 namespace App\Providers;
 
+use App\Contracts\DomainRegistrar;
 use App\Models\Convert;
 use App\Models\Member;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
+use App\Services\Registrar\NullRegistrar;
+use App\Services\Registrar\StubRegistrar;
 use App\Support\AccessControl;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
@@ -19,7 +22,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Domain reseller driver (CHR-203) — null (default) prices nothing; a
+        // real driver (Gandi/OpenSRS/…) plugs in via config('domains.registrar').
+        $this->app->singleton(DomainRegistrar::class, function (): DomainRegistrar {
+            return match (config('domains.registrar.driver')) {
+                'stub' => new StubRegistrar((string) config('domains.registrar.currency', 'USD')),
+                default => new NullRegistrar,
+            };
+        });
     }
 
     /**
