@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 
+// These exercise the CHURCH PUBLIC pages. Since CHR-195, `/` and church paths are
+// only served on a TENANT host — a central host (localhost) serves the SaaS owner
+// site instead. Point these at a resolvable church host (add it to /etc/hosts, or
+// use a *.localhost subdomain the backend resolves) via PW_CHURCH_BASE_URL.
 test.describe("QueryMaster Front-End E2E Tests", () => {
+  test.use({ baseURL: process.env.PW_CHURCH_BASE_URL || "http://demo.churchapp.io:3000" });
+
 
   test.describe("Médiathèque (/mediatheque)", () => {
     test.beforeEach(async ({ page }) => {

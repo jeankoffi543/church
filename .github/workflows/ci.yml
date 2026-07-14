@@ -65,7 +65,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22 # native TS type-stripping for `node --test`
           cache: pnpm
           cache-dependency-path: church-client/pnpm-lock.yaml
 
@@ -76,6 +76,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test:unit
 
   church-mobile:
     name: churchMobile (tsc + eslint + jest)

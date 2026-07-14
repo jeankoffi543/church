@@ -17,9 +17,7 @@ import {
   normalizeHost,
   isCentralHost,
   isTenantStatusPath,
-  isMarketingHost,
-  shouldServeMarketing,
-  CENTRAL_TREE,
+  decideCentralRequest,
   TENANT_UNKNOWN_PATH,
   TENANT_SUSPENDED_PATH,
 } from "@/lib/tenant/config";
@@ -43,10 +41,11 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = normalizeHost(request.headers.get("host") ?? request.nextUrl.host);
 
-  // ── Central (SaaS marketing) hosts ───────────────────────────────
-  // The marketing site lives under /central and is served at the root on the
-  // SaaS domains; the `x-app-zone: central` header tells the root layout to drop
-  // the church chrome. Other central hosts (dev localhost) keep the church app.
+  // ── Central (SaaS owner) hosts ───────────────────────────────────
+  // The owner's site (marketing + platform console) lives under /central and is
+  // served at the root of EVERY central host; the `x-app-zone: central` header
+  // tells the root layout to drop the church chrome. A central host never shows
+  // a tenant page — church pages live only on tenant hosts (CHR-195).
   if (isCentralHost(host)) {
     // Platform super-admin console requires a platform session (CHR-182).
     if (isPlatformConsolePath(pathname) && !request.cookies.get(PLATFORM_COOKIE)?.value) {
@@ -55,18 +54,13 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const serveMarketing = isMarketingHost(host) && shouldServeMarketing(pathname);
-    const inCentralTree = pathname.startsWith(CENTRAL_TREE);
-
-    if (serveMarketing || inCentralTree) {
+    const decision = decideCentralRequest(pathname);
+    if (decision.serve !== "app") {
       const headers = new Headers(request.headers);
       headers.set("x-app-zone", "central");
-
-      if (serveMarketing) {
-        const target = `${CENTRAL_TREE}${pathname === "/" ? "" : pathname}`;
-        return NextResponse.rewrite(new URL(target, request.url), { request: { headers } });
-      }
-      return NextResponse.next({ request: { headers } });
+      return decision.serve === "central-root"
+        ? NextResponse.rewrite(new URL(decision.target, request.url), { request: { headers } })
+        : NextResponse.next({ request: { headers } });
     }
 
     return NextResponse.next();
