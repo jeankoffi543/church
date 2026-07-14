@@ -15,6 +15,10 @@ jobs:
   church-api:
     name: church-api (Pint + Pest)
     runs-on: ubuntu-22.04
+    # A taggable cache store is required even at boot (package:discover), before
+    # .env exists — the multitenancy guard rejects the "database" default.
+    env:
+      CACHE_STORE: array
     defaults:
       run:
         working-directory: church-api
@@ -61,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 20
