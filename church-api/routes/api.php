@@ -452,6 +452,9 @@ Route::prefix('v1')
 | here in CHR-139.
 */
 Route::prefix('platform')->name('api.platform.')->group(function (): void {
+    // Readiness + capacity for load balancers / autoscalers (CHR-194); public.
+    Route::get('health', [Platform\HealthController::class, 'index'])->name('health');
+
     Route::post('login', [Platform\AuthController::class, 'login'])->name('login');
 
     // Paystack billing webhook — no auth, authenticated by HMAC signature.
