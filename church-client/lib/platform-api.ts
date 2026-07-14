@@ -216,6 +216,32 @@ export async function deleteManagedPlan(id: number): Promise<void> {
   await platformFetch(`/plans/${id}`, { method: "DELETE" });
 }
 
+/* ── Super-admin console: domain purchase (CHR-208) ──────────────── */
+
+export type DomainAvailability = {
+  name: string;
+  available: boolean | null;
+  registered: boolean | null;
+  reason: string | null;
+  price?: { price: number; currency: string; period_years: number; premium: boolean } | null;
+};
+
+export async function checkDomainAvailability(name: string): Promise<DomainAvailability> {
+  return platformFetch(`/signup/domain?name=${encodeURIComponent(name)}`);
+}
+
+export async function purchaseTenantDomain(
+  tenantId: string,
+  domain: string,
+  years: number,
+): Promise<{ domain: string; status: string | null; reference: string | null }> {
+  const res = await platformFetch<{ data: { domain: string; status: string | null; reference: string | null } }>(
+    `/tenants/${tenantId}/domain/purchase`,
+    { method: "POST", body: JSON.stringify({ domain, years }) },
+  );
+  return res.data;
+}
+
 export async function getPlatformStudioKeys(id: string): Promise<{ keys: PlatformStudioKey[]; seats: number }> {
   const res = await platformFetch<{ data: PlatformStudioKey[]; seats: number }>(`/tenants/${id}/studio/keys`);
   return { keys: res.data, seats: res.seats };

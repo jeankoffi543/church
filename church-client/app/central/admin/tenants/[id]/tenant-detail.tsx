@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Pause, Play, LogIn, Save, KeyRound, Plus, Trash2, Copy, Check, Globe } from "lucide-react";
 
-import type { PlatformTenant, PlatformPlan, PlatformStudioKey } from "@/lib/platform-api";
+import type { PlatformTenant, PlatformPlan, PlatformStudioKey, DomainAvailability } from "@/lib/platform-api";
 import {
   suspendPlatformTenant,
   restorePlatformTenant,
@@ -13,6 +13,8 @@ import {
   subscribePlatformTenant,
   createPlatformStudioKey,
   revokePlatformStudioKey,
+  checkDomainAvailability,
+  purchaseTenantDomain,
 } from "@/lib/platform-api";
 import { Badge, type BadgeTone } from "@/components/admin/ui/badge";
 import { Button } from "@/components/admin/ui/button";
@@ -43,8 +45,50 @@ export function TenantDetail({
   const [freshKey, setFreshKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [billingEmail, setBillingEmail] = useState("");
+  const [domainInput, setDomainInput] = useState("");
+  const [domainYears, setDomainYears] = useState("1");
+  const [domainCheck, setDomainCheck] = useState<DomainAvailability | null>(null);
   const [status, setStatus] = useState<Status>(null);
   const [isPending, startTransition] = useTransition();
+
+  const checkDomain = () => {
+    const name = domainInput.trim().toLowerCase();
+    if (!name) return;
+    startTransition(async () => {
+      try {
+        setDomainCheck(await checkDomainAvailability(name));
+      } catch (err) {
+        setStatus({ type: "error", message: (err as Error).message || "Vérification impossible." });
+      }
+    });
+  };
+
+  const buyDomain = () => {
+    const name = domainInput.trim().toLowerCase();
+    if (!name || !window.confirm(`Enregistrer « ${name} » pour cette église ?`)) return;
+    startTransition(async () => {
+      try {
+        const bought = await purchaseTenantDomain(tenant.id, name, Math.max(1, parseInt(domainYears, 10) || 1));
+        setTenant((t) => ({
+          ...t,
+          domains: [
+            ...(t.domains ?? []),
+            { domain: bought.domain, type: "custom", is_primary: false, ssl_status: bought.status, verified_at: new Date().toISOString() },
+          ],
+        }));
+        setDomainInput("");
+        setDomainCheck(null);
+        setStatus({ type: "success", message: `Domaine « ${bought.domain} » enregistré et rattaché.` });
+      } catch (err) {
+        setStatus({ type: "error", message: (err as Error).message || "Achat impossible." });
+      }
+    });
+  };
+
+  const formatDomainPrice = (p: NonNullable<DomainAvailability["price"]>): string => {
+    const amount = (p.price / 100).toLocaleString("fr-FR", { style: "currency", currency: p.currency });
+    return `${amount}/an${p.premium ? " (premium)" : ""}`;
+  };
 
   const meta = STATUS_META[tenant.status ?? ""] ?? { label: tenant.status ?? "—", tone: "neutral" as BadgeTone };
   const suspended = tenant.status === "suspended";
@@ -174,6 +218,54 @@ export function TenantDetail({
             ))}
             {(tenant.domains ?? []).length === 0 && <li className="text-sm text-faint">Aucun domaine.</li>}
           </ul>
+
+          <div className="mt-4 space-y-2 border-t border-indigo/10 pt-4">
+            <p className="text-[11px] font-bold tracking-wide text-body-strong uppercase">Acheter un domaine</p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                className={cn(inputClass, "flex-1")}
+                value={domainInput}
+                onChange={(e) => {
+                  setDomainInput(e.target.value);
+                  setDomainCheck(null);
+                }}
+                placeholder="mon-eglise.org"
+                spellCheck={false}
+              />
+              <input
+                className={cn(inputClass, "w-16")}
+                type="number"
+                min="1"
+                max="10"
+                value={domainYears}
+                onChange={(e) => setDomainYears(e.target.value)}
+                title="Années"
+              />
+              <Button variant="secondary" size="sm" onClick={checkDomain} disabled={isPending || !domainInput.trim()}>
+                Vérifier
+              </Button>
+            </div>
+            {domainCheck && (
+              <div className="text-xs">
+                {domainCheck.available === true ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-gold-dark">
+                      ✓ {domainCheck.name} libre{domainCheck.price ? ` · ${formatDomainPrice(domainCheck.price)}` : ""}
+                    </span>
+                    <Button size="sm" onClick={buyDomain} loading={isPending}>
+                      Acheter
+                    </Button>
+                  </div>
+                ) : domainCheck.available === false ? (
+                  <span className="text-live-dark">
+                    {domainCheck.reason === "taken" || domainCheck.registered ? "Déjà pris" : "Indisponible"}
+                  </span>
+                ) : (
+                  <span className="text-faint">Disponibilité indéterminée.</span>
+                )}
+              </div>
+            )}
+          </div>
         </Section>
 
         {/* Subscription */}
