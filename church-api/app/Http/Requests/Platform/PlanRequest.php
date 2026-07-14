@@ -42,6 +42,7 @@ class PlanRequest extends FormRequest
             'limits.members' => ['nullable', 'integer', 'min:0'],
             'limits.storage_gb' => ['nullable', 'integer', 'min:0'],
             'limits.staff_seats' => ['nullable', 'integer', 'min:0'],
+            'limits.domains' => ['nullable', 'integer', 'min:0'],
             'studio_included' => ['boolean'],
             'sort_order' => ['integer', 'min:0'],
             'is_active' => ['boolean'],

@@ -139,7 +139,7 @@ export function PlansManager({ initial }: { initial: ManagedPlan[] }) {
               </p>
               <p className="text-xs text-body">
                 Limites — membres : {limitLabel(plan.limits.members)} · stockage : {limitLabel(plan.limits.storage_gb)} Go ·
-                sièges : {limitLabel(plan.limits.staff_seats)}
+                sièges : {limitLabel(plan.limits.staff_seats)} · domaines : {limitLabel(plan.limits.domains)}
               </p>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {plan.features.length === 0 && <span className="text-xs text-body/60">Aucune fonctionnalité</span>}
@@ -182,6 +182,7 @@ type FormState = {
   members: string;
   storage_gb: string;
   staff_seats: string;
+  domains: string;
   studio_included: boolean;
   sort_order: string;
   is_active: boolean;
@@ -201,6 +202,7 @@ function toForm(plan: ManagedPlan | null): FormState {
     members: limit(plan?.limits.members),
     storage_gb: limit(plan?.limits.storage_gb),
     staff_seats: limit(plan?.limits.staff_seats),
+    domains: limit(plan?.limits.domains),
     studio_included: plan?.studio_included ?? false,
     sort_order: plan ? String(plan.sort_order) : "0",
     is_active: plan?.is_active ?? true,
@@ -246,6 +248,7 @@ function PlanEditor({
         members: toLimit(form.members),
         storage_gb: toLimit(form.storage_gb),
         staff_seats: toLimit(form.staff_seats),
+        domains: toLimit(form.domains),
       },
       studio_included: form.studio_included,
       sort_order: Number(form.sort_order) || 0,
@@ -305,7 +308,7 @@ function PlanEditor({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Limite membres" hint="Vide = illimité">
           <input className={inputClass} type="number" min="0" value={form.members} onChange={(e) => set("members", e.target.value)} placeholder="illimité" />
         </Field>
@@ -314,6 +317,9 @@ function PlanEditor({
         </Field>
         <Field label="Sièges staff" hint="Vide = illimité">
           <input className={inputClass} type="number" min="0" value={form.staff_seats} onChange={(e) => set("staff_seats", e.target.value)} placeholder="illimité" />
+        </Field>
+        <Field label="Domaines inclus" hint="0 = aucun · vide = illimité">
+          <input className={inputClass} type="number" min="0" value={form.domains} onChange={(e) => set("domains", e.target.value)} placeholder="illimité" />
         </Field>
       </div>
 

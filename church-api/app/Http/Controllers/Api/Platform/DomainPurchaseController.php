@@ -40,6 +40,19 @@ class DomainPurchaseController extends Controller
         $name = strtolower(trim($validated['domain']));
         $years = (int) ($validated['years'] ?? 1);
 
+        // A domain is a plan benefit (CHR-209) — enforce the plan's quota.
+        // limits.domains: absent → none, null → unlimited, int → allowance.
+        $limits = $tenant->plan?->limits ?? [];
+        $quota = array_key_exists('domains', $limits) ? $limits['domains'] : 0;
+        if ($quota !== null) {
+            $used = $tenant->domains()->where('type', DomainType::Custom)->count();
+            if ($used >= (int) $quota) {
+                return response()->json([
+                    'message' => "Le plan de cette église n'inclut pas de domaine supplémentaire (quota atteint).",
+                ], 403);
+            }
+        }
+
         // Only buy something that is actually free (RDAP + our DB).
         $check = $availability->check($name);
         if (($check['available'] ?? null) !== true) {
