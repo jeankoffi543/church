@@ -16,13 +16,20 @@
 # The proxy target (churchapp_web) is the Next.js app, which resolves the request
 # Host to a tenant via GET /api/platform/resolve (CHR-144).
 #
+# NO PER-TENANT VHOST (CHR-200): nothing is provisioned at the edge when a church
+# signs up or adds a custom domain. Routing is by Host at runtime and certs are
+# dynamic (wildcard for subdomains, on-demand for custom domains) — so signup
+# needs zero reverse-proxy/DNS changes for public-IP redirection.
+#
 # Wildcard DNS / ingress (CHR-193): point ONE wildcard record at the edge so a new
 # church is reachable the moment it signs up — no per-tenant DNS change:
 #   *.churchapp.io   A/AAAA  ->  <edge public IP>     (or CNAME -> the load balancer)
 #   churchapp.io     A/AAAA  ->  <edge public IP>
-# Church custom domains are CNAME'd to churchapp.io by the church (CHR-176) and get
-# an on-demand cert here (CHR-177). Behind Kubernetes, expose this Caddy as the
-# ingress with `*.churchapp.io` in the Ingress `tls.hosts` and the same wildcard DNS.
+# Church custom domains are CNAME'd by the church (CHR-176) to the platform edge —
+# `config('tenancy.custom_domain_target')`, default `churchapp.io`, overridable to a
+# dedicated ingress host (e.g. edge.churchapp.io) — and get an on-demand cert here
+# (CHR-177). Behind Kubernetes, expose this Caddy as the ingress with `*.churchapp.io`
+# in the Ingress `tls.hosts` and the same wildcard DNS.
 
 {
 	# ACME contact + the on-demand authorization gate.
