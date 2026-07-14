@@ -482,6 +482,11 @@ Route::prefix('platform')->name('api.platform.')->group(function (): void {
         ->middleware('throttle:60,1')
         ->name('signup.subdomain');
 
+    // Any-TLD domain availability (DB + online registry via RDAP) (CHR-198).
+    Route::get('signup/domain', [Platform\SignupController::class, 'checkDomain'])
+        ->middleware('throttle:60,1')
+        ->name('signup.domain');
+
     // Self-service church signup (CHR-147) — throttled against abuse.
     Route::post('signup', [Platform\SignupController::class, 'signup'])
         ->middleware('throttle:8,1')
