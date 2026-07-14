@@ -46,11 +46,8 @@ jobs:
           cp .env.example .env
           php artisan key:generate
 
-      # Style is informational for now (pre-existing formatting debt in seeders,
-      # legacy controllers and the vendored keky/query-master package).
       - name: Pint (style check)
         run: vendor/bin/pint --test
-        continue-on-error: true
 
       - name: Pest
         run: php artisan test --compact
@@ -77,10 +74,8 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
-      # Informational: pre-existing `no-explicit-any` debt in a few legacy files.
       - name: Lint
         run: pnpm lint
-        continue-on-error: true
 
   church-mobile:
     name: churchMobile (tsc + eslint + jest)

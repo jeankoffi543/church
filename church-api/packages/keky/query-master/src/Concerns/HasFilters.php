@@ -3,15 +3,17 @@
 namespace Keky\QueryMaster\Concerns;
 
 use Illuminate\Container\Container;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Keky\QueryMaster\Enums\FilterValidationMode;
 use Keky\QueryMaster\Filter;
 
 trait HasFilters // @phpstan-ignore-line
 {
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @param  array  $values
      * @return void
      */
@@ -40,7 +42,7 @@ trait HasFilters // @phpstan-ignore-line
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @return void
      */
     public function scopeFilterOnRequest($query)
@@ -53,7 +55,7 @@ trait HasFilters // @phpstan-ignore-line
     /**
      * Get all filters. You can override this method to return your own filters.
      *
-     * @return array<\Keky\QueryMaster\Filter>
+     * @return array<Filter>
      */
     public function filters()
     {
@@ -67,7 +69,7 @@ trait HasFilters // @phpstan-ignore-line
     }
 
     /**
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     public function filterInstances()
     {
@@ -80,7 +82,7 @@ trait HasFilters // @phpstan-ignore-line
 
     /**
      * @param  array  $values
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     protected function filtersQueryValues($values)
     {

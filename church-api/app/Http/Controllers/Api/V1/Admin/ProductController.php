@@ -9,8 +9,8 @@ use App\Traits\HandlesFileUploads;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
@@ -27,7 +27,7 @@ class ProductController extends Controller
             ->filterOnRequest()
             ->sortOnRequest();
 
-        if (!$request->has('sort')) {
+        if (! $request->has('sort')) {
             $query->orderByDesc('id');
         }
 
@@ -101,12 +101,12 @@ class ProductController extends Controller
 
         $validated = $validator->validated();
 
-        if (!empty($validated['is_featured'])) {
+        if (! empty($validated['is_featured'])) {
             $featuredCount = Product::where('is_featured', true)->count();
             if ($featuredCount >= 5) {
                 return response()->json([
                     'message' => 'Le nombre maximum de produits vedettes est limité à 5.',
-                    'errors' => ['is_featured' => ['Le nombre maximum de produits vedettes est limité à 5.']]
+                    'errors' => ['is_featured' => ['Le nombre maximum de produits vedettes est limité à 5.']],
                 ], 422);
             }
         }
@@ -136,6 +136,7 @@ class ProductController extends Controller
     public function show(int $id): ProductResource
     {
         $product = Product::findOrFail($id);
+
         return new ProductResource($product);
     }
 
@@ -191,12 +192,12 @@ class ProductController extends Controller
 
         $validated = $validator->validated();
 
-        if (!empty($validated['is_featured'])) {
+        if (! empty($validated['is_featured'])) {
             $featuredCount = Product::where('is_featured', true)->where('id', '!=', $product->id)->count();
             if ($featuredCount >= 5) {
                 abort(response()->json([
                     'message' => 'Le nombre maximum de produits vedettes est limité à 5.',
-                    'errors' => ['is_featured' => ['Le nombre maximum de produits vedettes est limité à 5.']]
+                    'errors' => ['is_featured' => ['Le nombre maximum de produits vedettes est limité à 5.']],
                 ], 422));
             }
         }
@@ -232,7 +233,7 @@ class ProductController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $product = Product::findOrFail($id);
-        
+
         // Delete stored files if any start with /storage/
         if (is_array($product->images)) {
             foreach ($product->images as $url) {

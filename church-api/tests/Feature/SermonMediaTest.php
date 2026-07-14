@@ -2,6 +2,7 @@
 
 use App\Models\Sermon;
 use App\Models\SermonScripture;
+use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -101,7 +102,7 @@ it('clears stored media when a sermon is switched to notes only', function () {
 });
 
 it('links a sermon to a preacher user and mirrors their name into speaker', function () {
-    $preacher = \App\Models\User::factory()->create(['name' => 'Pasteur David Odion']);
+    $preacher = User::factory()->create(['name' => 'Pasteur David Odion']);
     actingAsSuperAdmin();
 
     $this->postJson('/api/v1/admin/sermons', [

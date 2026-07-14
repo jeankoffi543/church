@@ -149,7 +149,7 @@ trait Queryable
     /**
      * Apply filter
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @return void
      */
     public function apply($query, $field, $value)

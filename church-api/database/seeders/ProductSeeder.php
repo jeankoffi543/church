@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\Product;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -25,14 +25,14 @@ class ProductSeeder extends Seeder
                 'is_featured' => true,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1504052434569-70ad5836ab65?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [
                     [
                         'name' => 'Couleur',
                         'type' => 'color',
-                        'values' => ['#160f33', '#c8902e', '#c9536b']
-                    ]
+                        'values' => ['#160f33', '#c8902e', '#c9536b'],
+                    ],
                 ],
                 'variants' => [
                     [
@@ -40,23 +40,23 @@ class ProductSeeder extends Seeder
                         'sku' => 'BIB-MDF-IND',
                         'price_override' => null,
                         'stock_count' => 15,
-                        'attributes' => ['Couleur' => '#160f33']
+                        'attributes' => ['Couleur' => '#160f33'],
                     ],
                     [
                         'id' => 'v-bible-or',
                         'sku' => 'BIB-MDF-OR',
                         'price_override' => 28000,
                         'stock_count' => 10,
-                        'attributes' => ['Couleur' => '#c8902e']
+                        'attributes' => ['Couleur' => '#c8902e'],
                     ],
                     [
                         'id' => 'v-bible-rouge',
                         'sku' => 'BIB-MDF-RG',
                         'price_override' => null,
                         'stock_count' => 10,
-                        'attributes' => ['Couleur' => '#c9536b']
-                    ]
-                ]
+                        'attributes' => ['Couleur' => '#c9536b'],
+                    ],
+                ],
             ],
             [
                 'title' => 'Recueil « Vivre par la Foi »',
@@ -70,10 +70,10 @@ class ProductSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [],
-                'variants' => []
+                'variants' => [],
             ],
             [
                 'title' => 'T-shirt « Génération Feu »',
@@ -87,19 +87,19 @@ class ProductSeeder extends Seeder
                 'is_featured' => true,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [
                     [
                         'name' => 'Taille',
                         'type' => 'text',
-                        'values' => ['S', 'M', 'L', 'XL']
+                        'values' => ['S', 'M', 'L', 'XL'],
                     ],
                     [
                         'name' => 'Couleur',
                         'type' => 'color',
-                        'values' => ['#ffffff', '#160f33', '#c9536b']
-                    ]
+                        'values' => ['#ffffff', '#160f33', '#c9536b'],
+                    ],
                 ],
                 'variants' => [
                     [
@@ -107,37 +107,37 @@ class ProductSeeder extends Seeder
                         'sku' => 'TSH-GF-S-BL',
                         'price_override' => null,
                         'stock_count' => 20,
-                        'attributes' => ['Taille' => 'S', 'Couleur' => '#ffffff']
+                        'attributes' => ['Taille' => 'S', 'Couleur' => '#ffffff'],
                     ],
                     [
                         'id' => 'v-tshirt-m-blanc',
                         'sku' => 'TSH-GF-M-BL',
                         'price_override' => null,
                         'stock_count' => 25,
-                        'attributes' => ['Taille' => 'M', 'Couleur' => '#ffffff']
+                        'attributes' => ['Taille' => 'M', 'Couleur' => '#ffffff'],
                     ],
                     [
                         'id' => 'v-tshirt-l-blanc',
                         'sku' => 'TSH-GF-L-BL',
                         'price_override' => null,
                         'stock_count' => 15,
-                        'attributes' => ['Taille' => 'L', 'Couleur' => '#ffffff']
+                        'attributes' => ['Taille' => 'L', 'Couleur' => '#ffffff'],
                     ],
                     [
                         'id' => 'v-tshirt-xl-blanc',
                         'sku' => 'TSH-GF-XL-BL',
                         'price_override' => 10000,
                         'stock_count' => 5,
-                        'attributes' => ['Taille' => 'XL', 'Couleur' => '#ffffff']
+                        'attributes' => ['Taille' => 'XL', 'Couleur' => '#ffffff'],
                     ],
                     [
                         'id' => 'v-tshirt-m-noir',
                         'sku' => 'TSH-GF-M-NR',
                         'price_override' => null,
                         'stock_count' => 20,
-                        'attributes' => ['Taille' => 'M', 'Couleur' => '#160f33']
-                    ]
-                ]
+                        'attributes' => ['Taille' => 'M', 'Couleur' => '#160f33'],
+                    ],
+                ],
             ],
             [
                 'title' => 'Casquette brodée MFM',
@@ -151,14 +151,14 @@ class ProductSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [
                     [
                         'name' => 'Couleur',
                         'type' => 'color',
-                        'values' => ['#160f33', '#c8902e', '#ffffff']
-                    ]
+                        'values' => ['#160f33', '#c8902e', '#ffffff'],
+                    ],
                 ],
                 'variants' => [
                     [
@@ -166,16 +166,16 @@ class ProductSeeder extends Seeder
                         'sku' => 'CAS-MFM-NR',
                         'price_override' => null,
                         'stock_count' => 15,
-                        'attributes' => ['Couleur' => '#160f33']
+                        'attributes' => ['Couleur' => '#160f33'],
                     ],
                     [
                         'id' => 'v-casquette-or',
                         'sku' => 'CAS-MFM-OR',
                         'price_override' => 8000,
                         'stock_count' => 10,
-                        'attributes' => ['Couleur' => '#c8902e']
-                    ]
-                ]
+                        'attributes' => ['Couleur' => '#c8902e'],
+                    ],
+                ],
             ],
             [
                 'title' => 'Mug « Grâce chaque matin »',
@@ -189,10 +189,10 @@ class ProductSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [],
-                'variants' => []
+                'variants' => [],
             ],
             [
                 'title' => 'Tote bag « Maison du Feu »',
@@ -206,10 +206,10 @@ class ProductSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1591561954557-26941169b49e?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1591561954557-26941169b49e?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [],
-                'variants' => []
+                'variants' => [],
             ],
             [
                 'title' => 'Album Louange « Feu du Ciel »',
@@ -223,10 +223,10 @@ class ProductSeeder extends Seeder
                 'is_featured' => true,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1483412033650-1015ddeb83d1?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [],
-                'variants' => []
+                'variants' => [],
             ],
             [
                 'title' => 'Bougie de prière parfumée',
@@ -240,11 +240,11 @@ class ProductSeeder extends Seeder
                 'is_featured' => false,
                 'status' => 'active',
                 'images' => [
-                    'https://images.unsplash.com/photo-1602523961358-f9f03dd557db?w=600&q=80&auto=format&fit=crop'
+                    'https://images.unsplash.com/photo-1602523961358-f9f03dd557db?w=600&q=80&auto=format&fit=crop',
                 ],
                 'attributes' => [],
-                'variants' => []
-            ]
+                'variants' => [],
+            ],
         ];
 
         foreach ($products as $p) {
@@ -258,24 +258,24 @@ class ProductSeeder extends Seeder
             'Livres' => [
                 'Manuel de Prière Vocale', 'Guide de l\'Intercesseur', 'Les Secrets de la Foi', 'Vaincre par le Sang de Jésus',
                 'Méditations Quotidiennes', 'Révélation de la Grâce', 'L\'Armure du Croyant', 'Marche Spirituelle Victorieuse',
-                'La Puissance de l\'Adoration', 'Les Fondements du Salut', 'Sagesse pour le Foyer', 'Éducation Chrétienne'
+                'La Puissance de l\'Adoration', 'Les Fondements du Salut', 'Sagesse pour le Foyer', 'Éducation Chrétienne',
             ],
             'Vêtements' => [
                 'Polo Brodé Maison du Feu', 'Sweat à capuche Génération Feu', 'Casquette Mesh MFM', 'T-shirt Louange MFM',
-                'Chaussettes Coton MFM', 'Écharpe Broderie Or', 'T-shirt Enfants de Dieu', 'Casquette Plate MFM'
+                'Chaussettes Coton MFM', 'Écharpe Broderie Or', 'T-shirt Enfants de Dieu', 'Casquette Plate MFM',
             ],
             'Musique' => [
                 'Album Adoration Profonde Vol. 1', 'Album Live Célébration', 'Chants de Gloire et Victoire', 'Symphonie du Ciel',
-                'Feu Sacré (Instrumental)', 'Compilation Chœurs de Feu', 'Album Louange d\'Ensemble', 'Hymnes de Résurrection'
+                'Feu Sacré (Instrumental)', 'Compilation Chœurs de Feu', 'Album Louange d\'Ensemble', 'Hymnes de Résurrection',
             ],
             'Accessoires' => [
                 'Mug Céramique MFM Worship', 'Gourde Métal Génération Feu', 'Sac à Dos Intercesseur', 'Porte-clés MFM Or',
-                'Carnet de Notes en Cuir MFM', 'Stylo Gravé Grâce divine', 'Coque Téléphone Croix', 'Marque-page Métal Gravé'
+                'Carnet de Notes en Cuir MFM', 'Stylo Gravé Grâce divine', 'Coque Téléphone Croix', 'Marque-page Métal Gravé',
             ],
             'Onction' => [
                 'Huile d\'Onction d\'Encens', 'Huile d\'Onction de Myrrhe', 'Encens Naturel de Prière', 'Huile Parfumée Cèdre',
-                'Kit d\'Onction Familial', 'Flacon d\'Onction de Voyage', 'Huile d\'Onction d\'Olive Vierge', 'Bougie d\'Onction d\'Albâtre'
-            ]
+                'Kit d\'Onction Familial', 'Flacon d\'Onction de Voyage', 'Huile d\'Onction d\'Olive Vierge', 'Bougie d\'Onction d\'Albâtre',
+            ],
         ];
 
         $featuredCount = 0;
@@ -283,22 +283,22 @@ class ProductSeeder extends Seeder
             $category = $categories[array_rand($categories)];
             $subList = $titles[$category];
             $baseTitle = $subList[array_rand($subList)];
-            $title = $baseTitle . " (Édition #" . $i . ")";
+            $title = $baseTitle.' (Édition #'.$i.')';
             $slug = Str::slug($title);
-            
+
             $basePrice = rand(3, 40) * 1000;
             $oldPrice = (rand(1, 10) <= 3) ? ($basePrice + rand(1, 5) * 1000) : null;
             $badge = $badges[array_rand($badges)];
-            
+
             $unlimitedStock = (rand(1, 100) <= 15);
             $stock = $unlimitedStock ? 0 : rand(3, 150);
             $threshold = $unlimitedStock ? null : rand(5, 15);
-            
+
             $isFeatured = false;
             if ($badge === 'Vedette' && $featuredCount < 2) {
                 $isFeatured = true;
                 $featuredCount++;
-            } else if ($badge === 'Vedette') {
+            } elseif ($badge === 'Vedette') {
                 $badge = 'Populaire';
             }
 
@@ -309,55 +309,55 @@ class ProductSeeder extends Seeder
                     [
                         'name' => 'Taille',
                         'type' => 'text',
-                        'values' => ['M', 'L', 'XL']
-                    ]
+                        'values' => ['M', 'L', 'XL'],
+                    ],
                 ];
                 $variants = [
                     [
-                        'id' => 'v-gen-m-' . $i,
-                        'sku' => strtoupper(substr($slug, 0, 8)) . '-M-' . $i,
+                        'id' => 'v-gen-m-'.$i,
+                        'sku' => strtoupper(substr($slug, 0, 8)).'-M-'.$i,
                         'price_override' => null,
                         'stock_count' => $unlimitedStock ? 0 : rand(5, 50),
-                        'attributes' => ['Taille' => 'M']
+                        'attributes' => ['Taille' => 'M'],
                     ],
                     [
-                        'id' => 'v-gen-l-' . $i,
-                        'sku' => strtoupper(substr($slug, 0, 8)) . '-L-' . $i,
+                        'id' => 'v-gen-l-'.$i,
+                        'sku' => strtoupper(substr($slug, 0, 8)).'-L-'.$i,
                         'price_override' => null,
                         'stock_count' => $unlimitedStock ? 0 : rand(5, 50),
-                        'attributes' => ['Taille' => 'L']
-                    ]
+                        'attributes' => ['Taille' => 'L'],
+                    ],
                 ];
             } elseif ($category === 'Onction' || $category === 'Accessoires') {
                 $attrs = [
                     [
                         'name' => 'Modèle',
                         'type' => 'text',
-                        'values' => ['Standard', 'Premium']
-                    ]
+                        'values' => ['Standard', 'Premium'],
+                    ],
                 ];
                 $variants = [
                     [
-                        'id' => 'v-opt-std-' . $i,
-                        'sku' => strtoupper(substr($slug, 0, 8)) . '-STD-' . $i,
+                        'id' => 'v-opt-std-'.$i,
+                        'sku' => strtoupper(substr($slug, 0, 8)).'-STD-'.$i,
                         'price_override' => null,
                         'stock_count' => $unlimitedStock ? 0 : rand(5, 50),
-                        'attributes' => ['Modèle' => 'Standard']
+                        'attributes' => ['Modèle' => 'Standard'],
                     ],
                     [
-                        'id' => 'v-opt-pre-' . $i,
-                        'sku' => strtoupper(substr($slug, 0, 8)) . '-PRE-' . $i,
+                        'id' => 'v-opt-pre-'.$i,
+                        'sku' => strtoupper(substr($slug, 0, 8)).'-PRE-'.$i,
                         'price_override' => $basePrice + rand(1, 5) * 1000,
                         'stock_count' => $unlimitedStock ? 0 : rand(2, 20),
-                        'attributes' => ['Modèle' => 'Premium']
-                    ]
+                        'attributes' => ['Modèle' => 'Premium'],
+                    ],
                 ];
             }
 
             Product::create([
                 'title' => $title,
                 'slug' => $slug,
-                'description' => "Ce produit est une édition exclusive conçue spécialement pour l'édification de la communauté. Catégorie " . $category . ".",
+                'description' => "Ce produit est une édition exclusive conçue spécialement pour l'édification de la communauté. Catégorie ".$category.'.',
                 'base_price' => $basePrice,
                 'old_price' => $oldPrice,
                 'category' => $category,
@@ -368,10 +368,10 @@ class ProductSeeder extends Seeder
                 'unlimited_stock' => $unlimitedStock,
                 'low_stock_threshold' => $threshold,
                 'images' => [
-                    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80'
+                    'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80',
                 ],
                 'attributes' => $attrs,
-                'variants' => $variants
+                'variants' => $variants,
             ]);
         }
 
@@ -398,15 +398,15 @@ class ProductSeeder extends Seeder
                         'product_title' => "Bible d'étude « Maison du Feu »",
                         'quantity' => 1,
                         'price' => 25000,
-                        'selected_attributes' => ['Couleur' => '#160f33']
+                        'selected_attributes' => ['Couleur' => '#160f33'],
                     ],
                     [
                         'product_title' => 'Bougie de prière parfumée',
                         'quantity' => 2,
                         'price' => 4500,
-                        'selected_attributes' => []
-                    ]
-                ]
+                        'selected_attributes' => [],
+                    ],
+                ],
             ],
             [
                 'reference' => 'MFM-2040',
@@ -429,9 +429,9 @@ class ProductSeeder extends Seeder
                         'product_title' => 'T-shirt « Génération Feu »',
                         'quantity' => 2,
                         'price' => 9000,
-                        'selected_attributes' => ['Taille' => 'M', 'Couleur' => '#160f33']
-                    ]
-                ]
+                        'selected_attributes' => ['Taille' => 'M', 'Couleur' => '#160f33'],
+                    ],
+                ],
             ],
             [
                 'reference' => 'MFM-2039',
@@ -454,15 +454,15 @@ class ProductSeeder extends Seeder
                         'product_title' => 'Album Louange « Feu du Ciel »',
                         'quantity' => 1,
                         'price' => 8000,
-                        'selected_attributes' => []
+                        'selected_attributes' => [],
                     ],
                     [
                         'product_title' => 'Mug « Grâce chaque matin »',
                         'quantity' => 1,
                         'price' => 5000,
-                        'selected_attributes' => []
-                    ]
-                ]
+                        'selected_attributes' => [],
+                    ],
+                ],
             ],
             [
                 'reference' => 'MFM-2038',
@@ -485,15 +485,15 @@ class ProductSeeder extends Seeder
                         'product_title' => 'Casquette brodée MFM',
                         'quantity' => 1,
                         'price' => 7500,
-                        'selected_attributes' => ['Couleur' => '#160f33']
+                        'selected_attributes' => ['Couleur' => '#160f33'],
                     ],
                     [
                         'product_title' => 'Tote bag « Maison du Feu »',
                         'quantity' => 1,
                         'price' => 6000,
-                        'selected_attributes' => []
-                    ]
-                ]
+                        'selected_attributes' => [],
+                    ],
+                ],
             ],
             [
                 'reference' => 'MFM-2037',
@@ -516,10 +516,10 @@ class ProductSeeder extends Seeder
                         'product_title' => 'Recueil « Vivre par la Foi »',
                         'quantity' => 3,
                         'price' => 12000,
-                        'selected_attributes' => []
-                    ]
-                ]
-            ]
+                        'selected_attributes' => [],
+                    ],
+                ],
+            ],
         ];
 
         foreach ($orders as $o) {

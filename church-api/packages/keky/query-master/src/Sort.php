@@ -12,7 +12,7 @@ final class Sort
     protected $field;
 
     /**
-     * @var \Keky\QueryMaster\Enums\SortDirection
+     * @var SortDirection
      */
     protected $direction;
 
@@ -25,7 +25,7 @@ final class Sort
     /**
      * Set sort direction
      *
-     * @param  \Keky\QueryMaster\Enums\SortDirection  $direction
+     * @param  SortDirection  $direction
      * @return static
      */
     public function setDirection($direction)
@@ -38,7 +38,7 @@ final class Sort
     /**
      * Get sort direction
      *
-     * @return \Keky\QueryMaster\Enums\SortDirection
+     * @return SortDirection
      */
     public function direction()
     {
@@ -59,7 +59,7 @@ final class Sort
      * Create new sort
      *
      * @param  string  $field
-     * @param  \Keky\QueryMaster\Enums\SortDirection  $direction
+     * @param  SortDirection  $direction
      * @return static
      */
     public static function make($field, $direction = SortDirection::ASC)

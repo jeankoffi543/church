@@ -3,6 +3,7 @@
 namespace Keky\QueryMaster\Concerns;
 
 use Illuminate\Container\Container;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -13,7 +14,7 @@ use Keky\QueryMaster\Search;
 trait IsSearchable // @phpstan-ignore-line
 {
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @param  string  $search
      * @param  array  $onlyQueryFields
      * @return void
@@ -46,7 +47,7 @@ trait IsSearchable // @phpstan-ignore-line
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @return void
      */
     public function scopeSearchOnRequest($query)
@@ -61,7 +62,7 @@ trait IsSearchable // @phpstan-ignore-line
     }
 
     /**
-     * @return array<\Keky\QueryMaster\Search>
+     * @return array<Search>
      */
     public function searchable()
     {
@@ -85,7 +86,7 @@ trait IsSearchable // @phpstan-ignore-line
     }
 
     /**
-     * @return \Illuminate\Support\Collection<\Keky\QueryMaster\Search>
+     * @return Collection<Search>
      */
     public function searchInstances($onlyQueryFields = [])
     {

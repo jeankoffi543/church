@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Keky\QueryMaster\Concerns\HasFilters;
 use Keky\QueryMaster\Enums\FilterValidationMode;
 use Keky\QueryMaster\Filter;
@@ -111,7 +112,7 @@ it('validates filter values when validation mode is throw', function () {
     $query->shouldReceive('getQuery')->andReturn($queryBuilder);
 
     expect(fn () => $model->scopeFilter($query, ['validated' => 'invalid']))
-        ->toThrow(\Illuminate\Validation\ValidationException::class);
+        ->toThrow(ValidationException::class);
 });
 
 it('skips filter application when validation fails', function () {

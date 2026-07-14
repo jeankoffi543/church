@@ -94,6 +94,7 @@ export function ProductModal({
   // Load product if editing
   useEffect(() => {
     if (product) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setName(product.name);
       setCategory(product.category);
       setPrice(String(product.price));
@@ -957,7 +958,7 @@ export function ProductModal({
               }}
               className="size-[18px] accent-gold-dark cursor-pointer"
             />
-            Mettre en vedette sur la page d'accueil
+            Mettre en vedette sur la page d&apos;accueil
           </label>
         </div>
 

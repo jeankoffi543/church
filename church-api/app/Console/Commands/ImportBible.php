@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\BibleVerse;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
@@ -49,7 +49,7 @@ class ImportBible extends Command
             return self::FAILURE;
         }
 
-        $this->info("Starting SQL transaction for " . count($rows) . " verses ({$translation})...");
+        $this->info('Starting SQL transaction for '.count($rows)." verses ({$translation})...");
 
         DB::beginTransaction();
 
@@ -63,7 +63,7 @@ class ImportBible extends Command
             $count = 0;
             foreach (array_chunk($rows, 1000) as $chunk) {
                 $chunk = array_map(static fn (array $r): array => $r + ['created_at' => $now, 'updated_at' => $now], $chunk);
-                
+
                 if ($this->option('truncate')) {
                     DB::table('bible_verses')->insert($chunk);
                 } else {
@@ -78,15 +78,17 @@ class ImportBible extends Command
             $this->newLine();
 
             // Clear cache for translations list and books list for this translation
-            \Illuminate\Support\Facades\Cache::forget('bible:translations');
-            \Illuminate\Support\Facades\Cache::forget("bible:books:{$translation}");
+            Cache::forget('bible:translations');
+            Cache::forget("bible:books:{$translation}");
 
             $this->info("Imported {$count} verses ({$translation}) successfully.");
+
             return self::SUCCESS;
         } catch (\Exception $e) {
             DB::rollBack();
             $this->newLine();
-            $this->error("Database transaction rolled back. Error: " . $e->getMessage());
+            $this->error('Database transaction rolled back. Error: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }
@@ -177,7 +179,7 @@ class ImportBible extends Command
                 if (! is_array($vs)) {
                     continue;
                 }
-                foreach ($vs as $verse => $text) { 
+                foreach ($vs as $verse => $text) {
                     if (is_array($text)) {
                         continue;
                     }

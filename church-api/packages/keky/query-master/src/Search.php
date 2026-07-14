@@ -48,7 +48,7 @@ class Search
      * Create new search
      *
      * @param  string  $field
-     * @param  \Keky\QueryMaster\Enums\SearchOperator|null  $operator
+     * @param  SearchOperator|null  $operator
      * @return static
      */
     public static function make($field, $operator = null)

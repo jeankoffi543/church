@@ -17,7 +17,9 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const resolvedParams = params instanceof Promise ? await params : params;
   const id = resolvedParams?.id || "1";
 
-  const rawProduct = await getStoreProduct(id);
+  // Legacy store mapper reads fields looser than the typed Product boundary;
+  // kept local-any inside this quarantined module (see eslint.config.mjs).
+  const rawProduct: any = await getStoreProduct(id);
   let product: ProductRich;
 
   if (rawProduct) {

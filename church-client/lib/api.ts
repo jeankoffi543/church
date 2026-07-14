@@ -1149,7 +1149,12 @@ export async function getLatestPastLive(): Promise<PastLive | null> {
   return json?.data ? mapPastLive(json.data) : null;
 }
 
-export async function getStoreProduct(id: string): Promise<any | null> {
-  const json = await apiGet<{ data: any }>(`/public/store/products/${id}`, ["products"]);
+export async function getStoreProduct(
+  id: string,
+): Promise<import("./store").Product | null> {
+  const json = await apiGet<{ data: import("./store").Product }>(
+    `/public/store/products/${id}`,
+    ["products"],
+  );
   return json?.data ?? null;
 }

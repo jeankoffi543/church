@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\HomeGroup;
 use App\Models\Ministry;
 use App\Models\MinistryApplication;
 use App\Models\User;
@@ -65,7 +66,7 @@ class DemoSeeder extends Seeder
     private function assignHomeGroupLeaders(): void
     {
         $leaders = User::role('Responsables de cellule')->where('is_active', true)->limit(4)->get();
-        $groups = \App\Models\HomeGroup::orderBy('id')->get();
+        $groups = HomeGroup::orderBy('id')->get();
 
         foreach ($groups as $index => $group) {
             if (isset($leaders[$index])) {
@@ -77,8 +78,6 @@ class DemoSeeder extends Seeder
             }
         }
     }
-
-
 
     /**
      * Designate ministry chiefs and seed sample applications so the recruitment
@@ -93,7 +92,7 @@ class DemoSeeder extends Seeder
         }
 
         $chiefPool = User::query()
-            ->where('email', 'like', '%@' . self::DEMO_DOMAIN)
+            ->where('email', 'like', '%@'.self::DEMO_DOMAIN)
             ->where('is_active', true)
             ->limit($ministries->count())
             ->get();
@@ -129,7 +128,7 @@ class DemoSeeder extends Seeder
 
             // Deterministic subset: ~30%-70% of permissions per group.
             $subset = collect($permissions)
-                ->filter(fn(string $p, int $i): bool => (($index + 1) * ($i + 3)) % 10 < 4)
+                ->filter(fn (string $p, int $i): bool => (($index + 1) * ($i + 3)) % 10 < 4)
                 ->values()
                 ->all();
 
@@ -146,12 +145,12 @@ class DemoSeeder extends Seeder
         $roleNames = Role::query()->pluck('name')->all();
         $assignable = array_values(array_filter(
             $roleNames,
-            fn(string $name): bool => $name !== AccessControl::SUPER_ADMIN,
+            fn (string $name): bool => $name !== AccessControl::SUPER_ADMIN,
         ));
 
         for ($i = 1; $i <= self::DEMO_USERS; $i++) {
             $user = User::updateOrCreate(
-                ['email' => "serviteur{$i}@" . self::DEMO_DOMAIN],
+                ['email' => "serviteur{$i}@".self::DEMO_DOMAIN],
                 [
                     'name' => fake()->name(),
                     'password' => Hash::make('password'),

@@ -3,6 +3,7 @@
 namespace Keky\QueryMaster\Concerns;
 
 use Illuminate\Support\Facades\Validator as ValidatorFacade;
+use Illuminate\Validation\Validator;
 use Keky\QueryMaster\Enums\FilterValidationMode;
 
 trait Validation
@@ -13,7 +14,7 @@ trait Validation
     public $validationMode = FilterValidationMode::FILTER;
 
     /**
-     * @var \Illuminate\Validation\Validator
+     * @var Validator
      */
     protected $validator;
 
@@ -35,7 +36,7 @@ trait Validation
     /**
      * Set validation mode
      *
-     * @param  \Keky\QueryMaster\Enums\FilterValidationMode  $validationMode
+     * @param  FilterValidationMode  $validationMode
      * @return static
      */
     public function setValidationMode($validationMode)
@@ -72,7 +73,7 @@ trait Validation
     }
 
     /**
-     * @return \Illuminate\Validation\Validator
+     * @return Validator
      */
     protected function createValidator()
     {

@@ -2,6 +2,7 @@
 
 namespace Keky\QueryMaster;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Traits\Conditionable;
 use Keky\QueryMaster\Concerns\Queryable;
@@ -77,8 +78,8 @@ final class Filter
      *
      * @param  string  $field
      * @param  string|null  $queryField
-     * @param  \Keky\QueryMaster\Enums\FilterOperator|null  $operator
-     * @param  \Keky\QueryMaster\Enums\FilterValidationMode  $validationMode
+     * @param  FilterOperator|null  $operator
+     * @param  FilterValidationMode  $validationMode
      * @return static
      */
     public static function make($field, $queryField = null, $operator = null, $validationMode = FilterValidationMode::THROW)
@@ -100,7 +101,7 @@ final class Filter
     /**
      * Apply filter
      *
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @return void
      */
     public function apply($query)

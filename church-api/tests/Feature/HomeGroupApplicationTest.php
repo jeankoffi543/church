@@ -3,11 +3,12 @@
 use App\Models\HomeGroup;
 use App\Models\HomeGroupApplication;
 use App\Models\User;
-use App\Support\AccessControl;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
-    \Spatie\Permission\Models\Permission::findOrCreate('validate_home_group_applications', 'web');
+    Permission::findOrCreate('validate_home_group_applications', 'web');
 });
 
 it('allows a public user to submit a home group application', function () {
@@ -102,13 +103,13 @@ it('restricts admin listing of applications to users with validate_home_group_ap
 
 it('allows only the designated cell leader, pasteur, or super admin to approve or reject application', function () {
     $pastor = User::factory()->create();
-    $pastorRole = \Spatie\Permission\Models\Role::findOrCreate('Pasteurs', 'web');
+    $pastorRole = Role::findOrCreate('Pasteurs', 'web');
     $pastorRole->givePermissionTo('validate_home_group_applications');
     $pastor->assignRole($pastorRole);
 
     $leader1 = User::factory()->create();
     $leader2 = User::factory()->create();
-    $leaderRole = \Spatie\Permission\Models\Role::findOrCreate('Responsables de cellule', 'web');
+    $leaderRole = Role::findOrCreate('Responsables de cellule', 'web');
     $leaderRole->givePermissionTo('validate_home_group_applications');
     $leader1->assignRole($leaderRole);
     $leader2->assignRole($leaderRole);

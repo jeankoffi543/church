@@ -3,15 +3,17 @@
 namespace Keky\QueryMaster\Concerns;
 
 use Illuminate\Container\Container;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Keky\QueryMaster\Enums\SortDirection;
 use Keky\QueryMaster\Sort;
 
 trait IsSortable // @phpstan-ignore-line
 {
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @param  array  $sort
      * @return void
      */
@@ -22,7 +24,7 @@ trait IsSortable // @phpstan-ignore-line
     }
 
     /**
-     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @param  Builder  $query
      * @return void
      */
     public function scopeSortOnRequest($query)
@@ -61,7 +63,7 @@ trait IsSortable // @phpstan-ignore-line
 
     /**
      * @param  array<string, SortDirection>  $sort
-     * @return \Illuminate\Support\Collection
+     * @return Collection
      */
     protected function sortableInstances($sort)
     {

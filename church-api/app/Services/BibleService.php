@@ -19,7 +19,7 @@ class BibleService
     /**
      * Get and cache verse texts for all requested versions.
      *
-     * @param array<int, string> $versions
+     * @param  array<int, string>  $versions
      * @return array<string, string>
      */
     public function getTextsForVerse(string $book, int $chapter, int $verse, array $versions): array
@@ -43,7 +43,7 @@ class BibleService
     /**
      * Resolve a query into a match + navigation targets + autocomplete suggestions.
      *
-     * @param array<int, string> $versions
+     * @param  array<int, string>  $versions
      * @return array{
      *   query: string,
      *   match: array<string, mixed>|null,
@@ -100,7 +100,7 @@ class BibleService
     /**
      * Navigate from an exact reference to a sibling verse / chapter.
      *
-     * @param array<int, string> $versions
+     * @param  array<int, string>  $versions
      * @return array<string, mixed>|null
      */
     public function relative(string $book, int $chapter, int $verse, string $direction, array $versions = ['LSG']): ?array
@@ -189,7 +189,7 @@ class BibleService
             'sop' => 'Sophonie', 'ag' => 'Aggée', 'zac' => 'Zacharie', 'mal' => 'Malachie',
             'gal' => 'Galates', 'eph' => 'Éphésiens', 'phi' => 'Philippiens', 'col' => 'Colossiens',
             'tim' => 'Timothée', 'tit' => 'Tite', 'phm' => 'Philémon', 'heb' => 'Hébreux',
-            'jac' => 'Jacques', 'pet' => 'Pierre', 'jude' => 'Jude'
+            'jac' => 'Jacques', 'pet' => 'Pierre', 'jude' => 'Jude',
         ];
 
         // Normalise dictionary keys and map them to their resolved book
@@ -266,7 +266,7 @@ class BibleService
     /**
      * Autocomplete suggestions: verses around the current partial query.
      *
-     * @param array<int, string> $versions
+     * @param  array<int, string>  $versions
      * @return Collection<int, BibleVerse>
      */
     private function suggest(?string $bookToken, ?string $book, ?int $chapter, ?int $verse, array $versions = ['LSG']): Collection
@@ -376,7 +376,7 @@ class BibleService
     }
 
     /**
-     * @param array<int, string> $versions
+     * @param  array<int, string>  $versions
      * @return array<string, mixed>|null
      */
     private function present(?BibleVerse $verse, array $versions = ['LSG']): ?array
