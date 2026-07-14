@@ -172,6 +172,7 @@ export type PlanLimits = {
   members?: number | null;
   storage_gb?: number | null;
   staff_seats?: number | null;
+  domains?: number | null;
 };
 
 export type ManagedPlan = {
