@@ -86,3 +86,9 @@ it('erases the tenant personal data in central tables on purge (RGPD, CHR-190)',
 it('aborts a purge on an unknown tenant', function () {
     $this->artisan('tenants:purge', ['tenant' => 'nope', '--force' => true])->assertFailed();
 });
+
+it('runs the deploy migration across central + tenant databases (CHR-193)', function () {
+    Tenant::factory()->create(); // a real, provisioned tenant database
+
+    $this->artisan('deploy:migrate')->assertSuccessful();
+});
