@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useServerList } from "../../_components/use-server-list";
 import { Pagination } from "../../_components/pagination";
 import { Input } from "@/components/ui/input";
+import type { AdminOrder, AdminOrderItem } from "@/lib/admin-api";
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   nouvelle: { label: "Nouvelle", color: "text-[#2a6fdb]", bg: "bg-[rgba(42,111,219,0.12)]" },
@@ -35,7 +36,7 @@ export default function AdminStoreOrdersPage() {
     meta,
     isLoading,
     refresh
-  } = useServerList<any>({
+  } = useServerList<AdminOrder>({
     fetcher: async (params) => {
       const { getAdminOrdersPaginated } = await import("@/lib/admin-api");
       return getAdminOrdersPaginated(params);
@@ -53,8 +54,8 @@ export default function AdminStoreOrdersPage() {
   });
 
   const orders = useMemo(() => {
-    return (rawOrders || []).map((o: any) => {
-      const lines = (o.items || []).map((item: any) => {
+    return (rawOrders || []).map((o: AdminOrder) => {
+      const lines = (o.items || []).map((item: AdminOrderItem) => {
         const attrsStr = item.selected_attributes && Object.keys(item.selected_attributes).length > 0
           ? " (" + Object.entries(item.selected_attributes).map(([k, v]) => `${k}: ${v}`).join(", ") + ")"
           : "";
@@ -90,8 +91,8 @@ export default function AdminStoreOrdersPage() {
       const { updateAdminOrderStatus } = await import("@/lib/admin-api");
       await updateAdminOrderStatus(targetOrder.dbId, newStatus);
       refresh();
-    } catch (err: any) {
-      alert(err.message || "Erreur de changement de statut");
+    } catch (err) {
+      alert((err as Error).message || "Erreur de changement de statut");
     }
   };
 
@@ -234,7 +235,7 @@ export default function AdminStoreOrdersPage() {
                           Articles
                         </div>
                         <div className="flex flex-col gap-2">
-                          {o.lines.map((l: any, i: number) => (
+                          {o.lines.map((l, i: number) => (
                             <div
                               key={i}
                               className="flex justify-between text-[13.5px] text-[#5a5470]"

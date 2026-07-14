@@ -12,10 +12,23 @@ import { useServerList } from "../_components/use-server-list";
 import { Pagination } from "../_components/pagination";
 import { QueryBuilder, serializeFiltersForQueryMaster } from "@/components/admin/query-builder";
 import type { FilterField, ActiveFilter } from "@/components/admin/query-builder";
+import type {
+  AdminProduct,
+  AdminProductVariant,
+  AdminProductAttribute,
+  AdminProductAttributeValue,
+} from "@/lib/admin-api";
 
 interface VariantOption {
   value: string;
   color?: string;
+  image?: string;
+  price?: number;
+  oldPrice?: number;
+  stock?: number;
+  description?: string;
+  unlimited_stock?: boolean;
+  low_stock_threshold?: number;
 }
 
 interface VariantGroup {
@@ -62,19 +75,19 @@ const filterFields: FilterField[] = [
   },
 ];
 
-const mapApiProductToFrontendProduct = (p: any): Product => {
-  const stockCount = p.variants && p.variants.length > 0 
-    ? p.variants.reduce((acc: number, v: any) => acc + (v.stock_count || 0), 0)
+const mapApiProductToFrontendProduct = (p: AdminProduct): Product => {
+  const stockCount = p.variants && p.variants.length > 0
+    ? p.variants.reduce((acc: number, v: AdminProductVariant) => acc + (v.stock_count || 0), 0)
     : 10;
-  
-  const localVariants = (p.attributes || []).map((attr: any) => {
+
+  const localVariants = (p.attributes || []).map((attr: AdminProductAttribute): VariantGroup => {
     return {
-      name: attr.name,
+      name: attr.name ?? "",
       type: attr.type === "color" ? "color" : "text",
-      options: (attr.values || []).map((val: any) => {
+      options: (attr.values || []).map((val: string | AdminProductAttributeValue): VariantOption => {
         if (typeof val === "object" && val !== null) {
           return {
-            value: val.value,
+            value: val.value ?? "",
             color: val.color || undefined,
             image: val.image || undefined,
             price: val.price || undefined,
@@ -82,7 +95,7 @@ const mapApiProductToFrontendProduct = (p: any): Product => {
             stock: val.stock !== undefined ? val.stock : undefined,
             description: val.description || undefined,
             unlimited_stock: val.unlimited_stock !== undefined ? Boolean(val.unlimited_stock) : undefined,
-            low_stock_threshold: val.low_stock_threshold !== undefined ? Number(val.low_stock_threshold) : undefined,
+            low_stock_threshold: val.low_stock_threshold !== undefined && val.low_stock_threshold !== null ? Number(val.low_stock_threshold) : undefined,
           };
         }
         const isColor = attr.type === "color";
@@ -96,15 +109,15 @@ const mapApiProductToFrontendProduct = (p: any): Product => {
 
   return {
     id: Number(p.id),
-    name: p.title,
-    category: p.category,
+    name: p.title ?? "",
+    category: p.category ?? "",
     price: Number(p.base_price),
     oldPrice: p.old_price ? Number(p.old_price) : undefined,
     stock: stockCount,
     unlimited_stock: Boolean(p.unlimited_stock),
     low_stock_threshold: p.low_stock_threshold !== null && p.low_stock_threshold !== undefined ? Number(p.low_stock_threshold) : undefined,
     badge: p.badge || "",
-    images: p.images ? p.images.map((img: any) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean) : [],
+    images: p.images ? p.images.map((img: string) => assetUrl(img) || img).filter(Boolean) : [],
     variants: localVariants,
     shortDesc: p.description || "",
     longDesc: p.description || "",
@@ -167,7 +180,7 @@ export default function StoreCatalogPage() {
     meta,
     isLoading,
     refresh,
-  } = useServerList<any>({
+  } = useServerList<AdminProduct>({
     fetcher: async (params) => {
       const { getAdminProductsPaginated } = await import("@/lib/admin-api");
       return getAdminProductsPaginated(params);
@@ -238,8 +251,8 @@ export default function StoreCatalogPage() {
         const { deleteAdminProduct } = await import("@/lib/admin-api");
         await deleteAdminProduct(id);
         refresh();
-      } catch (err: any) {
-        alert(err.message || "Erreur de suppression");
+      } catch (err) {
+        alert((err as Error).message || "Erreur de suppression");
       }
     }
   };
@@ -255,11 +268,11 @@ export default function StoreCatalogPage() {
     try {
       const { createAdminProduct, updateAdminProduct } = await import("@/lib/admin-api");
       
-      const backendAttributes = (payload.variants || []).map((group: any) => {
+      const backendAttributes = (payload.variants || []).map((group) => {
         return {
           name: group.name,
           type: group.type,
-          values: group.options.map((opt: any) => {
+          values: group.options.map((opt) => {
             return {
               value: opt.value,
               color: group.type === "color" ? opt.color : undefined,
@@ -276,7 +289,7 @@ export default function StoreCatalogPage() {
       });
 
       const backendVariants = (payload.variants && payload.variants.length > 0)
-        ? payload.variants[0].options.map((opt: any, idx: number) => {
+        ? payload.variants[0].options.map((opt, idx: number) => {
             return {
               id: `v-${idx + 1}`,
               sku: `${payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${opt.value.toLowerCase()}`,
@@ -319,15 +332,15 @@ export default function StoreCatalogPage() {
       };
 
       if (editingProduct) {
-        await updateAdminProduct(editingProduct.id, backendPayload, (payload as any).imageFiles);
+        await updateAdminProduct(editingProduct.id, backendPayload, payload.imageFiles);
       } else {
-        await createAdminProduct(backendPayload, (payload as any).imageFiles);
+        await createAdminProduct(backendPayload, payload.imageFiles);
       }
       
       window.location.reload();
       setModalOpen(false);
-    } catch (err: any) {
-      alert(err.message || "Erreur de sauvegarde");
+    } catch (err) {
+      alert((err as Error).message || "Erreur de sauvegarde");
     }
   };
 
@@ -336,7 +349,7 @@ export default function StoreCatalogPage() {
     return variants.map((g) => `${g.options.length} ${g.name.toLowerCase()}`).join(", ");
   };
 
-  const getStockStatus = (p: any) => {
+  const getStockStatus = (p: Product) => {
     if (p.unlimited_stock) {
       return { label: "Illimité", color: "text-[#1f8a5b]", bg: "bg-[rgba(31,138,91,0.12)]" };
     }

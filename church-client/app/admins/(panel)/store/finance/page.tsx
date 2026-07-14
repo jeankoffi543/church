@@ -35,12 +35,18 @@ const KPI_STYLES = [
   },
 ];
 
+type KpiCard = { label: string; value: string | number; bg: string; textColor: string; labelColor: string; trend?: string; trendColor: string; trendBg: string };
+type RevenueBar = { month: string; value: number; label: string };
+type CategoryBar = { name: string; pct: number; fill: string };
+type TransactionRow = { id: number | string; method: string; date: string; amount: number; short: string; iconBg: string };
+type TopProductRow = { rank: number; name: string; image?: string; sales: number; revenue: number };
+
 export default function AdminStoreFinancePage() {
-  const [kpis, setKpis] = useState<any[]>([]);
-  const [revenueData, setRevenueData] = useState<any[]>([]);
-  const [categoryBreakdown, setCategoryBreakdown] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [topProducts, setTopProducts] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<KpiCard[]>([]);
+  const [revenueData, setRevenueData] = useState<RevenueBar[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBar[]>([]);
+  const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [topProducts, setTopProducts] = useState<TopProductRow[]>([]);
 
   useEffect(() => {
     const loadAnalytics = async () => {
@@ -49,7 +55,7 @@ export default function AdminStoreFinancePage() {
         const data = await getAdminStoreAnalytics();
         if (data) {
           if (data.kpis && data.kpis.length > 0) {
-            const mappedKpis = data.kpis.map((k: any, idx: number) => {
+            const mappedKpis = data.kpis.map((k, idx: number) => {
               const style = KPI_STYLES[idx] || KPI_STYLES[0];
               return {
                 label: k.label,
@@ -65,7 +71,7 @@ export default function AdminStoreFinancePage() {
             setKpis(mappedKpis);
           }
           if (data.revenue_by_month && data.revenue_by_month.length > 0) {
-            const mappedRevenue = data.revenue_by_month.map((r: any) => {
+            const mappedRevenue = data.revenue_by_month.map((r) => {
               const valInK = Math.round(r.value / 1000);
               return {
                 month: r.month,
@@ -83,7 +89,7 @@ export default function AdminStoreFinancePage() {
               "from-[#2a9d8f] to-[#1f8a5b]",
               "from-[#d98a5b] to-[#c86a3e]"
             ];
-            const mappedCategories = data.category_breakdown.map((c: any, idx: number) => {
+            const mappedCategories = data.category_breakdown.map((c, idx: number) => {
               return {
                 name: c.name,
                 pct: c.pct,
@@ -93,7 +99,7 @@ export default function AdminStoreFinancePage() {
             setCategoryBreakdown(mappedCategories);
           }
           if (data.recent_transactions && data.recent_transactions.length > 0) {
-            const mappedTransactions = data.recent_transactions.map((t: any) => {
+            const mappedTransactions = data.recent_transactions.map((t) => {
               const bgMap: Record<string, string> = {
                 "OM": "bg-[#f57c00]",
                 "W": "bg-[#1dc4ff]",
@@ -112,7 +118,7 @@ export default function AdminStoreFinancePage() {
             setTransactions(mappedTransactions);
           }
           if (data.top_products && data.top_products.length > 0) {
-            const mappedTop = data.top_products.map((p: any) => {
+            const mappedTop = data.top_products.map((p) => {
               return {
                 rank: p.rank,
                 name: p.name,
@@ -146,8 +152,8 @@ export default function AdminStoreFinancePage() {
         link.click();
         document.body.removeChild(link);
       }
-    } catch (err: any) {
-      alert(err.message || "Erreur lors de l'exportation");
+    } catch (err) {
+      alert((err as Error).message || "Erreur lors de l'exportation");
     }
   };
 
@@ -319,7 +325,7 @@ export default function AdminStoreFinancePage() {
                 </span>
                 <div className="relative size-11 shrink-0 overflow-hidden rounded-xl bg-[#f0eaf6]">
                   <Image
-                    src={p.image}
+                    src={p.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"}
                     alt={p.name}
                     fill
                     unoptimized

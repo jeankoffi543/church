@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProductView } from "./product-view";
-import { ProductRich } from "./product-view";
+import { ProductRich, ProductAttributeRich } from "./product-view";
 
 // Complete simulated product database with rich attribute options
 const MOCK_PRODUCTS: Record<string, ProductRich> = {};
@@ -17,17 +17,15 @@ export default async function ProductDetailPage({ params }: PageProps) {
   const resolvedParams = params instanceof Promise ? await params : params;
   const id = resolvedParams?.id || "1";
 
-  // Legacy store mapper reads fields looser than the typed Product boundary;
-  // kept local-any inside this quarantined module (see eslint.config.mjs).
-  const rawProduct: any = await getStoreProduct(id);
+  const rawProduct = await getStoreProduct(id);
   let product: ProductRich;
 
   if (rawProduct) {
-    const formattedAttrs = (rawProduct.attributes || []).map((attr: any) => {
+    const formattedAttrs = (rawProduct.attributes || []).map((attr): ProductAttributeRich => {
       return {
         name: attr.name,
         type: attr.type === "color" ? "color" : "text",
-        values: (attr.values || []).map((v: any) => {
+        values: (attr.values || []).map((v) => {
           if (typeof v === "string") {
             const isColor = attr.type === "color";
             return {
@@ -40,12 +38,12 @@ export default async function ProductDetailPage({ params }: PageProps) {
       };
     });
 
-    const images = (rawProduct.images || []).map((img: any) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean);
+    const images = (rawProduct.images || []).map((img) => typeof img === "string" ? (assetUrl(img) || img) : "").filter(Boolean);
     if (images.length === 0) {
       images.push("https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80");
     }
 
-    const variants = (rawProduct.variants || []).map((v: any) => {
+    const variants = (rawProduct.variants || []).map((v) => {
       return {
         id: v.id,
         sku: v.sku,
