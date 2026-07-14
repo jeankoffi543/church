@@ -21,6 +21,7 @@ class Plan extends Model
         'price_month',
         'price_year',
         'currency',
+        'paystack_plan_code',
         'features',
         'limits',
         'studio_included',
