@@ -2,7 +2,13 @@
 
 use App\Contracts\DomainRegistrar;
 use App\Services\Registrar\GandiRegistrar;
+use App\Support\Domains\RegistrantContact;
 use Illuminate\Support\Facades\Http;
+
+function gandiOwner(): RegistrantContact
+{
+    return new RegistrantContact('Church', 'App', 'ops@churchapp.io', '1 Rue', 'Paris', '75001', 'FR', '+33.100000000');
+}
 
 /*
 | CHR-205 — the live Gandi API v5 pricing driver. Gandi is faked; no real network
@@ -90,4 +96,44 @@ it('flows the Gandi price through the availability endpoint', function () {
         ->assertJsonPath('available', true)
         ->assertJsonPath('price.price', 999)
         ->assertJsonPath('price.currency', 'USD');
+});
+
+it('registers a domain via Gandi with the owner contact + duration + nameservers', function () {
+    Http::fake(['*gandi.net*' => Http::response(['id' => 'op-123'], 201)]);
+
+    $gandi = new GandiRegistrar('secret-key', 'Apikey', 'https://api.gandi.net/v5', 'USD', gandiOwner(), ['ns1.churchapp.io', 'ns2.churchapp.io']);
+    $result = $gandi->register('example.org', 2);
+
+    expect($result->successful)->toBeTrue()
+        ->and($result->reference)->toBe('op-123');
+
+    Http::assertSent(function ($request) {
+        $body = $request->data();
+
+        return $request->method() === 'POST'
+            && str_contains($request->url(), '/domain/domains')
+            && ($body['fqdn'] ?? null) === 'example.org'
+            && ($body['duration'] ?? null) === 2
+            && ($body['owner']['email'] ?? null) === 'ops@churchapp.io'
+            && ($body['nameservers'] ?? null) === ['ns1.churchapp.io', 'ns2.churchapp.io'];
+    });
+});
+
+it('surfaces a Gandi registration error message', function () {
+    Http::fake(['*gandi.net*' => Http::response(['message' => 'Insufficient funds'], 402)]);
+
+    $result = (new GandiRegistrar('secret-key', 'Apikey', 'https://api.gandi.net/v5', 'USD', gandiOwner()))
+        ->register('example.org');
+
+    expect($result->successful)->toBeFalse()
+        ->and($result->message)->toBe('Insufficient funds');
+});
+
+it('refuses to register without an API key or without a registrant contact', function () {
+    Http::fake();
+
+    expect((new GandiRegistrar(null, owner: gandiOwner()))->register('example.org')->successful)->toBeFalse();
+    expect((new GandiRegistrar('secret-key'))->register('example.org')->successful)->toBeFalse(); // no owner
+
+    Http::assertNothingSent();
 });

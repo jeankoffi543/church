@@ -11,6 +11,7 @@ use App\Services\Registrar\GandiRegistrar;
 use App\Services\Registrar\NullRegistrar;
 use App\Services\Registrar\StubRegistrar;
 use App\Support\AccessControl;
+use App\Support\Domains\RegistrantContact;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -34,6 +35,8 @@ class AppServiceProvider extends ServiceProvider
                     (string) config('domains.registrar.gandi.scheme', 'Apikey'),
                     (string) config('domains.registrar.gandi.endpoint', 'https://api.gandi.net/v5'),
                     $currency,
+                    RegistrantContact::fromConfig(config('domains.registrar.owner')),
+                    (array) config('domains.registrar.nameservers', []),
                 ),
                 'stub' => new StubRegistrar($currency),
                 default => new NullRegistrar,

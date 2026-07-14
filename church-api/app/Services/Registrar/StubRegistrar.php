@@ -6,6 +6,7 @@ namespace App\Services\Registrar;
 
 use App\Contracts\DomainRegistrar;
 use App\Support\Domains\DomainQuote;
+use App\Support\Domains\DomainRegistrationResult;
 
 /**
  * Deterministic, offline registrar for dev/tests (CHR-203). Prices are
@@ -44,5 +45,11 @@ final class StubRegistrar implements DomainRegistrar
         $price = $premium ? $base * 5 : $base;
 
         return new DomainQuote($price, $this->currency, periodYears: 1, premium: $premium);
+    }
+
+    public function register(string $domain, int $years = 1): DomainRegistrationResult
+    {
+        // Deterministic "purchase" for dev/tests — no money, no network.
+        return DomainRegistrationResult::success('stub-order-'.$domain);
     }
 }

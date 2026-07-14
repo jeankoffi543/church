@@ -14,6 +14,17 @@ it('the null registrar (default) cannot price a domain', function () {
     expect((new NullRegistrar)->quote('grace-parish.org'))->toBeNull();
 });
 
+it('the null registrar cannot register a domain', function () {
+    $result = (new NullRegistrar)->register('grace-parish.org');
+    expect($result->successful)->toBeFalse()->and($result->message)->not->toBeNull();
+});
+
+it('the stub registrar "registers" deterministically (no money, no network)', function () {
+    $result = (new StubRegistrar('USD'))->register('grace-parish.org', 2);
+    expect($result->successful)->toBeTrue()
+        ->and($result->reference)->toBe('stub-order-grace-parish.org');
+});
+
 it('the stub registrar prices by TLD', function () {
     $stub = new StubRegistrar('USD');
 
