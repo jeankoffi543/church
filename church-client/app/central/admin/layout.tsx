@@ -32,6 +32,9 @@ export default async function PlatformConsoleLayout({ children }: { children: Re
             <Link href="/central/admin/tenants" className="hidden text-sm font-semibold text-cream/70 transition hover:text-cream sm:inline">
               Églises
             </Link>
+            <Link href="/central/admin/plans" className="hidden text-sm font-semibold text-cream/70 transition hover:text-cream sm:inline">
+              Plans
+            </Link>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="hidden text-cream/70 sm:inline">

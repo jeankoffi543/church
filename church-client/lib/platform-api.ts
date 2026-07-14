@@ -166,6 +166,56 @@ export async function getPlatformPlans(): Promise<PlatformPlan[]> {
   return Array.isArray(res.data) ? res.data : [];
 }
 
+/* ── Super-admin console: subscription plans (CHR-197) ───────────── */
+
+export type PlanLimits = {
+  members?: number | null;
+  storage_gb?: number | null;
+  staff_seats?: number | null;
+};
+
+export type ManagedPlan = {
+  id: number;
+  code: string;
+  name: string;
+  price_month: number;
+  price_year: number;
+  currency: string;
+  paystack_plan_code: string | null;
+  features: string[];
+  limits: PlanLimits;
+  studio_included: boolean;
+  sort_order: number;
+  is_active: boolean;
+};
+
+export type PlanInput = Omit<ManagedPlan, "id">;
+
+export async function getManagedPlans(): Promise<ManagedPlan[]> {
+  const res = await platformFetch<{ data: ManagedPlan[] }>("/plans/manage");
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+export async function createManagedPlan(input: PlanInput): Promise<ManagedPlan> {
+  const res = await platformFetch<{ data: ManagedPlan }>("/plans", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return res.data;
+}
+
+export async function updateManagedPlan(id: number, input: PlanInput): Promise<ManagedPlan> {
+  const res = await platformFetch<{ data: ManagedPlan }>(`/plans/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+  return res.data;
+}
+
+export async function deleteManagedPlan(id: number): Promise<void> {
+  await platformFetch(`/plans/${id}`, { method: "DELETE" });
+}
+
 export async function getPlatformStudioKeys(id: string): Promise<{ keys: PlatformStudioKey[]; seats: number }> {
   const res = await platformFetch<{ data: PlatformStudioKey[]; seats: number }>(`/tenants/${id}/studio/keys`);
   return { keys: res.data, seats: res.seats };
