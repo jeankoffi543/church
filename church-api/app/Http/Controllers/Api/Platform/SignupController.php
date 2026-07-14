@@ -13,6 +13,7 @@ use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\TenantAudit;
 use App\Services\PaystackBillingService;
+use App\Services\Signup\DomainAvailabilityService;
 use App\Services\Signup\SubdomainAvailability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,19 @@ class SignupController extends Controller
                 ? $subdomain.'.'.config('tenancy.central_root_domain')
                 : null,
         ]);
+    }
+
+    /**
+     * Availability of an arbitrary domain (any TLD) for the signup wizard —
+     * checks our DB and the online registry via RDAP (CHR-198).
+     */
+    public function checkDomain(Request $request, DomainAvailabilityService $domains): JsonResponse
+    {
+        $request->validate([
+            'name' => ['required', 'string', 'max:253'],
+        ]);
+
+        return response()->json($domains->check((string) $request->query('name')));
     }
 
     public function signup(Request $request, PaystackBillingService $billing): JsonResponse
