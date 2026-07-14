@@ -119,12 +119,12 @@ export function ProductModal({
             value: o.value,
             color: o.color,
             image: o.image,
-            price: (o as any).price,
-            oldPrice: (o as any).oldPrice,
-            stock: (o as any).stock,
-            description: (o as any).description,
-            unlimited_stock: (o as any).unlimited_stock,
-            low_stock_threshold: (o as any).low_stock_threshold,
+            price: o.price,
+            oldPrice: o.oldPrice,
+            stock: o.stock,
+            description: o.description,
+            unlimited_stock: o.unlimited_stock,
+            low_stock_threshold: o.low_stock_threshold,
           })),
         }))
       );
@@ -305,7 +305,7 @@ export function ProductModal({
     groupIndex: number,
     optionIndex: number,
     field: "price" | "oldPrice" | "stock" | "description" | "unlimited_stock" | "low_stock_threshold",
-    val: any
+    val: string | number | boolean | undefined
   ) => {
     setVariants((prev) =>
       prev.map((vg, i) =>

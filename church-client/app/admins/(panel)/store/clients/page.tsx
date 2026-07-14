@@ -5,6 +5,7 @@ import { Search, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Pagination } from "../../_components/pagination";
+import type { AdminClient } from "@/lib/admin-api";
 
 const SEGMENT_META: Record<string, { color: string; bg: string }> = {
   VIP: { color: "text-[#c8902e]", bg: "bg-[rgba(200,144,46,0.14)]" },
@@ -14,7 +15,7 @@ const SEGMENT_META: Record<string, { color: string; bg: string }> = {
 };
 
 export default function AdminStoreClientsPage() {
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<AdminClient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [search, setSearch] = useState("");
@@ -66,7 +67,7 @@ export default function AdminStoreClientsPage() {
       result.sort((a, b) => {
         let valA = a[sortBy];
         let valB = b[sortBy];
-        if (typeof valA === "string") {
+        if (typeof valA === "string" && typeof valB === "string") {
           valA = valA.toLowerCase();
           valB = valB.toLowerCase();
         }
