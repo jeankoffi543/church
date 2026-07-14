@@ -78,6 +78,7 @@ class DomainPurchaseController extends Controller
             'is_primary' => false,
             'status' => DomainStatus::Verified,
             'verified_at' => now(),
+            'expires_at' => now()->addYears($years),
             'ssl_status' => SslStatus::Issued,
             'verification_token' => null,
         ]);

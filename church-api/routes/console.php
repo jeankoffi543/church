@@ -23,6 +23,12 @@ Schedule::command('domains:verify-pending')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
+// Auto-renew platform-registered domains before they lapse (CHR-210). Renewal is
+// a plan benefit, so no per-domain charge; BYO domains (null expiry) are skipped.
+Schedule::command('domains:renew')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();
+
 // Nightly per-tenant database backups (CHR-190) — a safety net before any
 // lifecycle op (move-shard, purge). withoutOverlapping guards a long run.
 Schedule::command('tenants:backup')

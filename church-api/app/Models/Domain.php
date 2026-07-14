@@ -34,6 +34,7 @@ class Domain extends BaseDomain
             'is_primary' => 'boolean',
             'verified_at' => 'datetime',
             'last_checked_at' => 'datetime',
+            'expires_at' => 'datetime',
         ];
     }
 
@@ -46,6 +47,17 @@ class Domain extends BaseDomain
     public function scopeAwaitingVerification(Builder $query): void
     {
         $query->where('type', DomainType::Custom)->where('status', DomainStatus::Pending);
+    }
+
+    /**
+     * Platform-registered domains (they carry an `expires_at`) due for renewal
+     * within `$days` — BYO domains (null expiry) are never in this set (CHR-210).
+     *
+     * @param  Builder<Domain>  $query
+     */
+    public function scopeExpiringWithin(Builder $query, int $days): void
+    {
+        $query->whereNotNull('expires_at')->where('expires_at', '<=', now()->addDays($days));
     }
 
     /**

@@ -27,4 +27,10 @@ interface DomainRegistrar
      * surface the reseller's message; drivers that can't buy fail cleanly.
      */
     public function register(string $domain, int $years = 1): DomainRegistrationResult;
+
+    /**
+     * Renew a domain we already hold for `$years` more (CHR-210). Same result
+     * contract as register().
+     */
+    public function renew(string $domain, int $years = 1): DomainRegistrationResult;
 }

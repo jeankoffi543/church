@@ -105,6 +105,39 @@ final class GandiRegistrar implements DomainRegistrar
         }
     }
 
+    public function renew(string $domain, int $years = 1): DomainRegistrationResult
+    {
+        if (empty($this->apiKey)) {
+            return DomainRegistrationResult::failure('Gandi API key is not configured.');
+        }
+
+        try {
+            $response = Http::withHeaders(['Authorization' => trim($this->scheme).' '.$this->apiKey])
+                ->acceptJson()
+                ->timeout(20)
+                ->post(rtrim($this->endpoint, '/').'/domain/domains/'.rawurlencode($domain).'/renew', [
+                    'duration' => max(1, $years),
+                    'currency' => $this->currency,
+                ]);
+
+            if (in_array($response->status(), [200, 201, 202], true)) {
+                $body = $response->json();
+                $reference = is_array($body) ? ($body['id'] ?? $body['href'] ?? null) : null;
+
+                return DomainRegistrationResult::success(is_string($reference) ? $reference : null);
+            }
+
+            $body = $response->json();
+            $message = is_array($body) && isset($body['message']) && is_string($body['message'])
+                ? $body['message']
+                : 'Gandi renewal failed (HTTP '.$response->status().').';
+
+            return DomainRegistrationResult::failure($message);
+        } catch (Throwable) {
+            return DomainRegistrationResult::failure('Could not reach the Gandi API.');
+        }
+    }
+
     /**
      * @param  mixed  $body
      */
